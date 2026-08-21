@@ -4,14 +4,14 @@ import json
 from ollama import chat
 from mcp import Client
 
-from server import mcp
-from fast_parser import extract_search_parameters
+from app.server import mcp
+from app.fast_parser import extract_search_parameters
 
-from guardrails import (
+from app.guardrails import (
     validate_user_input,
     validate_search_arguments,
     validate_room_data,
-    validate_ai_response
+    validate_ai_response,
 )
 
 
@@ -19,11 +19,29 @@ from guardrails import (
 # DISPLAY HELPER
 # ============================================================
 
-def print_header(title):
-
+def print_header(title: str) -> None:
     print("\n" + "=" * 70)
     print(f"  {title}")
     print("=" * 70)
+
+
+# ============================================================
+# NON-SEARCH INTENT RESPONSES
+# ============================================================
+
+GREETING_RESPONSE = (
+    "Hello! I'm the Homilivo room-search assistant. "
+    "I can help you find rooms and accommodation based "
+    "on city, budget, room type and other preferences."
+)
+
+
+CHATBOT_INFO_RESPONSE = (
+    "I'm the Homilivo room-search assistant. "
+    "I can help you find rooms and accommodation "
+    "based on criteria such as city, budget, room type "
+    "and who the accommodation is suitable for."
+)
 
 
 # ============================================================
@@ -33,7 +51,7 @@ def print_header(title):
 def generate_fast_response(
     user_query: str,
     rooms: list,
-    search_request: dict
+    search_request: dict,
 ) -> str:
 
     if not rooms:
@@ -91,7 +109,7 @@ def generate_fast_response(
     if ideal_for:
 
         response_lines.append(
-            f" Suitable for: {', '.join(ideal_for)}."
+            f"Suitable for: {', '.join(ideal_for)}."
         )
 
     response_lines.append("")
@@ -100,34 +118,36 @@ def generate_fast_response(
     # ROOM DETAILS
     # --------------------------------------------------------
 
-    for index, room in enumerate(rooms, start=1):
+    for index, room in enumerate(
+        rooms,
+        start=1,
+    ):
 
         title = room.get(
             "title",
-            "Untitled Room"
+            "Untitled Room",
         )
 
         room_city = room.get(
             "city",
-            "Unknown"
+            "Unknown",
         )
 
-        # Homilivo may use pricePerMonth
-        # Older MCP responses may use price
-
-        price = room.get("pricePerMonth")
+        price = room.get(
+            "pricePerMonth"
+        )
 
         if price is None:
             price = room.get("price")
 
         room_type = room.get(
             "roomType",
-            "Not specified"
+            "Not specified",
         )
 
         room_ideal_for = room.get(
             "idealFor",
-            []
+            [],
         )
 
         response_lines.append(
@@ -142,7 +162,10 @@ def generate_fast_response(
                     f"   ₹{float(price):,.0f}/month"
                 )
 
-            except (TypeError, ValueError):
+            except (
+                TypeError,
+                ValueError,
+            ):
 
                 response_lines.append(
                     f"   Monthly Rent: {price}"
@@ -179,13 +202,13 @@ def generate_fast_response(
 
 def generate_ai_response(
     user_query: str,
-    rooms: list
+    rooms: list,
 ) -> str:
 
     room_context = json.dumps(
         rooms,
         indent=2,
-        ensure_ascii=False
+        ensure_ascii=False,
     )
 
     system_prompt = """
@@ -229,13 +252,13 @@ based only on the verified room data.
         messages=[
             {
                 "role": "system",
-                "content": system_prompt
+                "content": system_prompt,
             },
             {
                 "role": "user",
-                "content": user_prompt
-            }
-        ]
+                "content": user_prompt,
+            },
+        ],
     )
 
     return response.message.content
@@ -246,11 +269,11 @@ based only on the verified room data.
 # ============================================================
 
 def extract_rooms_from_response(
-    api_data: dict
+    api_data: dict,
 ) -> list:
 
     """
-    Handles the response structures returned by MCP.
+    Handles response structures returned by MCP.
 
     Supported:
 
@@ -269,11 +292,10 @@ def extract_rooms_from_response(
 
     if isinstance(
         api_data.get("rooms"),
-        list
+        list,
     ):
 
         return api_data["rooms"]
-
 
     # --------------------------------------------------------
     # FORMAT 2
@@ -281,11 +303,10 @@ def extract_rooms_from_response(
 
     if isinstance(
         api_data.get("data"),
-        list
+        list,
     ):
 
         return api_data["data"]
-
 
     # --------------------------------------------------------
     # FORMAT 3 / 4
@@ -297,24 +318,72 @@ def extract_rooms_from_response(
 
         if isinstance(
             data.get("rooms"),
-            list
+            list,
         ):
 
             return data["rooms"]
 
         if isinstance(
             data.get("data"),
-            list
+            list,
         ):
 
             return data["data"]
-
 
     # --------------------------------------------------------
     # NOTHING FOUND
     # --------------------------------------------------------
 
     return []
+
+
+# ============================================================
+# HANDLE NON-SEARCH INTENT
+# ============================================================
+
+def handle_non_search_intent(
+    intent: str,
+) -> bool:
+
+    """
+    Handle intents that do not require room searching.
+
+    Returns:
+        True  -> intent was handled
+        False -> continue with room-search pipeline
+    """
+
+    normalized_intent = (
+        str(intent)
+        .strip()
+        .upper()
+    )
+
+    if normalized_intent == "GREETING":
+
+        print_header(
+            "FINAL RESPONSE"
+        )
+
+        print(
+            GREETING_RESPONSE
+        )
+
+        return True
+
+    if normalized_intent == "CHATBOT_INFO":
+
+        print_header(
+            "FINAL RESPONSE"
+        )
+
+        print(
+            CHATBOT_INFO_RESPONSE
+        )
+
+        return True
+
+    return False
 
 
 # ============================================================
@@ -336,7 +405,6 @@ async def main():
         "Default response mode: FAST"
     )
 
-
     # ========================================================
     # CONNECT TO MCP
     # ========================================================
@@ -351,23 +419,24 @@ async def main():
             "✓ MCP Server Connected"
         )
 
-
         # ====================================================
         # DISCOVER MCP TOOLS
         # ====================================================
 
-        tools_response = await client.list_tools()
+        tools_response = (
+            await client.list_tools()
+        )
 
         if hasattr(
             tools_response,
-            "tools"
+            "tools",
         ):
 
             tools = tools_response.tools
 
         elif isinstance(
             tools_response,
-            tuple
+            tuple,
         ):
 
             tools = tools_response[1]
@@ -375,7 +444,6 @@ async def main():
         else:
 
             tools = tools_response
-
 
         print(
             "\nAvailable MCP Tools:"
@@ -385,7 +453,7 @@ async def main():
 
             if hasattr(
                 tool,
-                "name"
+                "name",
             ):
 
                 print(
@@ -398,7 +466,6 @@ async def main():
                     f"  • {tool}"
                 )
 
-
         # ====================================================
         # USER INPUT
         # ====================================================
@@ -409,8 +476,7 @@ async def main():
 
         user_query = input(
             "What kind of room are you looking for?\n> "
-        )
-
+        ).strip()
 
         # ====================================================
         # RESPONSE MODE
@@ -433,9 +499,7 @@ async def main():
         ).strip()
 
         if mode not in ["1", "2"]:
-
             mode = "1"
-
 
         if mode == "1":
 
@@ -448,7 +512,6 @@ async def main():
             print(
                 "\n✓ AI MODE selected"
             )
-
 
         # ====================================================
         # INPUT GUARDRAIL
@@ -467,7 +530,8 @@ async def main():
         if not input_allowed:
 
             print(
-                "\n✗ INPUT GUARDRAIL BLOCKED REQUEST"
+                "\n✗ INPUT GUARDRAIL "
+                "BLOCKED REQUEST"
             )
 
             print(
@@ -480,6 +544,15 @@ async def main():
             "✓ Input guardrail passed"
         )
 
+        # ====================================================
+        # NON-SEARCH INTENTS
+        # ====================================================
+
+        if handle_non_search_intent(
+            input_message
+        ):
+
+            return
 
         # ====================================================
         # FAST PARAMETER EXTRACTION
@@ -528,7 +601,6 @@ async def main():
             f"{search_request.get('ideal_for')}"
         )
 
-
         # ====================================================
         # CHECK EXTRACTION
         # ====================================================
@@ -538,7 +610,7 @@ async def main():
             search_request.get("min_price"),
             search_request.get("max_price"),
             search_request.get("room_types"),
-            search_request.get("ideal_for")
+            search_request.get("ideal_for"),
         ]):
 
             print(
@@ -552,7 +624,6 @@ async def main():
             )
 
             return
-
 
         # ====================================================
         # PARAMETER GUARDRAIL
@@ -585,7 +656,6 @@ async def main():
             "✓ Search parameters validated"
         )
 
-
         # ====================================================
         # EXECUTE MCP TOOL
         # ====================================================
@@ -606,7 +676,7 @@ async def main():
 
             result = await client.call_tool(
                 "search_rooms",
-                search_request
+                search_request,
             )
 
         except Exception as error:
@@ -624,7 +694,6 @@ async def main():
         print(
             "✓ MCP tool executed"
         )
-
 
         # ====================================================
         # EXTRACT MCP RESULT
@@ -651,7 +720,7 @@ async def main():
         except (
             AttributeError,
             IndexError,
-            json.JSONDecodeError
+            json.JSONDecodeError,
         ) as error:
 
             print(
@@ -663,7 +732,6 @@ async def main():
             )
 
             return
-
 
         # ====================================================
         # MCP RESPONSE INFORMATION
@@ -677,7 +745,6 @@ async def main():
             f"✓ Response keys: "
             f"{list(api_data.keys())}"
         )
-
 
         # ====================================================
         # CHECK API ERROR
@@ -702,12 +769,11 @@ async def main():
                 json.dumps(
                     api_data,
                     indent=2,
-                    ensure_ascii=False
+                    ensure_ascii=False,
                 )
             )
 
             return
-
 
         # ====================================================
         # EXTRACT ROOMS
@@ -721,7 +787,6 @@ async def main():
             f"✓ MCP returned "
             f"{len(rooms)} room record(s)"
         )
-
 
         # ====================================================
         # DATA GUARDRAIL
@@ -756,7 +821,7 @@ async def main():
                 json.dumps(
                     api_data,
                     indent=2,
-                    ensure_ascii=False
+                    ensure_ascii=False,
                 )
             )
 
@@ -771,7 +836,6 @@ async def main():
             f"{len(rooms)}"
         )
 
-
         # ====================================================
         # GENERATE RESPONSE
         # ====================================================
@@ -779,7 +843,6 @@ async def main():
         print_header(
             "GENERATING RESPONSE"
         )
-
 
         # ----------------------------------------------------
         # FAST MODE
@@ -799,10 +862,9 @@ async def main():
                 generate_fast_response(
                     user_query,
                     rooms,
-                    search_request
+                    search_request,
                 )
             )
-
 
         # ----------------------------------------------------
         # AI MODE
@@ -824,7 +886,7 @@ async def main():
                 final_text = (
                     generate_ai_response(
                         user_query,
-                        rooms
+                        rooms,
                     )
                 )
 
@@ -839,7 +901,6 @@ async def main():
                 )
 
                 return
-
 
         # ====================================================
         # OUTPUT GUARDRAIL
@@ -872,7 +933,6 @@ async def main():
             "✓ Output guardrail passed"
         )
 
-
         # ====================================================
         # FINAL RESPONSE
         # ====================================================
@@ -884,7 +944,6 @@ async def main():
         print(
             final_text
         )
-
 
         # ====================================================
         # FINAL STATUS

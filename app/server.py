@@ -1,3 +1,4 @@
+import contextvars
 import os
 import json
 import urllib.parse
@@ -9,6 +10,40 @@ from mcp.server import MCPServer
 mcp = MCPServer("Homilivo Room Search MCP")
 
 API_URL = "https://homilivo.onrender.com/api/rooms"
+
+
+# ============================================================
+# PER-REQUEST TOKEN CONTEXT
+# ============================================================
+# The Homilivo token must never be a process-global (e.g. os.environ),
+# because FastAPI serves concurrent requests as concurrent asyncio tasks
+# sharing one process: a global write from request A can be overwritten
+# by request B before A's outbound HTTP call fires, leaking B's token
+# into A's search. A ContextVar is bound per-task (and inherited by any
+# child tasks spawned from it, e.g. MCP's internal task group), so each
+# request keeps its own isolated value regardless of concurrency.
+_kangaroo_token_var: "contextvars.ContextVar[str | None]" = contextvars.ContextVar(
+    "kangaroo_token",
+    default=None,
+)
+
+
+def set_kangaroo_token(token: str) -> contextvars.Token:
+    """Bind the Homilivo API token to the current request's task only."""
+    return _kangaroo_token_var.set(token)
+
+
+def _get_kangaroo_token() -> str | None:
+    """
+    Per-request token if one was bound (the FastAPI path), otherwise
+    fall back to the process environment variable (CLI / manual usage,
+    e.g. `python -m app.agent`, where there is only one caller and no
+    concurrency to protect against).
+    """
+    token = _kangaroo_token_var.get()
+    if token:
+        return token
+    return os.getenv("KANGAROO_TOKEN")
 
 
 @mcp.tool()
@@ -36,7 +71,7 @@ def search_rooms(
     limit: Maximum number of results.
     """
 
-    token = os.getenv("KANGAROO_TOKEN")
+    token = _get_kangaroo_token()
 
     if not token:
         return {

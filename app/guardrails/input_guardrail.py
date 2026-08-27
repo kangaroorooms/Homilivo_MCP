@@ -26,6 +26,8 @@ from functools import lru_cache
 
 from sentence_transformers import SentenceTransformer, util
 
+from app.embeddings import get_shared_model
+
 from .common import (
     MAX_USER_INPUT_LENGTH,
     normalize_text,
@@ -36,8 +38,6 @@ from .common import (
 # MODEL
 # ============================================================
 
-SEMANTIC_MODEL_NAME = "all-MiniLM-L6-v2"
-
 INTENT_THRESHOLD = 0.48
 INTENT_MARGIN = 0.03
 
@@ -47,9 +47,12 @@ def get_semantic_model() -> SentenceTransformer:
     """
     Load the embedding model once.
 
-    Subsequent requests reuse the same model instance.
+    Subsequent requests reuse the same model instance. Shares the
+    process-wide model from app.embeddings so this module and
+    app.experiments.interpreter never load two independent copies of
+    the same SentenceTransformer.
     """
-    return SentenceTransformer(SEMANTIC_MODEL_NAME)
+    return get_shared_model()
 
 
 # ============================================================

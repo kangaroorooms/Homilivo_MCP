@@ -2,6 +2,9 @@
 Parameter Guardrail.
 
 Validates structured search parameters before they reach MCP.
+
+Optional filters such as room_types and ideal_for may be empty.
+An empty list means that the user did not specify that filter.
 """
 
 from __future__ import annotations
@@ -93,12 +96,26 @@ def _normalize_sort(value: str) -> str:
 def validate_search_arguments(
     arguments: dict,
 ) -> tuple[bool, str]:
+    """
+    Validate structured room-search parameters.
+
+    Empty room_types and ideal_for lists are allowed because
+    these are optional search filters.
+
+    Examples:
+
+        room_types: []
+        ideal_for: []
+
+    mean that the user did not specify those filters.
+    """
 
     # --------------------------------------------------------
     # Container validation
     # --------------------------------------------------------
 
     if not isinstance(arguments, dict):
+
         return (
             False,
             "Search arguments must be a dictionary.",
@@ -133,18 +150,21 @@ def validate_search_arguments(
     if city is not None:
 
         if not isinstance(city, str):
+
             return (
                 False,
                 "City must be a string.",
             )
 
         if not city.strip():
+
             return (
                 False,
                 "City cannot be empty.",
             )
 
         if len(city.strip()) > 100:
+
             return (
                 False,
                 "City name is too long.",
@@ -159,12 +179,14 @@ def validate_search_arguments(
     if min_price is not None:
 
         if not _is_valid_number(min_price):
+
             return (
                 False,
                 "Minimum price must be a valid number.",
             )
 
         if min_price < 0:
+
             return (
                 False,
                 "Minimum price cannot be negative.",
@@ -179,12 +201,14 @@ def validate_search_arguments(
     if max_price is not None:
 
         if not _is_valid_number(max_price):
+
             return (
                 False,
                 "Maximum price must be a valid number.",
             )
 
         if max_price < 0:
+
             return (
                 False,
                 "Maximum price cannot be negative.",
@@ -199,6 +223,7 @@ def validate_search_arguments(
         and max_price is not None
         and min_price > max_price
     ):
+
         return (
             False,
             "Minimum price cannot be greater than maximum price.",
@@ -242,6 +267,7 @@ def validate_search_arguments(
         isinstance(limit, bool)
         or not isinstance(limit, int)
     ):
+
         return (
             False,
             "Result limit must be an integer.",
@@ -278,12 +304,8 @@ def validate_search_arguments(
                 "Room types must be a list.",
             )
 
-        if len(room_types) == 0:
-
-            return (
-                False,
-                "Room types cannot be an empty list.",
-            )
+        # Empty list is allowed.
+        # It means no room-type filter was specified.
 
         normalized_room_types = []
 
@@ -293,6 +315,7 @@ def validate_search_arguments(
                 room_type,
                 str,
             ):
+
                 return (
                     False,
                     "Each room type must be a string.",
@@ -322,9 +345,12 @@ def validate_search_arguments(
                 normalized_room_type
             )
 
+        # Duplicate room types are still rejected.
+
         if len(normalized_room_types) != len(
             set(normalized_room_types)
         ):
+
             return (
                 False,
                 "Duplicate room types are not allowed.",
@@ -344,17 +370,14 @@ def validate_search_arguments(
             ideal_for,
             list,
         ):
+
             return (
                 False,
                 "Ideal-for values must be a list.",
             )
 
-        if len(ideal_for) == 0:
-
-            return (
-                False,
-                "Ideal-for values cannot be an empty list.",
-            )
+        # Empty list is allowed.
+        # It means no ideal-for filter was specified.
 
         normalized_ideal_for = []
 
@@ -364,6 +387,7 @@ def validate_search_arguments(
                 value,
                 str,
             ):
+
                 return (
                     False,
                     "Each ideal-for value must be a string.",
@@ -393,9 +417,12 @@ def validate_search_arguments(
                 normalized_value
             )
 
+        # Duplicate ideal-for values are still rejected.
+
         if len(normalized_ideal_for) != len(
             set(normalized_ideal_for)
         ):
+
             return (
                 False,
                 "Duplicate ideal-for values are not allowed.",

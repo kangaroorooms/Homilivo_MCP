@@ -1,5 +1,15 @@
 import asyncio
 import json
+import sys
+
+# See app/api.py for why: Windows stdout defaults to cp1252 whenever it
+# isn't an interactive UTF-8 console, which crashes on the Unicode
+# symbols (arrows, checkmarks, rupee sign) this module prints.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 from ollama import chat
 from mcp import Client
@@ -1009,3 +1019,7 @@ async def main():
 if __name__ == "__main__":
 
     asyncio.run(main())
+'''
+"""
+
+'''

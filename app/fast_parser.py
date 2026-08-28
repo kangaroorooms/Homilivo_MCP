@@ -75,6 +75,36 @@ def extract_search_parameters(
 
             result["city"] = city.title()
 
+    # Fallback for phrasing that omits a preposition entirely
+    # ("any rooms Bangalore?", "room in Bangalore" already matched
+    # above, but "rooms Bangalore" would not). Only attempted when the
+    # message clearly is a room/accommodation request (so a bare
+    # capitalized word in an unrelated sentence is never mistaken for
+    # a city) AND the candidate is capitalized in the ORIGINAL query
+    # (a reasonable, bounded proxy for "this looks like a proper noun
+    # / place name", not a guess at arbitrary Homilivo city data).
+    if result["city"] is None and re.search(
+        r"\b(room|rooms|accommodation|flat|flats|pg|apartment|apartments)\b",
+        query,
+        re.IGNORECASE,
+    ):
+
+        trailing_capitalized = re.search(
+            r"\b([A-Z][a-zA-Z]+)\s*\??\s*$",
+            query,
+        )
+
+        if trailing_capitalized:
+
+            candidate = trailing_capitalized.group(1)
+
+            if candidate.lower() not in {
+                "room", "rooms", "accommodation", "flat", "flats",
+                "pg", "apartment", "apartments",
+            }:
+
+                result["city"] = candidate.title()
+
     # ========================================================
     # PRICE
     # ========================================================

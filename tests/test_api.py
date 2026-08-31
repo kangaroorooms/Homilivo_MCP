@@ -448,7 +448,8 @@ def test_chat_set_wide_amenity_question_is_answered_from_session_data(client, au
     """
     Regression for Issue 2: "does any room have ac?" after a search must
     be answered from the already-verified room set, not the generic
-    capability fallback message.
+    capability fallback message. YES/NO framing: boolean + count, no
+    room names (see the LISTING-framing test right below for that).
     """
     search = client.post(
         "/chat",
@@ -466,8 +467,152 @@ def test_chat_set_wide_amenity_question_is_answered_from_session_data(client, au
         headers=auth_headers,
     ).json()
 
-    assert "Sunrise 2BHK" in response["message"]
+    assert response["message"] == "Yes, 1 of the verified rooms have AC."
     assert "I can answer questions about" not in response["message"]
+
+
+def test_chat_set_wide_amenity_listing_names_room_and_filters_cards(
+    client, auth_headers, mock_homilivo_success,
+):
+    """
+    "which rooms have AC?" is LISTING framing: names the matching
+    room(s) in the text AND the returned room cards (`rooms`) are
+    filtered to just the matches for this turn - without touching the
+    session's underlying room set (verified via the follow-up ordinal
+    reference right after).
+    """
+    search = client.post(
+        "/chat",
+        json={"message": "find rooms in Jaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    response = client.post(
+        "/chat",
+        json={
+            "message": "which rooms have ac?",
+            "session_id": search["session_id"],
+            "mode": "fast",
+        },
+        headers=auth_headers,
+    ).json()
+
+    assert "Sunrise 2BHK" in response["message"]
+    assert response["room_count"] == 1
+    assert response["rooms"][0]["title"] == "Sunrise 2BHK"
+
+    # The full 3-room search result must still be intact in session
+    # state for ordinal follow-ups, even though only 1 room was shown.
+    followup = client.post(
+        "/chat",
+        json={
+            "message": "what is the price of the last one?",
+            "session_id": search["session_id"],
+            "mode": "fast",
+        },
+        headers=auth_headers,
+    ).json()
+
+    assert "Mid-range Flat" in followup["message"]
+
+
+def test_chat_set_wide_room_type_question_is_answered_from_session_data(client, auth_headers, mock_homilivo_success):
+    """
+    "what type of rooms are available?" after a search must be answered
+    from the already-verified room set (SAMPLE_ROOMS has 2BHK and PG),
+    not the generic capability fallback message.
+    """
+    search = client.post(
+        "/chat",
+        json={"message": "find rooms in Jaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    response = client.post(
+        "/chat",
+        json={
+            "message": "what type of rooms are available?",
+            "session_id": search["session_id"],
+            "mode": "fast",
+        },
+        headers=auth_headers,
+    ).json()
+
+    assert "2BHK" in response["message"]
+    assert "PG" in response["message"]
+    assert "I can answer questions about" not in response["message"]
+
+
+def test_chat_set_wide_location_question_is_answered_from_session_data(client, auth_headers, mock_homilivo_success):
+    """
+    "where are they located?" after a search must list the distinct
+    locations from the verified room set, not the generic fallback.
+    """
+    search = client.post(
+        "/chat",
+        json={"message": "find rooms in Jaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    response = client.post(
+        "/chat",
+        json={
+            "message": "where are they located?",
+            "session_id": search["session_id"],
+            "mode": "fast",
+        },
+        headers=auth_headers,
+    ).json()
+
+    assert "Jagatpura" in response["message"]
+    assert "Mansarovar" in response["message"]
+
+
+def test_chat_set_wide_student_suitability_question_is_answered_from_session_data(
+    client, auth_headers, mock_homilivo_success,
+):
+    """
+    "which rooms are suitable for students?" must list the rooms whose
+    idealFor includes Students (room-2 and room-3 in SAMPLE_ROOMS),
+    excluding room-1 which has no Students entry.
+    """
+    search = client.post(
+        "/chat",
+        json={"message": "find rooms in Jaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    response = client.post(
+        "/chat",
+        json={
+            "message": "which rooms are suitable for students?",
+            "session_id": search["session_id"],
+            "mode": "fast",
+        },
+        headers=auth_headers,
+    ).json()
+
+    assert "Budget PG" in response["message"]
+    assert "Mid-range Flat" in response["message"]
+    assert "Sunrise 2BHK" not in response["message"]
+
+
+def test_chat_room_response_includes_amenities_when_present(client, auth_headers, mock_homilivo_success):
+    """
+    SAMPLE_ROOMS' first room has an "amenities" field; the second does
+    not. RoomResponse.amenities must reflect that per-room, not be a
+    fixed empty list regardless of the API data.
+    """
+    response = client.post(
+        "/chat",
+        json={"message": "find rooms in Jaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    rooms_by_id = {room["id"]: room for room in response["rooms"]}
+
+    assert rooms_by_id["room-1"]["amenities"] == ["AC", "Parking"]
+    assert rooms_by_id["room-2"]["amenities"] == []
 
 
 def test_chat_empty_search_results(client, auth_headers, mock_homilivo_empty):
@@ -482,6 +627,55 @@ def test_chat_empty_search_results(client, auth_headers, mock_homilivo_empty):
     assert body["success"] is True
     assert body["room_count"] == 0
     assert "jaipur" in body["message"].lower()
+    assert body["search_performed"] is True
+
+
+def test_search_performed_is_true_for_a_completed_search(client, auth_headers, mock_homilivo_success):
+    response = client.post(
+        "/chat",
+        json={"message": "find rooms in Jaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    assert response["search_performed"] is True
+
+
+def test_search_performed_is_false_for_a_greeting(client, auth_headers):
+    response = client.post(
+        "/chat", json={"message": "hello", "mode": "fast"}, headers=auth_headers,
+    ).json()
+
+    assert response["search_performed"] is False
+
+
+def test_search_performed_is_false_for_a_platform_knowledge_answer(client, auth_headers):
+    response = client.post(
+        "/chat",
+        json={"message": "what are the platform fees?", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    assert response["search_performed"] is False
+
+
+def test_search_performed_is_false_for_a_room_followup(client, auth_headers, mock_homilivo_success):
+    search = client.post(
+        "/chat",
+        json={"message": "find rooms in Jaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    followup = client.post(
+        "/chat",
+        json={
+            "message": "which one is cheapest?",
+            "session_id": search["session_id"],
+            "mode": "fast",
+        },
+        headers=auth_headers,
+    ).json()
+
+    assert followup["search_performed"] is False
 
 
 # ============================================================
@@ -516,3 +710,186 @@ def test_concurrent_chat_requests_do_not_leak_tokens(mock_homilivo_token_recorde
     actual = Counter(get_recorded_tokens())
 
     assert actual == expected
+
+
+# ============================================================
+# REGRESSION: city-agnostic search + real backend room-type variation
+# ============================================================
+# Root-caused in a live-bug investigation: "find rooms in udaipur" was
+# blocked entirely because the real Homilivo API returned roomType
+# "2RK" (not in the guardrail's old closed enum), and "rooms in
+# bangalore" / "find me rooms in bangalore" fell through to the
+# generic capability message because the deterministic router only
+# matched a handful of exact verb+object phrasings. Both fixes are
+# city-agnostic by construction (no city name is hardcoded anywhere in
+# app/experiments/agent_modes.py's fix) - these tests use Udaipur and
+# Bangalore specifically to prove that, while tests/test_api.py's
+# existing Jaipur-based coverage (SAMPLE_ROOMS throughout this file)
+# proves the previously-working path is unchanged.
+
+def test_chat_bare_city_search_without_a_verb_executes_a_real_search(
+    client, auth_headers, mock_homilivo_success,
+):
+    """
+    "rooms in bangalore" has no leading verb ("find"/"show me") and
+    previously fell through to the generic capability response instead
+    of ever calling the MCP tool.
+    """
+    response = client.post(
+        "/chat",
+        json={"message": "rooms in bangalore", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    assert response["search_performed"] is True
+    assert response["room_count"] == 3
+    assert "I can answer questions about" not in response["message"]
+    assert "I'm the Homilivo room-search assistant" not in response["message"]
+
+
+def test_chat_pronoun_broken_search_phrasing_executes_a_real_search(
+    client, auth_headers, mock_homilivo_success,
+):
+    """
+    "find me rooms in bangalore" - the inserted pronoun breaks the
+    "find rooms" substring match the old deterministic router relied on.
+    """
+    response = client.post(
+        "/chat",
+        json={"message": "find me rooms in bangalore", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    assert response["search_performed"] is True
+    assert response["room_count"] == 3
+
+
+def test_chat_udaipur_search_with_an_extended_room_type_is_not_blocked(
+    client, auth_headers, monkeypatch,
+):
+    """
+    True end-to-end reproduction of the original bug report: the live
+    Homilivo API returned a room with roomType "2RK" for a Udaipur
+    search, and the entire response was discarded by the API-data
+    guardrail. Mocks the outbound HTTP call to return exactly that
+    shape (a real, unmodified room type this project had not seen
+    before) rather than testing validate_room_data() in isolation.
+    """
+    from tests.conftest import FakeHomilivoResponse
+
+    udaipur_rooms = [
+        {
+            "id": "2ad23efe-007f-4022-b951-3726b4298900",
+            "title": "Cozy 2RK near lake",
+            "city": "Udaipur",
+            "location": "Fatehsagar",
+            "pricePerMonth": 9500,
+            "roomType": "2RK",
+            "idealFor": ["Students"],
+        },
+        {
+            "id": "udaipur-room-2",
+            "title": "Standard 1BHK",
+            "city": "Udaipur",
+            "location": "Hiran Magri",
+            "pricePerMonth": 12000,
+            "roomType": "1BHK",
+            "idealFor": ["Working Professionals"],
+        },
+    ]
+
+    def fake_urlopen(request, timeout=None):
+        return FakeHomilivoResponse({"data": udaipur_rooms})
+
+    monkeypatch.setattr("app.server.urllib.request.urlopen", fake_urlopen)
+
+    response = client.post(
+        "/chat",
+        json={"message": "find rooms in udaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    assert response["success"] is True
+    assert response["search_performed"] is True
+    assert response["room_count"] == 2
+
+    # The backend's original room-type value must be preserved
+    # verbatim, never fabricated or silently remapped.
+    room_types = {room["room_type"] for room in response["rooms"]}
+    assert "2RK" in room_types
+    assert "1BHK" in room_types
+
+
+def test_chat_udaipur_search_and_followup_end_to_end(client, auth_headers, monkeypatch):
+    """
+    Combined regression: a Udaipur search whose result includes the
+    previously-blocking "2RK" room type, followed by a set-wide
+    follow-up question - proving both fixes work together and that
+    set-wide follow-up behavior (Issue 3 / requirement 8) survives the
+    routing change.
+    """
+    from tests.conftest import FakeHomilivoResponse
+
+    udaipur_rooms = [
+        {
+            "id": "2ad23efe-007f-4022-b951-3726b4298900",
+            "title": "Cozy 2RK near lake",
+            "city": "Udaipur",
+            "location": "Fatehsagar",
+            "pricePerMonth": 9500,
+            "roomType": "2RK",
+            "idealFor": ["Students"],
+        },
+        {
+            "id": "udaipur-room-2",
+            "title": "Standard 1BHK",
+            "city": "Udaipur",
+            "location": "Hiran Magri",
+            "pricePerMonth": 12000,
+            "roomType": "1BHK",
+            "idealFor": ["Working Professionals"],
+        },
+    ]
+
+    def fake_urlopen(request, timeout=None):
+        return FakeHomilivoResponse({"data": udaipur_rooms})
+
+    monkeypatch.setattr("app.server.urllib.request.urlopen", fake_urlopen)
+
+    search = client.post(
+        "/chat",
+        json={"message": "rooms in Udaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+    assert search["room_count"] == 2
+
+    followup = client.post(
+        "/chat",
+        json={
+            "message": "which one is cheapest?",
+            "session_id": search["session_id"],
+            "mode": "fast",
+        },
+        headers=auth_headers,
+    ).json()
+
+    assert followup["selected_room"] is not None
+    assert followup["selected_room"]["room_type"] == "2RK"
+    assert followup["selected_room"]["price_per_month"] == 9500
+
+
+def test_chat_jaipur_search_behavior_is_unchanged(client, auth_headers, mock_homilivo_success):
+    """
+    Explicit lock for requirement 6: the previously-working Jaipur path
+    (SAMPLE_ROOMS, all recognized room types) must be completely
+    unaffected by either fix.
+    """
+    response = client.post(
+        "/chat",
+        json={"message": "find rooms in Jaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    assert response["success"] is True
+    assert response["search_performed"] is True
+    assert response["room_count"] == 3

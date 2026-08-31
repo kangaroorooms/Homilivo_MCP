@@ -24,6 +24,7 @@ from __future__ import annotations
 import pytest
 
 from app.experiments.agent_modes import (
+    NOT_VERIFIED_AMENITY_RESPONSE,
     ConversationState,
     answer_amenity_across_rooms,
     answer_room_comparison,
@@ -171,6 +172,18 @@ ROUTING_CASES = [
     ("Jaipur", _state_pending_city, "CLARIFICATION_RESPONSE"),
     ("second cheapest one", _state_after_search, "ROOM_FOLLOWUP"),
     ("last one", _state_after_search, "ROOM_FOLLOWUP"),
+    # Regression: "find rooms in X" matched deterministically already,
+    # but "rooms in X" (no verb) and "find me rooms in X" (pronoun
+    # breaks the "find rooms" substring) fell through to UNKNOWN for
+    # ANY city, not just one - see looks_like_general_room_search().
+    ("rooms in Bangalore", ConversationState, "NEW_SEARCH"),
+    ("find me rooms in Bangalore", ConversationState, "NEW_SEARCH"),
+    ("find rooms in Udaipur", ConversationState, "NEW_SEARCH"),
+    ("accommodation in Udaipur", ConversationState, "NEW_SEARCH"),
+    # Lock: the broadened city-agnostic catch-all above must not win
+    # over an active follow-up just because the follow-up happens to
+    # mention a city and the word "room".
+    ("is this room actually in Jaipur?", _state_after_search, "ROOM_FOLLOWUP"),
 ]
 
 
@@ -224,15 +237,44 @@ def test_soft_semantic_fallback(query, expected):
 # NOTES - intentional behaviour, locked in as regressions tests
 # ============================================================
 
-def test_ordinals_take_priority_over_plain_superlatives():
+def test_ordinals_take_priority_over_plain_superlatives_for_room_reference():
     """
-    'cheapest of the first two' must resolve as ORDINAL_1, not
-    LOWEST_PRICE - the superlative here modifies "two" (a scope), not a
-    rank-of-cheapness, and the ranked-price detection added alongside
-    this test requires the ordinal to sit directly before the
-    superlative phrase, which is not the case here.
+    Which ROOM "cheapest of the first two" refers to is unaffected by
+    detect_room_operation() below - it must still resolve as the
+    first room, not the set-wide cheapest, since "cheapest" here
+    modifies "two" (a scope), not a rank-of-cheapness. This is now
+    resolve_room_reference()'s job (via
+    detect_room_reference_operation(), whose ordinal-priority order is
+    intentionally unchanged from before), decoupled from
+    detect_room_operation() - see the next test for why.
     """
-    assert detect_room_operation("cheapest of the first two") == "ORDINAL_1"
+    rooms = [
+        {"id": "r1", "title": "Room A", "pricePerMonth": 18000},
+        {"id": "r2", "title": "Room B", "pricePerMonth": 10000},
+        {"id": "r3", "title": "Room C", "pricePerMonth": 8000},
+    ]
+
+    resolved = resolve_room_reference("cheapest of the first two", rooms, None)
+
+    assert resolved is not None
+    assert resolved["id"] == "r1"
+
+
+def test_detect_room_operation_now_reports_the_superlative_for_this_phrase():
+    """
+    detect_room_operation() (WHAT is being asked, used by
+    answer_room_fact()/answer_amenity_across_rooms()/etc - never by
+    room reference resolution, see the test above) now returns
+    LOWEST_PRICE for "cheapest of the first two", not ORDINAL_1. This
+    is an intentional, correct consequence of moving plain ordinals to
+    the END of detect_room_operation()'s Tier A (see its comments) so
+    that a compound sentence like "does the FIRST ONE have a FRIDGE?"
+    resolves operation=AMENITY there instead of the ordinal silently
+    winning - answer_room_fact() has no ORDINAL_1 branch to begin
+    with, so this relabeling has no user-facing effect for bare
+    ordinal references.
+    """
+    assert detect_room_operation("cheapest of the first two") == "LOWEST_PRICE"
 
 
 def test_pairwise_comparison_resolves_to_room_price():
@@ -298,12 +340,15 @@ def _rooms_with_mixed_amenities():
     ]
 
 
-def test_set_wide_amenity_question_names_the_matching_room():
+# --------------------------------------------------------------
+# YES/NO framing: "does any room have X?" -> boolean + count, no
+# room names (matches the product spec's exact examples).
+# --------------------------------------------------------------
+
+def test_set_wide_amenity_yes_no_framing_with_a_match():
     answer = answer_amenity_across_rooms("does any room have ac?", _rooms_with_mixed_amenities())
 
-    assert answer is not None
-    assert "Room A" in answer
-    assert "Room B" not in answer
+    assert answer == "Yes, 1 of the verified rooms have AC."
 
 
 def test_set_wide_amenity_question_all_rooms_match():
@@ -316,8 +361,7 @@ def test_set_wide_amenity_question_all_rooms_match():
 
     answer = answer_amenity_across_rooms("does any room have wifi?", rooms)
 
-    assert answer is not None
-    assert "all 2" in answer
+    assert answer == "Yes, 2 of the verified rooms have wifi."
 
 
 def test_set_wide_amenity_question_no_room_matches():
@@ -327,8 +371,88 @@ def test_set_wide_amenity_question_no_room_matches():
 
     answer = answer_amenity_across_rooms("does any room have parking?", rooms)
 
+    assert answer == "No, none of the verified rooms have parking."
+
+
+# --------------------------------------------------------------
+# LISTING framing: "which rooms have X?" / "list rooms with X" ->
+# names the matching rooms (and, at the API layer, returns them as
+# cards - see tests/test_api.py).
+# --------------------------------------------------------------
+
+def test_set_wide_amenity_listing_framing_names_the_matching_room():
+    answer = answer_amenity_across_rooms("which rooms have ac?", _rooms_with_mixed_amenities())
+
     assert answer is not None
-    assert "does not specify parking" in answer
+    assert "Room A" in answer
+    assert "Room B" not in answer
+
+
+def test_set_wide_amenity_listing_framing_all_rooms_match():
+    rooms = [
+        {"id": "r1", "title": "Room A", "pricePerMonth": 18000, "roomType": "2BHK",
+         "city": "Jaipur", "amenities": ["WiFi"]},
+        {"id": "r2", "title": "Room B", "pricePerMonth": 10000, "roomType": "2BHK",
+         "city": "Jaipur", "amenities": ["WiFi", "AC"]},
+    ]
+
+    answer = answer_amenity_across_rooms("list rooms with wifi", rooms)
+
+    assert answer == "Yes, all 2 of the verified rooms have wifi."
+
+
+def test_set_wide_amenity_listing_framing_no_matches():
+    rooms = [
+        {"id": "r1", "title": "Room A", "pricePerMonth": 18000, "roomType": "2BHK", "city": "Jaipur"},
+    ]
+
+    answer = answer_amenity_across_rooms("which rooms have parking?", rooms)
+
+    assert answer == "I couldn't find any of the verified rooms with parking."
+
+
+# --------------------------------------------------------------
+# COUNT framing: "how many rooms have X?"
+# --------------------------------------------------------------
+
+def test_set_wide_amenity_count_framing():
+    answer = answer_amenity_across_rooms("how many rooms have ac?", _rooms_with_mixed_amenities())
+
+    assert answer == "1 of the 2 verified rooms have AC."
+
+
+# --------------------------------------------------------------
+# NEGATION: "which rooms don't have X?"
+# --------------------------------------------------------------
+
+def test_set_wide_amenity_negation_listing():
+    answer = answer_amenity_across_rooms(
+        "which rooms don't have ac?", _rooms_with_mixed_amenities()
+    )
+
+    assert answer is not None
+    assert "Room B" in answer
+    assert "Room A" not in answer
+
+
+def test_set_wide_amenity_negation_yes_no():
+    answer = answer_amenity_across_rooms(
+        "does any room not have ac?", _rooms_with_mixed_amenities()
+    )
+
+    assert answer == "Yes, 1 of the verified rooms don't have AC."
+
+
+# --------------------------------------------------------------
+# Unknown/unresolvable amenity: must decline honestly, never guess.
+# --------------------------------------------------------------
+
+def test_set_wide_amenity_unresolvable_amenity_declines_honestly():
+    answer = answer_amenity_across_rooms(
+        "does any room have a swimming pool?", _rooms_with_mixed_amenities()
+    )
+
+    assert answer == NOT_VERIFIED_AMENITY_RESPONSE
 
 
 def test_set_wide_amenity_returns_none_for_non_amenity_questions():
@@ -354,7 +478,7 @@ def test_generate_response_answers_set_wide_amenity_without_llm():
     for mode in ("fast", "qwen", "gemma", "groq"):
         text = generate_response(
             mode=mode,
-            user_query="does any room have ac?",
+            user_query="which rooms have ac?",
             rooms=rooms,
             search_request={"city": "Jaipur"},
             conversation_history=[],

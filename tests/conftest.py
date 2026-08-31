@@ -21,6 +21,25 @@ from fastapi.testclient import TestClient
 from app.api import app
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """
+    Every test shares one FastAPI TestClient app (and therefore one
+    process-wide rate limiter backend). Without a reset, an unrelated
+    test earlier in the same run could push a later test's /chat calls
+    over the per-IP limit purely from request-count accumulation, not
+    anything the later test is doing. Rate-limiting behavior itself is
+    exercised in tests/test_rate_limit.py against a fresh backend.
+    """
+    from app.rate_limit import get_rate_limiter
+
+    limiter = get_rate_limiter()
+    if hasattr(limiter, "_windows"):
+        limiter._windows.clear()
+
+    yield
+
+
 @pytest.fixture()
 def client() -> TestClient:
     return TestClient(app)

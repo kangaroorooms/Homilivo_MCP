@@ -4,4 +4,9 @@
 # $env:KANGAROO_TOKEN="YOUR_ACTUAL_TOKEN"
 #  .\venv\Scripts\Activate.ps1
 # python -m app.experiments.agent_modes
+
+# python -m uvicorn app.api:app --port 8000
+Fastapi
+# http://127.0.0.1:8000/docs
+chatui
 # http://127.0.0.1:8000/chat-ui

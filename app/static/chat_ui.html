@@ -93,6 +93,24 @@
     color: var(--text);
   }
   #resetBtn:hover { background: var(--bg); }
+  .demo-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #1a7f4b;
+    background: #e6f6ee;
+    border: 1px solid #b7e4cc;
+    border-radius: 999px;
+    padding: 4px 10px;
+    white-space: nowrap;
+  }
+  .conn-badge {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .conn-badge.live { color: #1a7f4b; }
 
   #messages {
     flex: 1;
@@ -178,6 +196,29 @@
     margin-left: 6px;
     vertical-align: middle;
   }
+  .room-amenities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 6px;
+  }
+  .amenity-chip {
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+  .no-results {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    font-size: 13px;
+    font-style: italic;
+  }
 
   form#composer {
     display: flex;
@@ -208,6 +249,15 @@
     color: var(--muted);
     padding: 0 20px 10px;
   }
+
+  @media (max-width: 480px) {
+    header { padding: 12px 14px; }
+    #messages { padding: 14px; }
+    form#composer { padding: 10px 14px; }
+    .hint { padding: 0 14px 8px; }
+    .bubble, .rooms { max-width: 92%; }
+    .header-controls input[type="password"] { width: 130px; }
+  }
 </style>
 </head>
 <body>
@@ -218,6 +268,8 @@
       <div class="subtitle">Browser → FastAPI /chat → guardrails → agent engine → MCP → Homilivo API</div>
     </div>
     <div class="header-controls">
+      <span id="connBadge" class="conn-badge">○ REST</span>
+      <span id="demoBadge" class="demo-badge" hidden>Server credential active</span>
       <input id="tokenInput" type="password" placeholder="Homilivo API token" autocomplete="off">
       <select id="modeSelect" title="Response mode">
         <option value="fast" selected>fast</option>
@@ -230,7 +282,7 @@
   </header>
 
   <div id="messages"></div>
-  <div class="hint">
+  <div class="hint" id="tokenHint">
     Token is kept only in this page's memory for this tab — never saved, never sent anywhere except the
     Authorization header of your own requests to this server.
   </div>
@@ -251,6 +303,13 @@
   // the session id, matching the demo-safety requirement.
   let sessionId = null;
 
+  // Opaque, short-lived demo credential (see app/demo_auth.py). This is
+  // NEVER the real Homilivo token - it only works because the server
+  // recognizes it and substitutes its own server-side credential. When
+  // no server-side credential is configured, this stays null and the
+  // page falls back to the manual token field exactly as before.
+  let demoToken = null;
+
   const messagesEl = document.getElementById("messages");
   const composerEl = document.getElementById("composer");
   const inputEl = document.getElementById("messageInput");
@@ -258,6 +317,30 @@
   const tokenEl = document.getElementById("tokenInput");
   const modeEl = document.getElementById("modeSelect");
   const resetBtn = document.getElementById("resetBtn");
+  const demoBadgeEl = document.getElementById("demoBadge");
+  const tokenHintEl = document.getElementById("tokenHint");
+  const connBadgeEl = document.getElementById("connBadge");
+
+  async function tryEnableDemoCredential() {
+    try {
+      const response = await fetch("/chat-ui/demo-token");
+      if (!response.ok) return; // 404 = no server credential configured; use manual entry.
+
+      const data = await response.json();
+      if (!data || !data.token) return;
+
+      demoToken = data.token;
+      tokenEl.hidden = true;
+      tokenEl.required = false;
+      demoBadgeEl.hidden = false;
+      tokenHintEl.textContent =
+        "This server has a demo credential configured, so no token entry is needed here. " +
+        "The real Homilivo credential never reaches this page.";
+    } catch (err) {
+      // Network hiccup fetching the demo-token endpoint; fall back to
+      // manual entry, same as if the endpoint were simply unavailable.
+    }
+  }
 
   function scrollToBottom() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -301,8 +384,11 @@
     }
   }
 
-  function renderRooms(rooms, selectedRoom) {
-    if (!rooms || rooms.length === 0) return;
+  function renderRooms(rooms, selectedRoom, searchWasPerformed) {
+    if (!rooms || rooms.length === 0) {
+      if (searchWasPerformed) renderNoResults();
+      return;
+    }
 
     const container = document.createElement("div");
     container.className = "rooms";
@@ -348,6 +434,19 @@
 
       card.appendChild(title);
       card.appendChild(meta);
+
+      if (room.amenities && room.amenities.length > 0) {
+        const amenitiesEl = document.createElement("div");
+        amenitiesEl.className = "room-amenities";
+        room.amenities.forEach(function (amenity) {
+          const chip = document.createElement("span");
+          chip.className = "amenity-chip";
+          chip.textContent = amenity;
+          amenitiesEl.appendChild(chip);
+        });
+        card.appendChild(amenitiesEl);
+      }
+
       container.appendChild(card);
     });
 
@@ -358,22 +457,45 @@
     scrollToBottom();
   }
 
+  function renderNoResults() {
+    const row = document.createElement("div");
+    row.className = "row assistant";
+
+    const empty = document.createElement("div");
+    empty.className = "no-results";
+    empty.textContent = "No matching rooms found. Try a different city, budget, or room type.";
+
+    row.appendChild(empty);
+    messagesEl.appendChild(row);
+    scrollToBottom();
+  }
+
   function setLoading(isLoading) {
     sendBtn.disabled = isLoading;
     inputEl.disabled = isLoading;
   }
 
-  async function sendMessage(text) {
-    const token = tokenEl.value.trim();
-
-    if (!token) {
-      appendMessage("assistant", "Please enter your Homilivo API token above first.", true);
-      return;
+  function setConnBadge(state) {
+    // state: "live" (WebSocket streaming), "rest" (fallback), "connecting"
+    if (state === "live") {
+      connBadgeEl.textContent = "● live";
+      connBadgeEl.className = "conn-badge live";
+    } else if (state === "connecting") {
+      connBadgeEl.textContent = "… connecting";
+      connBadgeEl.className = "conn-badge";
+    } else {
+      connBadgeEl.textContent = "○ REST";
+      connBadgeEl.className = "conn-badge";
     }
+  }
 
-    appendMessage("user", text);
+  // --------------------------------------------------------
+  // REST fallback (also the initial path until/unless a WebSocket
+  // connection is confirmed working - see sendMessage below).
+  // --------------------------------------------------------
+
+  async function sendViaRest(text, token) {
     const typingRow = appendTyping();
-    setLoading(true);
 
     try {
       const response = await fetch("/chat", {
@@ -411,10 +533,184 @@
       sessionId = data.session_id;
 
       appendMessage("assistant", data.message);
-      renderRooms(data.rooms, data.selected_room);
+      renderRooms(data.rooms, data.selected_room, data.search_performed);
     } catch (networkError) {
       typingRow.remove();
       appendMessage("assistant", "Could not reach the server. Please check your connection and try again.", true);
+    }
+  }
+
+  // --------------------------------------------------------
+  // WebSocket streaming, with REST as the fallback whenever a
+  // connection cannot be opened or drops. Reconnect is attempted
+  // lazily on the next message rather than eagerly in the background,
+  // keeping the demo simple while still recovering automatically.
+  // --------------------------------------------------------
+
+  let socket = null;
+  let socketToken = null;
+  let turnTypingRow = null;
+  let turnBubbleRow = null;
+  let turnSettle = null; // resolves the in-flight sendViaSocket() promise
+
+  function wsUrlFor(token) {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return proto + "//" + location.host + "/ws/chat?token=" + encodeURIComponent(token);
+  }
+
+  function openSocket(token) {
+    return new Promise(function (resolve, reject) {
+      let settled = false;
+      let ws;
+      try {
+        ws = new WebSocket(wsUrlFor(token));
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
+      const timeoutId = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        try { ws.close(); } catch (err) { /* ignore */ }
+        reject(new Error("WebSocket connect timeout"));
+      }, 4000);
+
+      ws.addEventListener("open", function () {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        resolve(ws);
+      });
+
+      ws.addEventListener("error", function () {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        reject(new Error("WebSocket connection failed"));
+      });
+
+      ws.addEventListener("close", function () {
+        if (socket === ws) {
+          socket = null;
+          setConnBadge("rest");
+        }
+        // A turn that was mid-flight when the socket dropped must not
+        // hang forever waiting for a "done"/"error" that will never
+        // arrive.
+        if (turnSettle) {
+          const settleFn = turnSettle;
+          turnSettle = null;
+          settleFn(false);
+        }
+      });
+
+      ws.addEventListener("message", handleSocketMessage);
+    });
+  }
+
+  async function ensureSocket(token) {
+    if (socket && socket.readyState === WebSocket.OPEN && socketToken === token) {
+      return socket;
+    }
+    if (socket) {
+      try { socket.close(); } catch (err) { /* ignore */ }
+      socket = null;
+    }
+    setConnBadge("connecting");
+    socket = await openSocket(token);
+    socketToken = token;
+    setConnBadge("live");
+    return socket;
+  }
+
+  function handleSocketMessage(event) {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch (err) {
+      return;
+    }
+
+    if (data.event === "ping") return;
+
+    if (data.event === "typing") {
+      turnTypingRow = appendTyping();
+      return;
+    }
+
+    if (data.event === "token") {
+      if (turnTypingRow) { turnTypingRow.remove(); turnTypingRow = null; }
+      if (!turnBubbleRow) turnBubbleRow = appendMessage("assistant", "");
+      turnBubbleRow.querySelector(".bubble").textContent += data.text;
+      scrollToBottom();
+      return;
+    }
+
+    if (data.event === "done") {
+      if (turnTypingRow) { turnTypingRow.remove(); turnTypingRow = null; }
+      if (turnBubbleRow) {
+        turnBubbleRow.querySelector(".bubble").textContent = data.message;
+      } else {
+        appendMessage("assistant", data.message);
+      }
+      turnBubbleRow = null;
+      sessionId = data.session_id;
+      renderRooms(data.rooms, data.selected_room, data.search_performed);
+      if (turnSettle) { const fn = turnSettle; turnSettle = null; fn(true); }
+      return;
+    }
+
+    if (data.event === "error") {
+      if (turnTypingRow) { turnTypingRow.remove(); turnTypingRow = null; }
+      turnBubbleRow = null;
+      appendMessage("assistant", data.detail || "Something went wrong.", true);
+      if (turnSettle) { const fn = turnSettle; turnSettle = null; fn(true); }
+      return;
+    }
+  }
+
+  function sendViaSocket(ws, text) {
+    return new Promise(function (resolve) {
+      turnSettle = resolve;
+      try {
+        ws.send(JSON.stringify({ message: text, session_id: sessionId, mode: modeEl.value }));
+      } catch (err) {
+        turnSettle = null;
+        resolve(false);
+      }
+    });
+  }
+
+  async function sendMessage(text) {
+    const token = demoToken || tokenEl.value.trim();
+
+    if (!token) {
+      appendMessage("assistant", "Please enter your Homilivo API token above first.", true);
+      return;
+    }
+
+    appendMessage("user", text);
+    setLoading(true);
+
+    try {
+      let ws = null;
+      try {
+        ws = await ensureSocket(token);
+      } catch (err) {
+        ws = null;
+      }
+
+      if (ws) {
+        const handled = await sendViaSocket(ws, text);
+        if (!handled) {
+          // The socket dropped mid-turn; fall back to REST for this
+          // message so the user still gets an answer.
+          await sendViaRest(text, token);
+        }
+      } else {
+        await sendViaRest(text, token);
+      }
     } finally {
       setLoading(false);
     }
@@ -448,6 +744,8 @@
     "Hi! I'm the Homilivo room-search assistant. Enter your API token above, then try: " +
     "\"Find rooms in Jaipur\"."
   );
+
+  tryEnableDemoCredential();
 })();
 </script>
 </body>

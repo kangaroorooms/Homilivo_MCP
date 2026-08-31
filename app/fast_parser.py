@@ -5,14 +5,71 @@ import re
 # FAST USER REQUEST PARSER
 # ============================================================
 
-ROOM_TYPE_PATTERNS = [
-    "PG",
-    "1BHK",
-    "2BHK",
-    "3BHK",
-    "1RK",
-    "Single"
-]
+# Matches BHK/RK room types for any N and either spacing ("3BHK" or
+# "3 bhk"), plus PG and Single as fixed, word-boundary-safe tokens.
+_ROOM_TYPE_RE = re.compile(
+    r"\b(?P<bhk>\d+)\s*BHK\b"
+    r"|\b(?P<rk>\d+)\s*RK\b"
+    r"|\b(?P<pg>PG)\b"
+    r"|\b(?P<single>Single)\b",
+    re.IGNORECASE
+)
+
+
+# Common real-world shorthand for a city/locality name, as users
+# actually type it (not full official names). Deliberately small and
+# explicit - anything not listed here just falls through to .title().
+CITY_ALIASES = {
+    "blr": "Bangalore",
+    "blore": "Bangalore",
+    "bombay": "Mumbai",
+    "hyd": "Hyderabad",
+    "hsr": "HSR Layout",
+}
+
+# Words that end a city/locality capture even though they are not
+# capitalized in casual text - so "in HSR Layout for a family" stops
+# at "for" instead of swallowing the rest of the sentence, while still
+# allowing a locality name to span more than one word (e.g. "HSR
+# Layout", "Electronic City").
+CITY_STOP_WORDS = (
+    "under", "below", "above", "around", "near", "upto", "for",
+    "between", "with", "without", "and", "over",
+)
+
+_CITY_STOP_PATTERN = "|".join(CITY_STOP_WORDS)
+
+
+def _resolve_city_name(candidate: str) -> str:
+    """
+    Resolve a captured city/locality phrase to its display form: a
+    known alias expansion, or the phrase itself, title-cased.
+    """
+
+    alias = CITY_ALIASES.get(candidate.strip().lower())
+
+    if alias is not None:
+
+        return alias
+
+    return candidate.strip().title()
+
+
+def _parse_price_token(raw: str) -> int:
+    """
+    Parse a captured price token into an integer rupee amount.
+
+    Handles plain numbers ("15000"), comma-grouped numbers ("15,000")
+    and the "k" shorthand ("15k" -> 15000), for any digit run.
+    """
+
+    cleaned = raw.strip().replace(",", "").replace(" ", "")
+
+    if cleaned and cleaned[-1] in ("k", "K"):
+
+        return int(float(cleaned[:-1]) * 1000)
+
+    return int(cleaned)
 
 
 IDEAL_FOR_PATTERNS = {
@@ -53,14 +110,15 @@ def extract_search_parameters(
     # "Jaipur rooms"
 
     city_match = re.search(
-        r"\b(?:in|from|at)\s+([A-Za-z]+)",
+        rf"\b(?:in|from|at)\s+([A-Za-z][A-Za-z\s]*?)"
+        rf"(?=\s+(?:{_CITY_STOP_PATTERN})\b|[?.!,]|$)",
         query,
         re.IGNORECASE
     )
 
     if city_match:
 
-        city = city_match.group(1)
+        city = city_match.group(1).strip()
 
         # Avoid treating these as cities
         ignored_words = {
@@ -73,7 +131,7 @@ def extract_search_parameters(
 
         if city.lower() not in ignored_words:
 
-            result["city"] = city.title()
+            result["city"] = _resolve_city_name(city)
 
     # Fallback for phrasing that omits a preposition entirely
     # ("any rooms Bangalore?", "room in Bangalore" already matched
@@ -103,7 +161,7 @@ def extract_search_parameters(
                 "pg", "apartment", "apartments",
             }:
 
-                result["city"] = candidate.title()
+                result["city"] = _resolve_city_name(candidate)
 
     # ========================================================
     # PRICE
@@ -115,53 +173,83 @@ def extract_search_parameters(
     # under ₹15,000
     # below ₹15000
 
-    max_price_match = re.search(
-        r"(?:under|below|upto|up to)\s*[₹rs.\s]*([\d,]+)",
+    # Handles:
+    # between 15000 and 25000
+    # between ₹15,000 and ₹25,000
+    # between 15k and 25k
+
+    range_match = re.search(
+        r"between\s*[₹rs.\s]*([\d,]+\s*[kK]?)\s*"
+        r"(?:and|to)\s*[₹rs.\s]*([\d,]+\s*[kK]?)",
         query,
         re.IGNORECASE
     )
 
-    if max_price_match:
+    if range_match:
 
-        price_text = max_price_match.group(1)
+        result["min_price"] = _parse_price_token(
+            range_match.group(1)
+        )
 
-        price_text = price_text.replace(",", "")
+        result["max_price"] = _parse_price_token(
+            range_match.group(2)
+        )
 
-        result["max_price"] = int(price_text)
+    max_price_match = re.search(
+        r"(?:under|below|upto|up to)\s*[₹rs.\s]*([\d,]+\s*[kK]?)",
+        query,
+        re.IGNORECASE
+    )
+
+    if max_price_match and result["max_price"] is None:
+
+        result["max_price"] = _parse_price_token(
+            max_price_match.group(1)
+        )
 
     # ========================================================
     # MINIMUM PRICE
     # ========================================================
 
     min_price_match = re.search(
-        r"(?:above|over|from)\s*[₹rs.\s]*([\d,]+)",
+        r"(?:above|over|from)\s*[₹rs.\s]*([\d,]+\s*[kK]?)",
         query,
         re.IGNORECASE
     )
 
-    if min_price_match:
+    if min_price_match and result["min_price"] is None:
 
-        price_text = min_price_match.group(1)
-
-        price_text = price_text.replace(",", "")
-
-        result["min_price"] = int(price_text)
+        result["min_price"] = _parse_price_token(
+            min_price_match.group(1)
+        )
 
     # ========================================================
     # ROOM TYPES
     # ========================================================
 
-    upper_query = query.upper()
+    room_types = []
 
-    for room_type in ROOM_TYPE_PATTERNS:
+    for match in _ROOM_TYPE_RE.finditer(query):
 
-        if room_type.upper() in upper_query:
+        if match.group("bhk"):
 
-            result["room_types"].append(room_type)
+            room_types.append(f"{match.group('bhk')}BHK")
+
+        elif match.group("rk"):
+
+            room_types.append(f"{match.group('rk')}RK")
+
+        elif match.group("pg"):
+
+            room_types.append("PG")
+
+        elif match.group("single"):
+
+            room_types.append("Single")
 
     # Remove duplicates
     result["room_types"] = list(
-        dict.fromkeys(result["room_types"])
+        dict.fromkeys(room_types)
     )
 
     # ========================================================

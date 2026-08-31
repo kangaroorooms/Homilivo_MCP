@@ -184,6 +184,15 @@ ROUTING_CASES = [
     # over an active follow-up just because the follow-up happens to
     # mention a city and the word "room".
     ("is this room actually in Jaipur?", _state_after_search, "ROOM_FOLLOWUP"),
+    # Regression: a cityless message still routes to NEW_SEARCH when it
+    # names a room type or price bound - those are just as strong a
+    # search signal as a city - see looks_like_general_room_search().
+    ("3 bhk under 15000", ConversationState, "NEW_SEARCH"),
+    ("1RK under 8000", ConversationState, "NEW_SEARCH"),
+    # Lock: room vocabulary alone, with no resolvable city/price/type/
+    # audience, must still fall through to UNKNOWN rather than being
+    # treated as a search on nothing.
+    ("any cheap rooms???", ConversationState, "UNKNOWN"),
 ]
 
 

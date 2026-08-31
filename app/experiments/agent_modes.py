@@ -2706,9 +2706,13 @@ def looks_like_general_room_search(
 ) -> bool:
     """
     True when the message both mentions room/accommodation vocabulary
-    AND contains a city extract_search_parameters() can resolve.
-    Works for any city the backend supports - see module comment
-    above for why this exists and why it is checked late.
+    AND extract_search_parameters() can resolve at least one concrete
+    search filter from it - a city, but also a room type, a price
+    bound, or an ideal-for audience, any of which is just as strong a
+    signal of real search intent as a city name (e.g. "3 bhk under
+    15000" with no city). Works for any city/room-type/price the
+    backend supports - see module comment above for why this exists
+    and why it is checked late.
     """
 
     text = normalize_text(
@@ -2719,10 +2723,16 @@ def looks_like_general_room_search(
 
         return False
 
+    params = extract_search_parameters(
+        user_query
+    )
+
     return bool(
-        extract_search_parameters(
-            user_query
-        ).get("city")
+        params.get("city")
+        or params.get("room_types")
+        or params.get("min_price")
+        or params.get("max_price")
+        or params.get("ideal_for")
     )
 
 

@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homilivo Room Search - Demo</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --border: #e2e4e9;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --accent: #2f6fed;
+    --accent-dark: #2255c4;
+    --user-bubble: #2f6fed;
+    --user-bubble-text: #ffffff;
+    --bot-bubble: #eef0f4;
+    --bot-bubble-text: #1f2430;
+    --error: #b3261e;
+    --error-bg: #fdecea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+  }
+  .app {
+    width: 100%;
+    max-width: 780px;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+  header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 16px;
+    margin: 0;
+    font-weight: 600;
+  }
+  header .subtitle {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .header-controls input[type="password"] {
+    width: 180px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  select {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    background: white;
+  }
+  button {
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    padding: 7px 12px;
+    font-weight: 500;
+  }
+  #resetBtn {
+    background: white;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  #resetBtn:hover { background: var(--bg); }
+
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .row { display: flex; }
+  .row.user { justify-content: flex-end; }
+  .row.assistant { justify-content: flex-start; }
+
+  .bubble {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .row.user .bubble {
+    background: var(--user-bubble);
+    color: var(--user-bubble-text);
+    border-bottom-right-radius: 4px;
+  }
+  .row.assistant .bubble {
+    background: var(--bot-bubble);
+    color: var(--bot-bubble-text);
+    border-bottom-left-radius: 4px;
+  }
+  .row.assistant .bubble.error {
+    background: var(--error-bg);
+    color: var(--error);
+  }
+  .row.assistant .bubble.typing {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .rooms {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+    max-width: 78%;
+  }
+  .room-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: white;
+    font-size: 13px;
+  }
+  .room-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .room-card .room-title {
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .room-card .room-meta {
+    color: var(--muted);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .room-card .room-price {
+    color: var(--accent-dark);
+    font-weight: 600;
+  }
+  .selected-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: var(--accent-dark);
+    background: #e8effe;
+    border-radius: 999px;
+    padding: 1px 8px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  form#composer {
+    display: flex;
+    gap: 8px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  #messageInput {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 14px;
+    outline: none;
+  }
+  #messageInput:focus { border-color: var(--accent); }
+  #sendBtn {
+    background: var(--accent);
+    color: white;
+    padding: 10px 18px;
+    border-radius: 20px;
+  }
+  #sendBtn:disabled { background: #a9c0f5; cursor: not-allowed; }
+
+  .hint {
+    font-size: 11px;
+    color: var(--muted);
+    padding: 0 20px 10px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Homilivo Room Search — Demo</h1>
+      <div class="subtitle">Browser → FastAPI /chat → guardrails → agent engine → MCP → Homilivo API</div>
+    </div>
+    <div class="header-controls">
+      <input id="tokenInput" type="password" placeholder="Homilivo API token" autocomplete="off">
+      <select id="modeSelect" title="Response mode">
+        <option value="fast" selected>fast</option>
+        <option value="qwen">qwen</option>
+        <option value="gemma">gemma</option>
+        <option value="groq">groq</option>
+      </select>
+      <button id="resetBtn" type="button">Clear / Reset</button>
+    </div>
+  </header>
+
+  <div id="messages"></div>
+  <div class="hint">
+    Token is kept only in this page's memory for this tab — never saved, never sent anywhere except the
+    Authorization header of your own requests to this server.
+  </div>
+
+  <form id="composer">
+    <input id="messageInput" type="text" maxlength="500" autocomplete="off"
+           placeholder="e.g. Find rooms in Jaipur" required>
+    <button id="sendBtn" type="submit">Send</button>
+  </form>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // Per-tab conversation state, kept only in JS variables (page memory).
+  // No localStorage / sessionStorage / cookies are used for the token or
+  // the session id, matching the demo-safety requirement.
+  let sessionId = null;
+
+  const messagesEl = document.getElementById("messages");
+  const composerEl = document.getElementById("composer");
+  const inputEl = document.getElementById("messageInput");
+  const sendBtn = document.getElementById("sendBtn");
+  const tokenEl = document.getElementById("tokenInput");
+  const modeEl = document.getElementById("modeSelect");
+  const resetBtn = document.getElementById("resetBtn");
+
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function appendMessage(role, text, isError) {
+    const row = document.createElement("div");
+    row.className = "row " + role;
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble" + (isError ? " error" : "");
+    bubble.textContent = text;
+
+    row.appendChild(bubble);
+    messagesEl.appendChild(row);
+    scrollToBottom();
+    return row;
+  }
+
+  function appendTyping() {
+    const row = document.createElement("div");
+    row.className = "row assistant";
+    row.dataset.typing = "true";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble typing";
+    bubble.textContent = "Assistant is typing...";
+
+    row.appendChild(bubble);
+    messagesEl.appendChild(row);
+    scrollToBottom();
+    return row;
+  }
+
+  function formatPrice(value) {
+    if (value === null || value === undefined) return null;
+    try {
+      return "₹" + Number(value).toLocaleString("en-IN") + "/month";
+    } catch (err) {
+      return String(value);
+    }
+  }
+
+  function renderRooms(rooms, selectedRoom) {
+    if (!rooms || rooms.length === 0) return;
+
+    const container = document.createElement("div");
+    container.className = "rooms";
+
+    rooms.forEach(function (room) {
+      const card = document.createElement("div");
+      const isSelected = selectedRoom && selectedRoom.id === room.id;
+      card.className = "room-card" + (isSelected ? " selected" : "");
+
+      const title = document.createElement("div");
+      title.className = "room-title";
+      title.textContent = room.title || "Untitled room";
+      if (isSelected) {
+        const tag = document.createElement("span");
+        tag.className = "selected-tag";
+        tag.textContent = "SELECTED";
+        title.appendChild(tag);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "room-meta";
+
+      const location = [room.location, room.city].filter(Boolean).join(", ");
+      if (location) {
+        const locEl = document.createElement("span");
+        locEl.textContent = location;
+        meta.appendChild(locEl);
+      }
+
+      if (room.room_type) {
+        const typeEl = document.createElement("span");
+        typeEl.textContent = room.room_type;
+        meta.appendChild(typeEl);
+      }
+
+      const price = formatPrice(room.price_per_month);
+      if (price) {
+        const priceEl = document.createElement("span");
+        priceEl.className = "room-price";
+        priceEl.textContent = price;
+        meta.appendChild(priceEl);
+      }
+
+      card.appendChild(title);
+      card.appendChild(meta);
+      container.appendChild(card);
+    });
+
+    const row = document.createElement("div");
+    row.className = "row assistant";
+    row.appendChild(container);
+    messagesEl.appendChild(row);
+    scrollToBottom();
+  }
+
+  function setLoading(isLoading) {
+    sendBtn.disabled = isLoading;
+    inputEl.disabled = isLoading;
+  }
+
+  async function sendMessage(text) {
+    const token = tokenEl.value.trim();
+
+    if (!token) {
+      appendMessage("assistant", "Please enter your Homilivo API token above first.", true);
+      return;
+    }
+
+    appendMessage("user", text);
+    const typingRow = appendTyping();
+    setLoading(true);
+
+    try {
+      const response = await fetch("/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token,
+        },
+        body: JSON.stringify({
+          message: text,
+          session_id: sessionId,
+          mode: modeEl.value,
+        }),
+      });
+
+      typingRow.remove();
+
+      if (!response.ok) {
+        let detail = response.statusText;
+        try {
+          const errorBody = await response.json();
+          if (errorBody && errorBody.detail) {
+            detail = typeof errorBody.detail === "string"
+              ? errorBody.detail
+              : JSON.stringify(errorBody.detail);
+          }
+        } catch (parseError) {
+          // Non-JSON error body; fall back to statusText already set above.
+        }
+        appendMessage("assistant", "Error (" + response.status + "): " + detail, true);
+        return;
+      }
+
+      const data = await response.json();
+      sessionId = data.session_id;
+
+      appendMessage("assistant", data.message);
+      renderRooms(data.rooms, data.selected_room);
+    } catch (networkError) {
+      typingRow.remove();
+      appendMessage("assistant", "Could not reach the server. Please check your connection and try again.", true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  composerEl.addEventListener("submit", function (event) {
+    event.preventDefault();
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = "";
+    sendMessage(text);
+  });
+
+  resetBtn.addEventListener("click", async function () {
+    if (sessionId) {
+      try {
+        await fetch("/chat/reset?session_id=" + encodeURIComponent(sessionId), {
+          method: "POST",
+        });
+      } catch (err) {
+        // Best-effort server-side cleanup; clear the UI regardless.
+      }
+    }
+    sessionId = null;
+    messagesEl.innerHTML = "";
+    appendMessage("assistant", "Conversation cleared. Ask me to find rooms whenever you're ready.");
+  });
+
+  appendMessage(
+    "assistant",
+    "Hi! I'm the Homilivo room-search assistant. Enter your API token above, then try: " +
+    "\"Find rooms in Jaipur\"."
+  );
+})();
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 
+import fakeredis
 import pytest
 
 import app.demo_auth as demo_auth
@@ -26,7 +27,8 @@ def _clear_demo_tokens():
 
 
 # ============================================================
-# UNIT: app/demo_auth.py
+# UNIT: app/demo_auth.py (memory backend, via the public functions -
+# these exercise get_demo_auth_backend()'s default in-memory choice)
 # ============================================================
 
 def test_issue_returns_none_without_server_credential(monkeypatch):
@@ -61,6 +63,51 @@ def test_redeem_rejects_expired_token(monkeypatch):
     demo_auth._tokens[token] = time.time() - demo_auth.DEMO_TOKEN_TTL_SECONDS - 1
 
     assert demo_auth.redeem_demo_token(token) is None
+
+
+# ============================================================
+# UNIT: DemoAuthBackend contract - parametrized over both backends
+# ============================================================
+#
+# RedisDemoAuthBackend is exercised here against fakeredis (a pure-
+# Python, in-memory Redis-protocol server), so its actual code path
+# gets the same coverage as InMemoryDemoAuthBackend without requiring
+# a live Redis server. These call the DemoAuthBackend directly (not
+# the module-level issue_demo_token()/redeem_demo_token(), which are
+# always wired to whichever backend get_demo_auth_backend() currently
+# returns) so both backends can be tested side by side in one process.
+
+@pytest.fixture(params=["memory", "redis"])
+def backend_factory(request):
+    if request.param == "redis":
+        client = fakeredis.FakeStrictRedis(decode_responses=True)
+        return lambda: demo_auth.RedisDemoAuthBackend(redis_client=client)
+    return lambda: demo_auth.InMemoryDemoAuthBackend()
+
+
+def test_backend_issue_and_get_issued_at_round_trip(backend_factory):
+    backend = backend_factory()
+    now = time.time()
+
+    backend.issue("token-a", now)
+
+    assert backend.get_issued_at("token-a") == pytest.approx(now, abs=1.0)
+
+
+def test_backend_get_issued_at_returns_none_for_unknown_token(backend_factory):
+    backend = backend_factory()
+
+    assert backend.get_issued_at("never-issued") is None
+
+
+def test_backend_delete_removes_the_token(backend_factory):
+    backend = backend_factory()
+    now = time.time()
+
+    backend.issue("token-a", now)
+    backend.delete("token-a")
+
+    assert backend.get_issued_at("token-a") is None
 
 
 # ============================================================

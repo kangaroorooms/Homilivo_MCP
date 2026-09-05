@@ -63,6 +63,10 @@ from app.llm.gemma import (
     GemmaError,
 )
 
+from pydantic import ValidationError
+
+from app.schemas.chat import SearchParameters
+
 from app.server import mcp
 
 # Stable-platform-question grounding (verification, fees, contacting
@@ -3202,6 +3206,257 @@ def extract_clarification_parameters(
 
 
 # ============================================================
+# PYDANTIC-VALIDATED LLM EXTRACTION FALLBACK
+# ============================================================
+# The deterministic regex fast_parser (app/fast_parser.py) STAYS the
+# default extraction tier - it is free, instant, and correct for the
+# overwhelming majority of queries. This section adds a fallback ONLY
+# for the cases where that parser comes back with too little to act
+# on. It never runs for a query the regex parser already handled well,
+# so an LLM call is never on the critical path for the common case.
+#
+# Output is forced through app.schemas.chat.SearchParameters (strict,
+# extra="forbid", enums mirrored from guardrails/parameter_guardrail.py
+# exactly). Anything that fails that validation is discarded - the
+# EXISTING clarification-question behavior in process_message() (ask
+# for the missing city, etc.) is what runs next, never unvalidated
+# LLM output.
+
+_PARAMETER_EXTRACTION_SYSTEM_PROMPT = """
+You are the parameter-extraction component of the Homilivo room-search
+assistant.
+
+Your ONLY job is to read a user's room-search request and return the
+search parameters it expresses, as JSON.
+
+Return ONLY valid JSON using exactly this structure:
+
+{
+  "city": "<city name or null>",
+  "min_price": <integer rupees per month or null>,
+  "max_price": <integer rupees per month or null>,
+  "room_types": [<zero or more of: "PG", "1BHK", "2BHK", "3BHK", "1RK", "SINGLE">],
+  "ideal_for": [<zero or more of: "STUDENTS", "WORKING PROFESSIONALS", "FAMILY">],
+  "sort": "latest",
+  "limit": 10
+}
+
+Rules:
+- Only use information the user actually stated or clearly implied.
+- Vague words like "cheap", "affordable", "budget", or "expensive" do
+  NOT imply any specific number. Leave min_price/max_price null unless
+  the user actually gives a number.
+- "k" after a number means thousand (e.g. "15k" = 15000, "20k" = 20000).
+- Casual city abbreviations/misspellings refer to real Indian cities
+  (e.g. "blr" = Bangalore) - normalize to the full city name.
+- Mentions of a spouse, partner, kids, or "my family" imply
+  ideal_for includes "FAMILY". Mentions of classmates/college/hostel
+  imply "STUDENTS". Mentions of colleagues/office/work imply
+  "WORKING PROFESSIONALS". Only add one of these when the text
+  actually supports it.
+- Do not invent a city, price, room type, or ideal_for that the text
+  does not support.
+- Do not invent any field not listed above (for example, never return
+  a gender/gender_preference field - the search system has no such
+  parameter).
+- room_types and ideal_for must only contain the exact values listed
+  above (or be empty lists). Only include a room type if the user
+  named that specific type - never list every possible type "to be
+  safe".
+- When genuinely unsure whether something was intended, leave it out
+  (null or an empty list) rather than guessing.
+- If nothing can be determined for a field, use null (or an empty
+  list for room_types/ideal_for).
+- Return JSON only, no extra commentary.
+"""
+
+
+class ParameterExtractionError(Exception):
+    """Raised when no LLM tier could produce a usable extraction."""
+
+
+def _extraction_is_unhelpful(
+    extracted: dict[str, Any],
+    is_refinement: bool,
+) -> bool:
+    """
+    Decide whether the regex fast_parser's result is too thin to act
+    on, and the LLM fallback should be tried.
+
+    NEW_SEARCH: a search cannot proceed at all without a city, so a
+    missing city always counts as unhelpful regardless of what else
+    was found. Separately, if the parser found a price but nothing
+    describing WHAT is being searched for (no room type, no ideal-for
+    group), that is a sign the query has descriptive content the
+    regex missed (e.g. implicit occupancy like "for me and my wife") -
+    worth a second look.
+
+    SEARCH_REFINEMENT: refinements normally omit the city on purpose
+    (it already exists in the previous search), so a missing city here
+    is NOT a signal of failure. Only genuinely finding nothing new
+    (no price, no room type, no ideal-for) counts as unhelpful.
+    """
+
+    has_price = (
+        extracted.get("min_price") is not None
+        or extracted.get("max_price") is not None
+    )
+    has_room_types = bool(extracted.get("room_types"))
+    has_ideal_for = bool(extracted.get("ideal_for"))
+
+    if is_refinement:
+        return not (has_price or has_room_types or has_ideal_for)
+
+    if not extracted.get("city"):
+        return True
+
+    return has_price and not has_room_types and not has_ideal_for
+
+
+def _parse_llm_json_object(content: str) -> dict[str, Any]:
+    parsed = json.loads(content)
+
+    if not isinstance(parsed, dict):
+        raise ParameterExtractionError(
+            "LLM extraction response must be a JSON object."
+        )
+
+    return parsed
+
+
+def _extract_search_parameters_via_gemma(
+    user_query: str,
+) -> dict[str, Any]:
+
+    try:
+
+        response = chat(
+            model="gemma3:4b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": _PARAMETER_EXTRACTION_SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": user_query,
+                },
+            ],
+            format="json",
+        )
+
+        return _parse_llm_json_object(
+            response["message"]["content"]
+        )
+
+    except ParameterExtractionError:
+
+        raise
+
+    except Exception as error:
+
+        raise ParameterExtractionError(
+            f"Gemma extraction failed: {error}"
+        ) from error
+
+
+def _extract_search_parameters_via_groq(
+    user_query: str,
+) -> dict[str, Any]:
+
+    try:
+
+        client = _get_groq_client()
+
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": _PARAMETER_EXTRACTION_SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": user_query,
+                },
+            ],
+            response_format={"type": "json_object"},
+        )
+
+        return _parse_llm_json_object(
+            response.choices[0].message.content
+        )
+
+    except ParameterExtractionError:
+
+        raise
+
+    except Exception as error:
+
+        raise ParameterExtractionError(
+            f"Groq extraction failed: {error}"
+        ) from error
+
+
+def extract_search_parameters_via_llm(
+    user_query: str,
+) -> dict[str, Any] | None:
+    """
+    Best-effort LLM extraction, forced through the strict
+    SearchParameters schema.
+
+    Tries the local Gemma model first (free, already used elsewhere in
+    this file), then Groq if Gemma is unavailable. Returns a validated
+    .model_dump()-shaped dict on success, or None if every tier failed
+    or the output didn't pass schema validation - callers must treat
+    None exactly like "no extra information available" and fall back
+    to the existing clarification-question behavior.
+    """
+
+    raw: dict[str, Any] | None = None
+
+    for extractor in (
+        _extract_search_parameters_via_gemma,
+        _extract_search_parameters_via_groq,
+    ):
+
+        try:
+
+            raw = extractor(user_query)
+            break
+
+        except ParameterExtractionError as error:
+
+            print_failure(
+                f"LLM parameter extraction tier failed: {error}"
+            )
+
+            continue
+
+    if raw is None:
+
+        return None
+
+    try:
+
+        validated = SearchParameters(**raw)
+
+    except ValidationError as error:
+
+        print_failure(
+            f"LLM extraction failed schema validation, discarding: {error}"
+        )
+
+        return None
+
+    print_success(
+        "LLM parameter extraction validated"
+    )
+
+    return validated.to_search_arguments()
+
+
+# ============================================================
 # EXTRACT ROOMS FROM MCP
 # ============================================================
 
@@ -4763,6 +5018,27 @@ async def process_message(
 
             return result_state
 
+        if _extraction_is_unhelpful(
+            extracted_parameters,
+            is_refinement=True,
+        ):
+
+            print_step(
+                "Regex extraction found nothing new - "
+                "trying LLM extraction fallback..."
+            )
+
+            llm_parameters = extract_search_parameters_via_llm(
+                user_query
+            )
+
+            if llm_parameters is not None:
+
+                extracted_parameters = merge_search_parameters(
+                    llm_parameters,
+                    extracted_parameters,
+                )
+
         search_request = merge_search_parameters(
             state.previous_search,
             extracted_parameters,
@@ -4798,6 +5074,27 @@ async def process_message(
             )
 
             return result_state
+
+        if _extraction_is_unhelpful(
+            extracted_parameters,
+            is_refinement=False,
+        ):
+
+            print_step(
+                "Regex extraction found too little to search on - "
+                "trying LLM extraction fallback..."
+            )
+
+            llm_parameters = extract_search_parameters_via_llm(
+                user_query
+            )
+
+            if llm_parameters is not None:
+
+                extracted_parameters = merge_search_parameters(
+                    llm_parameters,
+                    extracted_parameters,
+                )
 
         search_request = (
             extracted_parameters

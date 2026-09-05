@@ -202,3 +202,130 @@ def test_ws_connection_rejected_when_rate_limited(client: TestClient, monkeypatc
             pass
 
     assert exc_info.value.code == 4429
+
+
+def test_ws_mid_turn_rate_limit_sends_error_without_closing(
+    client: TestClient, monkeypatch, mock_homilivo_success,
+):
+    """
+    Unlike a limit exceeded AT CONNECT TIME (closes with 4429 - see
+    test_ws_connection_rejected_when_rate_limited above), a limit hit
+    on a later message over an already-open connection sends an error
+    event and keeps the connection open, so a client is not forced to
+    reconnect just because it briefly exceeded its budget.
+    """
+    fresh = InMemoryRateLimiter()
+    monkeypatch.setattr(rate_limit_module, "_backend", fresh)
+    monkeypatch.setattr(rate_limit_module, "RATE_LIMIT_MAX_REQUESTS", 1)
+    monkeypatch.setattr(rate_limit_module, "RATE_LIMIT_WINDOW_SECONDS", 60.0)
+
+    with client.websocket_connect("/ws/chat?token=test-homilivo-token") as ws:
+        # The connect-time check already spent the budget of 1.
+        ws.send_json({"message": "find rooms in Jaipur", "mode": "fast"})
+
+        error_event = ws.receive_json()
+        assert error_event["event"] == "error"
+
+
+def test_ws_malformed_json_sends_error_without_closing(
+    client: TestClient, mock_homilivo_success,
+):
+    with client.websocket_connect("/ws/chat?token=test-homilivo-token") as ws:
+        ws.send_text("not valid json{{{")
+
+        error_event = ws.receive_json()
+        assert error_event["event"] == "error"
+
+        # Connection must still be usable after a malformed message.
+        ws.send_json({"message": "find rooms in Jaipur", "mode": "fast"})
+        done = _finish_turn(ws)
+        assert done["room_count"] == 3
+
+
+def test_ws_heartbeat_ping_is_sent_during_a_quiet_period(
+    client: TestClient, monkeypatch,
+):
+    """
+    With no turn in flight, a quiet connection must still hear from
+    the server at least once per WS_HEARTBEAT_INTERVAL_SECONDS -
+    proof the server-side loop (and the connection) is alive, and the
+    frontend's signal for detecting a truly dead socket. The interval
+    is patched down so this test doesn't need to wait 20 real seconds.
+    """
+    import app.api as api_module
+
+    monkeypatch.setattr(api_module, "WS_HEARTBEAT_INTERVAL_SECONDS", 0.05)
+
+    with client.websocket_connect("/ws/chat?token=test-homilivo-token") as ws:
+        ping = ws.receive_json()
+        assert ping == {"event": "ping"}
+
+        # The connection must still be fully usable after a heartbeat.
+        second_ping = ws.receive_json()
+        assert second_ping == {"event": "ping"}
+
+
+def test_ws_abrupt_client_disconnect_mid_turn_does_not_break_the_server(
+    client: TestClient, mock_homilivo_success,
+):
+    """
+    Closing the socket before a turn's event sequence finishes (here,
+    right after "typing", before any token/done arrives) must not
+    crash the server or leak state that breaks later requests - the
+    real-world case of a user closing the browser tab mid-reply.
+    """
+    with client.websocket_connect("/ws/chat?token=test-homilivo-token") as ws:
+        ws.send_json({"message": "find rooms in Jaipur", "mode": "fast"})
+        first = ws.receive_json()
+        assert first["event"] == "typing"
+        # Exit the `with` block now, dropping the connection mid-turn
+        # instead of draining the remaining token/done events.
+
+    # The server must still be healthy: an unrelated fresh request...
+    assert client.get("/health").status_code == 200
+
+    # ...and a brand new WebSocket connection must work normally.
+    with client.websocket_connect("/ws/chat?token=test-homilivo-token") as ws2:
+        ws2.send_json({"message": "find rooms in Jaipur", "mode": "fast"})
+        done = _finish_turn(ws2)
+        assert done["room_count"] == 3
+
+
+def test_ws_done_event_matches_rest_chat_payload_shape(
+    client: TestClient, mock_homilivo_success, auth_headers,
+):
+    """
+    /chat (REST) and /ws/chat's "done" event are built from the exact
+    same turn dict (app.api._run_chat_turn - see the shared-helper
+    docstring there). This proves that holds at the wire level: the
+    same key set, and - since both hit the same mocked Homilivo
+    fixture with the same query - the same deterministic content,
+    aside from the necessarily-unique session_id/request_id.
+    """
+    rest_body = client.post(
+        "/chat",
+        json={"message": "find rooms in Jaipur", "mode": "fast"},
+        headers=auth_headers,
+    ).json()
+
+    with client.websocket_connect("/ws/chat?token=test-homilivo-token") as ws:
+        ws.send_json({"message": "find rooms in Jaipur", "mode": "fast"})
+        done_event = _finish_turn(ws)
+
+    ws_body = {k: v for k, v in done_event.items() if k != "event"}
+
+    assert set(ws_body.keys()) == set(rest_body.keys())
+
+    deterministic_fields = [
+        "success",
+        "mode",
+        "message",
+        "room_count",
+        "rooms",
+        "selected_room",
+        "pending_clarification",
+        "sources",
+        "search_performed",
+    ]
+    for field in deterministic_fields:
+        assert ws_body[field] == rest_body[field], field

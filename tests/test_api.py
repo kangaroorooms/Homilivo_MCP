@@ -20,6 +20,7 @@ import pytest
 
 from app.api import app
 from app.experiments.agent_modes import GemmaError
+import app.experiments.agent_modes as agent_modes
 
 
 # ============================================================
@@ -389,12 +390,33 @@ def test_chat_non_json_body_returns_422(client, auth_headers):
 # GRACEFUL DEGRADATION
 # ============================================================
 
-def test_chat_invalid_price_range_degrades_gracefully(client, auth_headers, mock_homilivo_success):
+def test_chat_invalid_price_range_degrades_gracefully(
+    client, auth_headers, mock_homilivo_success, monkeypatch
+):
     """
     A query whose extracted parameters fail the parameter guardrail
     (min_price > max_price) must not crash the request - it should
     come back as a normal 200 with an apologetic fallback message.
+
+    The input guardrail's semantic classifier (embedding cosine
+    similarity, app/guardrails/input_guardrail.py) actually scores this
+    exact phrasing as a near-tie between ROOM_SEARCH and CHATBOT_INFO
+    (~0.538 vs ~0.543, inside INTENT_MARGIN) - so it reports OUT_OF_SCOPE
+    even before any platform difference, and process_message() then
+    falls back to a live Gemma/Ollama call to rescue the classification.
+    That fallback happens to succeed on a machine with Ollama running
+    locally but is unavailable in CI, so the query gets classified
+    OUT_OF_SCOPE there and never reaches the parameter guardrail this
+    test targets. Stub the input guardrail to deterministically report
+    ROOM_SEARCH so this test isolates the parameter-guardrail behavior
+    it actually names, independent of the semantic classifier's
+    borderline score or Ollama's availability (both are covered by
+    tests/test_guardrails.py instead).
     """
+    monkeypatch.setattr(
+        agent_modes, "validate_user_input", lambda user_query: (True, "ROOM_SEARCH")
+    )
+
     response = client.post(
         "/chat",
         json={"message": "rooms in Jaipur above 20000 under 10000", "mode": "fast"},

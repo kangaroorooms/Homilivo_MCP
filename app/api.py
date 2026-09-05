@@ -29,6 +29,7 @@ from app.rate_limit import check_rate_limit, client_host_identifier, enforce_rat
 from app.demo_auth import issue_demo_token, redeem_demo_token, server_credential_configured
 from app.streaming import chunk_for_streaming
 from app.observability import get_metrics_snapshot, record_turn
+from app.feedback_store import record_feedback
 
 # The real conversational engine (routing, follow-ups, refinements,
 # clarifications, FAST/QWEN3/GEMMA, embedding fallback) lives here.
@@ -124,6 +125,13 @@ class RoomResponse(BaseModel):
 class ChatResponse(BaseModel):
     success: bool
     session_id: str
+    request_id: str = Field(
+        description=(
+            "Identifies this turn for observability (app/observability.py) "
+            "and for POST /feedback, which tags feedback back to the turn "
+            "it refers to."
+        ),
+    )
     mode: str
     message: str
     room_count: int = 0
@@ -148,6 +156,25 @@ class ChatResponse(BaseModel):
             "that also happens to carry an empty/unchanged rooms list."
         ),
     )
+
+
+class FeedbackRequest(BaseModel):
+    request_id: str = Field(
+        ...,
+        min_length=1,
+        description="The request_id returned by /chat or /ws/chat's done event for the turn being rated.",
+    )
+    rating: Literal["up", "down"]
+    note: str | None = Field(
+        None,
+        max_length=500,
+        description="Optional free-text note. Never put secrets or PII here.",
+    )
+
+
+class FeedbackResponse(BaseModel):
+    status: str
+    request_id: str
 
 
 # ============================================================
@@ -359,6 +386,7 @@ async def _run_chat_turn(session_id: str, mode: str, message: str) -> dict:
     return {
         "success": response_text is not None,
         "session_id": session_id,
+        "request_id": request_id,
         "mode": mode,
         "message": response_text or "Sorry, I couldn't process that request. Please rephrase.",
         "room_count": len(rooms),
@@ -404,6 +432,18 @@ async def chat_endpoint(
 def reset_session(session_id: str):
     existed = SESSIONS.reset(session_id)
     return {"status": "success", "session_id": session_id, "existed": existed}
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+def submit_feedback(feedback: FeedbackRequest):
+    """
+    Thumbs up/down on a turn, tagged with the request_id already
+    returned by /chat and /ws/chat's "done" event (see
+    app.api._run_chat_turn and app/observability.py). Stored append-only
+    (app/feedback_store.py) - no new infra, never secrets/PII.
+    """
+    record_feedback(feedback.request_id, feedback.rating, feedback.note)
+    return FeedbackResponse(status="success", request_id=feedback.request_id)
 
 
 # ============================================================

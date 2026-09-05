@@ -10,3 +10,18 @@ Fastapi
 # http://127.0.0.1:8000/docs
 chatui
 # http://127.0.0.1:8000/chat-ui
+
+#model=GPT-OSS 20B
+#all-MiniLM-L6-v2 embedding model
+
+#The current implementation keeps this in memory, with:
+1-hour session TTL
+Maximum 1,000 sessions
+Maximum 40 messages per session.
+
+#A rate limiter was added:
+30 requests / 60 seconds / IP
+
+#python -m pytest -v
+
+#python tests/run_golden_eval.py

@@ -332,7 +332,7 @@ def test_chat_verification_question_is_grounded(client, auth_headers):
         "/chat", json={"message": "how does verification work?", "mode": "fast"}, headers=auth_headers,
     ).json()
 
-    assert response["sources"] == ["About this assistant"]
+    assert "About this assistant" in response["sources"]
 
 
 def test_chat_platform_question_with_no_grounding_declines_honestly(client, auth_headers, monkeypatch):

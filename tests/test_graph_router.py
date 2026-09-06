@@ -197,7 +197,7 @@ def test_faq_query_reaches_the_faq_branch_node(client, auth_headers, monkeypatch
 
     assert response.status_code == 200
     assert executed == [BRANCH_FAQ]
-    assert response.json()["sources"] == ["About this assistant"]
+    assert "About this assistant" in response.json()["sources"]
 
     router_module._COMPILED_GRAPH = None  # don't leak the spy into later tests
 

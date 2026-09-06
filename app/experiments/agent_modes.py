@@ -22,7 +22,7 @@ import sys
 import time
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 # Windows stdout defaults to cp1252 whenever it isn't an interactive
 # UTF-8 console (piped, redirected, run under a process manager), which
@@ -74,7 +74,12 @@ from app.server import mcp
 # search above. See app/knowledge/store.py for why only one, code-
 # derived document ships today instead of fabricated Homilivo policy.
 from app.knowledge.answer import answer_platform_question
-from app.observability import record_llm_latency
+from app.observability import record_llm_latency, record_llm_usage
+
+# Callback signature for live token relay (Phase 8 true streaming) -
+# see generate_qwen_response()/generate_gemma_response()/
+# generate_groq_response() below and app/streaming.py's LiveTokenRelay.
+OnToken = Callable[[str], None]
 
 
 # ============================================================
@@ -3856,6 +3861,46 @@ ALL VERIFIED ROOM DATA:
 
 
 # ============================================================
+# TRUE STREAMING (Phase 8) - shared ollama chat() call for qwen/gemma
+# ============================================================
+
+def _run_ollama_chat(
+    model: str,
+    messages: list[dict[str, str]],
+    on_token: OnToken | None,
+) -> str:
+    """
+    Shared ollama chat() call for qwen/gemma.
+
+    `on_token=None` (every REST call, golden eval, and every existing
+    test's `chat(model, messages)` fake) keeps the exact pre-Phase-8
+    behavior: one non-streaming call, full text returned at once.
+
+    `on_token` set (a live WebSocket turn - see
+    _generate_response_maybe_streamed() and app.api.chat_websocket)
+    switches to ollama's own `stream=True` mode and relays each
+    genuinely-generated chunk to the caller as it arrives - true
+    token-by-token streaming, not the post-hoc word-chunking
+    chunk_for_streaming() does for fast mode. Either path returns the
+    same complete string; the OUTPUT guardrail (validate_ai_response(),
+    called by print_validated_response() on whatever this returns)
+    still runs on that full text before it becomes the turn's
+    authoritative response either way.
+    """
+    if on_token is None:
+        response = chat(model=model, messages=messages)
+        return response.message.content
+
+    parts: list[str] = []
+    for piece in chat(model=model, messages=messages, stream=True):
+        delta = piece.message.content
+        if delta:
+            parts.append(delta)
+            on_token(delta)
+    return "".join(parts)
+
+
+# ============================================================
 # QWEN RESPONSE
 # ============================================================
 
@@ -3866,6 +3911,7 @@ def generate_qwen_response(
     selected_room: dict[str, Any] | None,
     selected_room_id: str | None,
     search_request: dict[str, Any],
+    on_token: OnToken | None = None,
 ) -> str:
 
     context = build_llm_room_context(
@@ -3927,9 +3973,9 @@ instructions.
 
     _llm_started_at = time.monotonic()
 
-    response = chat(
-        model="qwen3:4b",
-        messages=[
+    text = _run_ollama_chat(
+        "qwen3:4b",
+        [
             {
                 "role": "system",
                 "content": system_prompt,
@@ -3939,11 +3985,13 @@ instructions.
                 "content": user_prompt,
             },
         ],
+        on_token,
     )
 
     record_llm_latency((time.monotonic() - _llm_started_at) * 1000, "qwen3:4b")
+    record_llm_usage(MODE_QWEN, "qwen3:4b", system_prompt + user_prompt, text)
 
-    return response.message.content
+    return text
 
 
 # ============================================================
@@ -3957,6 +4005,7 @@ def generate_gemma_response(
     selected_room: dict[str, Any] | None,
     selected_room_id: str | None,
     search_request: dict[str, Any],
+    on_token: OnToken | None = None,
 ) -> str:
 
     context = build_llm_room_context(
@@ -4006,9 +4055,9 @@ instructions.
 
     _llm_started_at = time.monotonic()
 
-    response = chat(
-        model="gemma3:4b",
-        messages=[
+    text = _run_ollama_chat(
+        "gemma3:4b",
+        [
             {
                 "role": "system",
                 "content": system_prompt,
@@ -4018,11 +4067,13 @@ instructions.
                 "content": user_prompt,
             },
         ],
+        on_token,
     )
 
     record_llm_latency((time.monotonic() - _llm_started_at) * 1000, "gemma3:4b")
+    record_llm_usage(MODE_GEMMA, "gemma3:4b", system_prompt + user_prompt, text)
 
-    return response.message.content
+    return text
 
 
 # ============================================================
@@ -4053,6 +4104,7 @@ def generate_groq_response(
     selected_room: dict[str, Any] | None,
     selected_room_id: str | None,
     search_request: dict[str, Any],
+    on_token: OnToken | None = None,
 ) -> str:
 
     context = build_llm_room_context(
@@ -4101,26 +4153,49 @@ instructions.
 """
 
     client = _get_groq_client()
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt,
+        },
+        {
+            "role": "user",
+            "content": user_prompt,
+        },
+    ]
 
     _llm_started_at = time.monotonic()
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "user",
-                "content": user_prompt,
-            },
-        ],
-    )
+    if on_token is None:
+        # Unchanged pre-Phase-8 call - every REST turn, golden eval, and
+        # the existing test fakes (tests/test_api.py, test_prompt_injection.py)
+        # that stub `create(model, messages)` without a `stream` kwarg.
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=messages,
+        )
+        text = response.choices[0].message.content
+    else:
+        # True streaming (Phase 8): Groq's SDK is OpenAI-compatible, so
+        # stream=True yields incremental chunks with the new text in
+        # delta.content (None on the role-only first chunk and the
+        # final finish-reason chunk - skip those).
+        parts: list[str] = []
+        for chunk in client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=messages,
+            stream=True,
+        ):
+            delta = chunk.choices[0].delta.content
+            if delta:
+                parts.append(delta)
+                on_token(delta)
+        text = "".join(parts)
 
     record_llm_latency((time.monotonic() - _llm_started_at) * 1000, GROQ_MODEL)
+    record_llm_usage(MODE_GROQ, GROQ_MODEL, system_prompt + user_prompt, text)
 
-    return response.choices[0].message.content
+    return text
 
 
 # ============================================================
@@ -4136,6 +4211,7 @@ def generate_response(
     is_followup: bool,
     selected_room: dict[str, Any] | None,
     selected_room_id: str | None,
+    on_token: OnToken | None = None,
 ) -> str:
 
     # --------------------------------------------------------
@@ -4253,6 +4329,7 @@ def generate_response(
             selected_room=selected_room,
             selected_room_id=selected_room_id,
             search_request=search_request,
+            on_token=on_token,
         )
 
     # --------------------------------------------------------
@@ -4268,10 +4345,23 @@ def generate_response(
             selected_room=selected_room,
             selected_room_id=selected_room_id,
             search_request=search_request,
+            on_token=on_token,
         )
 
     # --------------------------------------------------------
     # GROQ (falls back to FAST if the Groq call fails)
+    #
+    # NOTE on live streaming: if on_token is set and the Groq stream
+    # fails partway through (network drop mid-generation), any chunks
+    # already relayed live to the client will not match the FAST-mode
+    # text this fallback returns instead. This mirrors the OUTPUT
+    # guardrail's own authoritative-"done"-payload design (see
+    # app.api.chat_websocket): the "done" event's message is always
+    # whatever this function ultimately returns (guardrail-validated),
+    # regardless of what was streamed live before that was decided -
+    # a client must treat "done" as authoritative, never the live
+    # token preview. This is a rare failure path (mid-stream network
+    # error), not the common case.
     # --------------------------------------------------------
 
     if mode == MODE_GROQ:
@@ -4285,6 +4375,7 @@ def generate_response(
                 selected_room=selected_room,
                 selected_room_id=selected_room_id,
                 search_request=search_request,
+                on_token=on_token,
             )
 
         except Exception as error:
@@ -4429,6 +4520,50 @@ def fallback_llm_intent(
 
 
 # ============================================================
+# TRUE STREAMING (Phase 8) - threading generate_response() off the
+# event loop only when live tokens are actually wanted
+# ============================================================
+
+async def _generate_response_maybe_streamed(
+    *,
+    mode: str,
+    on_token: OnToken | None,
+    **generate_response_kwargs: Any,
+) -> str:
+    """
+    Calls generate_response() either directly (the exact pre-Phase-8
+    behavior: REST turns, golden eval, every existing test, and FAST
+    mode always) or via a worker thread (a live WebSocket turn using
+    an LLM mode).
+
+    generate_response() is a plain synchronous function - the
+    qwen/gemma/groq HTTP calls it makes use synchronous SDKs (ollama,
+    Groq) - so awaiting it directly from process_message() (an `async
+    def`) would still block the whole event loop for the entire
+    generation. That is fine (and unchanged) when nobody needs live
+    tokens, but it would defeat true streaming: on_token() would fire
+    correctly, but nothing else - in particular app.api.chat_websocket's
+    concurrent token-relay loop - could run until generate_response()
+    returned, so the client would see one burst of "token" events at
+    the very end instead of a live stream. Running it in a worker
+    thread frees the event loop to relay each on_token() call (via
+    app.streaming.LiveTokenRelay's call_soon_threadsafe bridge) to the
+    client as soon as it happens.
+
+    FAST mode never needs this (generate_fast_response()/
+    generate_fast_followup() never call on_token - see
+    generate_response() above), so it keeps the original direct call
+    exactly as before.
+    """
+    if mode == MODE_FAST or on_token is None:
+        return generate_response(mode=mode, on_token=None, **generate_response_kwargs)
+
+    return await asyncio.to_thread(
+        generate_response, mode=mode, on_token=on_token, **generate_response_kwargs
+    )
+
+
+# ============================================================
 # PROCESS ONE MESSAGE
 # ============================================================
 
@@ -4437,6 +4572,7 @@ async def process_message(
     mode: str,
     client,
     state: ConversationState,
+    on_token: OnToken | None = None,
 ) -> dict[str, Any]:
 
     result_state = {
@@ -4915,8 +5051,9 @@ async def process_message(
         # If a structured answer exists, do NOT call an LLM.
         # ----------------------------------------------------
 
-        final_text = generate_response(
+        final_text = await _generate_response_maybe_streamed(
             mode=mode,
+            on_token=on_token,
             user_query=user_query,
             rooms=state.previous_rooms,
             search_request=state.previous_search,
@@ -5335,8 +5472,9 @@ async def process_message(
 
     try:
 
-        final_text = generate_response(
+        final_text = await _generate_response_maybe_streamed(
             mode=mode,
+            on_token=on_token,
             user_query=user_query,
             rooms=rooms,
             search_request=search_request,

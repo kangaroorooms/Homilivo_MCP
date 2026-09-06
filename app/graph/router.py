@@ -19,7 +19,7 @@ agent_modes.py, both unmodified by this phase).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from langgraph.graph import END, StateGraph
 
@@ -91,6 +91,7 @@ async def run_graph(
     mode: str,
     client: Any,
     state: ConversationState,
+    on_token: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """
     Entry point for app/api.py - same call shape as
@@ -100,6 +101,11 @@ async def run_graph(
     delegates to it unchanged; observable behavior, response shapes,
     and session handling are therefore unchanged by routing through
     the graph.
+
+    `on_token` (Phase 8 true streaming) is forwarded unchanged to
+    whichever branch node ends up calling process_message() - see
+    app/graph/nodes/execute.py's _run_turn(). None (the default) on
+    every REST turn, golden eval, and existing test.
     """
     compiled = get_compiled_graph()
     outcome = await compiled.ainvoke(
@@ -110,6 +116,7 @@ async def run_graph(
             "conversation_state": state,
             "branch": None,
             "result": None,
+            "on_token": on_token,
         }
     )
     return outcome["result"]

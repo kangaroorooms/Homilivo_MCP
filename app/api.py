@@ -4,7 +4,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator, Literal
+from typing import AsyncIterator, Callable, Literal
 from uuid import uuid4
 
 # The conversational engine logs with Unicode symbols (arrows, checkmarks).
@@ -27,7 +27,7 @@ from mcp import Client
 from app.server import mcp, set_kangaroo_token
 from app.rate_limit import check_rate_limit, client_host_identifier, enforce_rate_limit
 from app.demo_auth import issue_demo_token, redeem_demo_token, server_credential_configured
-from app.streaming import chunk_for_streaming
+from app.streaming import chunk_for_streaming, LiveTokenRelay
 from app.observability import get_metrics_snapshot, record_turn
 from app.feedback_store import record_feedback
 
@@ -315,7 +315,12 @@ def chat_ui_demo_token():
     return {"token": token}
 
 
-async def _run_chat_turn(session_id: str, mode: str, message: str) -> dict:
+async def _run_chat_turn(
+    session_id: str,
+    mode: str,
+    message: str,
+    on_token: Callable[[str], None] | None = None,
+) -> dict:
     """
     One full turn through the conversational engine, shared by the
     REST /chat endpoint and the /ws/chat WebSocket below so neither
@@ -326,6 +331,17 @@ async def _run_chat_turn(session_id: str, mode: str, message: str) -> dict:
     Also the single place a turn is recorded for observability
     (app/observability.py) - request id, intent/operation/tool, mode,
     status, latency. No message text or credentials are logged.
+
+    `on_token` (Phase 8 true streaming - see chat_websocket below) is
+    forwarded unchanged through run_graph() -> process_message() to
+    whichever generate_*_response() call ends up making a real model
+    call. None (the default, used by REST /chat) preserves the exact
+    pre-Phase-8, non-streaming behavior. Regardless of on_token, the
+    dict this function returns always carries the OUTPUT-guardrail-
+    validated (or safely-blocked) final "message" - see
+    agent_modes.print_validated_response() - so it remains the sole
+    authoritative payload for both /chat's response body and /ws/chat's
+    "done" event.
     """
     request_id = str(uuid4())
     started_at = time.monotonic()
@@ -340,6 +356,7 @@ async def _run_chat_turn(session_id: str, mode: str, message: str) -> dict:
                 mode=mode,
                 client=client,
                 state=state,
+                on_token=on_token,
             )
     except Exception:  # noqa: BLE001
         record_turn(
@@ -564,8 +581,40 @@ async def chat_websocket(websocket: WebSocket) -> None:
 
             set_kangaroo_token(_resolve_homilivo_token(token))
 
+            # ------------------------------------------------
+            # TRUE STREAMING (Phase 8).
+            #
+            # _run_chat_turn() runs as a concurrent task so this loop
+            # can relay each token LiveTokenRelay receives to the
+            # client the instant it arrives, while the turn is still
+            # in progress - not after it finishes. Tokens only ever
+            # arrive here for an LLM mode's real model call (see
+            # generate_qwen_response()/generate_gemma_response()/
+            # generate_groq_response() in app/experiments/agent_modes.py);
+            # FAST mode, and any deterministic structured answer within
+            # an LLM mode, never calls on_token, so live_tokens_sent
+            # stays False and the fallback simulated-chunking loop below
+            # runs exactly as it did before this phase.
+            #
+            # This loop is deliberately NOT wrapped in the try/except
+            # below: if the client has disconnected, send_json() here
+            # raises and is meant to propagate to this handler's outer
+            # `except WebSocketDisconnect` (same as the pre-Phase-8
+            # chunk-sending loop, which was never inside that try either).
+            # ------------------------------------------------
+            relay = LiveTokenRelay()
+            turn_task = asyncio.create_task(
+                _run_chat_turn(session_id, mode, message, on_token=relay.on_token)
+            )
+            turn_task.add_done_callback(lambda _task: relay.close())
+
+            live_tokens_sent = False
+            async for token_text in relay:
+                live_tokens_sent = True
+                await websocket.send_json({"event": "token", "text": token_text})
+
             try:
-                turn = await _run_chat_turn(session_id, mode, message)
+                turn = await turn_task
             except Exception:  # noqa: BLE001 - never leak a stack trace to the client
                 await websocket.send_json(
                     {
@@ -575,10 +624,27 @@ async def chat_websocket(websocket: WebSocket) -> None:
                 )
                 continue
 
-            for chunk in chunk_for_streaming(turn["message"]):
-                await websocket.send_json({"event": "token", "text": chunk})
-                if STREAM_CHUNK_DELAY_SECONDS > 0:
-                    await asyncio.sleep(STREAM_CHUNK_DELAY_SECONDS)
+            # CRITICAL - the OUTPUT guardrail stays authoritative even
+            # though live tokens were already relayed above: turn["message"]
+            # (used both for the fallback chunking below and for the
+            # "done" event) is always whatever agent_modes.process_message()
+            # decided AFTER validate_ai_response() ran - see
+            # agent_modes.print_validated_response(). If validation had
+            # blocked the response, turn["message"] is the safe fallback
+            # apology, not the raw model text, regardless of what was
+            # streamed live during generation. That is a deliberate,
+            # documented tradeoff for true streaming (see
+            # docs/WEBSOCKET_CONTRACT.md and app/streaming.py): a client
+            # must treat the "done" event as authoritative, never the
+            # live token preview. In practice this only diverges from
+            # the live preview on the rare guardrail-blocked/leak case
+            # validate_ai_response() exists to catch - see
+            # tests/test_streaming.py for the regression coverage.
+            if not live_tokens_sent:
+                for chunk in chunk_for_streaming(turn["message"]):
+                    await websocket.send_json({"event": "token", "text": chunk})
+                    if STREAM_CHUNK_DELAY_SECONDS > 0:
+                        await asyncio.sleep(STREAM_CHUNK_DELAY_SECONDS)
 
             await websocket.send_json({"event": "done", **turn})
 

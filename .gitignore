@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .env
 *.log
+docs/technical-briefing.md
+docs/Homilivo chatbot flowchart.png
+docs/Homilivo_Target_Architecture (1).md
+data/feedback.jsonl

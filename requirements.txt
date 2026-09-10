@@ -6,7 +6,6 @@ certifi==2026.7.22
 cffi==2.1.1
 click==8.4.2
 colorama==0.4.6
-cryptography==50.0.0
 distro==1.9.0
 fastapi==0.141.1
 filelock==3.32.3
@@ -42,11 +41,10 @@ pycparser==3.0
 pydantic==2.13.4
 pydantic_core==2.46.4
 Pygments==2.21.0
-PyJWT==2.13.0
 pytest==9.1.1
 python-dotenv==1.2.3
 python-multipart==0.0.32
-pywin32==312
+pywin32==312; sys_platform == "win32"
 PyYAML==6.0.3
 referencing==0.37.0
 regex==2026.7.19
@@ -72,3 +70,4 @@ typer==0.27.1
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 uvicorn==0.52.4
+websockets==17.1

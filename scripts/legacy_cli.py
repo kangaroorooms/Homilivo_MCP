@@ -1,3 +1,19 @@
+"""
+Standalone manual-debug CLI - NOT used by the FastAPI server.
+
+Run directly with `python -m app.agent` for an interactive, single-turn
+terminal walkthrough of the guardrails -> fast_parser -> MCP ->
+Homilivo API -> guardrails pipeline (prompts for one query, one response
+mode, and prints each pipeline stage as it runs). Nothing in app/api.py
+or app/experiments/agent_modes.py (the real conversational engine the
+server uses) imports this module.
+
+Kept for manual/local debugging of the pipeline in isolation; it has no
+conversational memory, follow-up handling, or session support like
+app/experiments/agent_modes.process_message() does. Do not add new
+server-facing logic here - extend agent_modes.py instead.
+"""
+
 import asyncio
 import json
 import sys

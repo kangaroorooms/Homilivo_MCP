@@ -1,15 +1,60 @@
 import contextvars
 import os
 import json
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
 from mcp.server import MCPServer
 
+from app.observability import record_api_latency
 
 mcp = MCPServer("Homilivo Room Search MCP")
 
 API_URL = "https://homilivo.onrender.com/api/rooms"
+
+# ============================================================
+# OUTBOUND API RELIABILITY
+# ============================================================
+# urllib.request has no separate connect/read timeout knobs - `timeout=`
+# bounds the whole call (socket connect + read). That is the best this
+# stdlib client can offer without switching HTTP libraries, and is a
+# real improvement over the previous unbounded call, which could hang
+# the request indefinitely on a stalled connection.
+HOMILIVO_API_TIMEOUT_SECONDS = float(
+    os.getenv("HOMILIVO_API_TIMEOUT_SECONDS", "10")
+)
+
+# search_rooms is a read-only GET, so limited retries are safe here -
+# this must never be applied to a write/non-idempotent operation.
+HOMILIVO_API_MAX_ATTEMPTS = max(
+    1, int(os.getenv("HOMILIVO_API_MAX_ATTEMPTS", "3"))
+)
+
+# Exponential backoff base between retries (0.3s, 0.6s, 1.2s, ...).
+HOMILIVO_API_RETRY_BACKOFF_SECONDS = float(
+    os.getenv("HOMILIVO_API_RETRY_BACKOFF_SECONDS", "0.3")
+)
+
+
+def _record_api_latency(started_at: float, success: bool) -> None:
+    record_api_latency((time.monotonic() - started_at) * 1000, success)
+
+
+def _is_retryable_error(error: Exception) -> bool:
+    """
+    Retry only on transient network-level failures and 5xx server
+    errors. Never retry a 4xx (bad request, auth failure, etc.) since
+    the same request would just fail again identically.
+    """
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code >= 500
+
+    if isinstance(error, (TimeoutError, urllib.error.URLError)):
+        return True
+
+    return False
 
 
 # ============================================================
@@ -109,28 +154,59 @@ def search_rooms(
         }
     )
 
-    try:
+    last_error: Exception | None = None
+    _started_at = time.monotonic()
 
-        with urllib.request.urlopen(request) as response:
+    for attempt in range(1, HOMILIVO_API_MAX_ATTEMPTS + 1):
 
-            data = json.loads(
-                response.read().decode()
+        try:
+
+            with urllib.request.urlopen(
+                request,
+                timeout=HOMILIVO_API_TIMEOUT_SECONDS,
+            ) as response:
+
+                data = json.loads(
+                    response.read().decode()
+                )
+
+            rooms = data.get("data", [])
+
+            _record_api_latency(_started_at, success=True)
+
+            return {
+                "success": True,
+                "count": len(rooms),
+                "rooms": rooms
+            }
+
+        except Exception as e:
+
+            last_error = e
+
+            is_last_attempt = attempt == HOMILIVO_API_MAX_ATTEMPTS
+
+            if is_last_attempt or not _is_retryable_error(e):
+                break
+
+            time.sleep(
+                HOMILIVO_API_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1))
             )
 
-        rooms = data.get("data", [])
+    _record_api_latency(_started_at, success=False)
 
-        return {
-            "success": True,
-            "count": len(rooms),
-            "rooms": rooms
-        }
-
-    except Exception as e:
-
-        return {
-            "success": False,
-            "error": str(e)
-        }
+    # Controlled failure: never let an exception (or a hang) propagate
+    # out of the tool. The caller (app/experiments/agent_modes.py) turns
+    # success=False into a user-facing "temporarily unavailable" message
+    # rather than a stack trace.
+    return {
+        "success": False,
+        "error": (
+            "Homilivo API request timed out."
+            if isinstance(last_error, TimeoutError)
+            else str(last_error)
+        ),
+    }
 
 
 if __name__ == "__main__":

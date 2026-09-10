@@ -124,6 +124,94 @@ def test_missing_required_room_field_is_rejected():
     assert valid is False, message
 
 
+def test_unrecognized_but_well_formed_room_type_is_accepted():
+    """
+    Regression: the real Homilivo API returns room types beyond the
+    small set this project had seen before (e.g. "2RK" for a search in
+    Udaipur), and the guardrail was rejecting the ENTIRE search
+    response for one room using an unrecognized-but-well-formed type.
+    roomType is validated structurally (a real, non-empty string) -
+    not against a closed enum - and the original backend value is
+    preserved verbatim.
+    """
+    valid, message = validate_room_data(
+        [
+            {
+                "id": "test-room-2rk",
+                "title": "Cozy 2RK",
+                "city": "udaipur",
+                "pricePerMonth": 9000,
+                "roomType": "2RK",
+            }
+        ]
+    )
+
+    assert valid is True, message
+
+
+def test_one_room_with_unrecognized_room_type_does_not_invalidate_the_others():
+    """
+    A single room using an extended/unfamiliar room type must not
+    discard the rest of an otherwise-valid search result.
+    """
+    valid, message = validate_room_data(
+        [
+            {
+                "id": "test-room-known",
+                "title": "Standard 2BHK",
+                "city": "udaipur",
+                "pricePerMonth": 15000,
+                "roomType": "2BHK",
+            },
+            {
+                "id": "test-room-2rk",
+                "title": "Cozy 2RK",
+                "city": "udaipur",
+                "pricePerMonth": 9000,
+                "roomType": "2RK",
+            },
+        ]
+    )
+
+    assert valid is True, message
+
+
+def test_empty_room_type_is_still_rejected():
+    """
+    Relaxing the closed enum must not relax structural validation -
+    an empty/blank roomType is still genuinely malformed data.
+    """
+    valid, message = validate_room_data(
+        [
+            {
+                "id": "test-room-4",
+                "title": "2 BHK Flat",
+                "city": "jaipur",
+                "pricePerMonth": 10000,
+                "roomType": "",
+            }
+        ]
+    )
+
+    assert valid is False, message
+
+
+def test_non_string_room_type_is_still_rejected():
+    valid, message = validate_room_data(
+        [
+            {
+                "id": "test-room-5",
+                "title": "2 BHK Flat",
+                "city": "jaipur",
+                "pricePerMonth": 10000,
+                "roomType": 12345,
+            }
+        ]
+    )
+
+    assert valid is False, message
+
+
 # ============================================================
 # OUTPUT GUARDRAIL TESTS
 # ============================================================

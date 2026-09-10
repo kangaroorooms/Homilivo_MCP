@@ -9,7 +9,9 @@ This guardrail protects the application from:
 - missing required room fields
 - invalid identifiers
 - invalid prices
-- invalid room types
+- non-string/empty room types (the specific set of room-type VALUES
+  is intentionally NOT enforced here - see the comment above the
+  roomType check in validate_room_data() for why)
 - malformed ideal-for data
 - invalid optional room metadata
 """
@@ -30,20 +32,6 @@ REQUIRED_ROOM_FIELDS = {
     "city",
     "pricePerMonth",
     "roomType",
-}
-
-
-# ============================================================
-# VALID ROOM TYPES
-# ============================================================
-
-VALID_ROOM_TYPES = {
-    "PG",
-    "1BHK",
-    "2BHK",
-    "3BHK",
-    "1RK",
-    "SINGLE",
 }
 
 
@@ -82,13 +70,6 @@ def _is_valid_string(
         isinstance(value, str)
         and bool(value.strip())
     )
-
-
-def _normalize_room_type(
-    value: str,
-) -> str:
-
-    return value.strip().upper()
 
 
 def _normalize_ideal_for(
@@ -275,6 +256,18 @@ def validate_room_data(
 
         # ----------------------------------------------------
         # ROOM TYPE
+        #
+        # roomType is intentionally NOT restricted to a closed enum
+        # here. Homilivo's real API returns room types beyond the
+        # small set this project has seen so far (e.g. "2RK"), and
+        # rejecting the ENTIRE search response because one room used
+        # an unrecognized-but-well-formed type is a false rejection,
+        # not a security control - the enum lived only in this
+        # guardrail's assumptions, not in any documented backend
+        # contract. The original backend value is preserved verbatim
+        # (never rewritten/mapped); only structural validity (a real,
+        # non-empty string) is enforced, matching how title/city/
+        # location are validated just above and below.
         # ----------------------------------------------------
 
         room_type = room.get(
@@ -288,23 +281,6 @@ def validate_room_data(
             return (
                 False,
                 f"Invalid room type for room {room_id}",
-            )
-
-        normalized_room_type = (
-            _normalize_room_type(
-                room_type
-            )
-        )
-
-        if normalized_room_type not in (
-            VALID_ROOM_TYPES
-        ):
-
-            return (
-                False,
-                f"Invalid room type "
-                f"'{room_type}' "
-                f"for room {room_id}",
             )
 
         # ----------------------------------------------------

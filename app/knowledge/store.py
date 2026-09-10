@@ -6,39 +6,42 @@ LISTING questions (price/location/type/amenities of a specific search
 result), which are always answered from the Homilivo API - see the
 PLATFORM_KNOWLEDGE routing branch in app/experiments/agent_modes.py.
 
-WHY ONLY ONE DOCUMENT SHIPS TODAY
-----------------------------------
-No Homilivo FAQ/policy documentation exists anywhere in this
-repository (README.md and docs/info.md were both checked - neither
-contains platform policy content). Fabricating verification steps,
-fee amounts, or booking rules would violate this project's grounding
-requirements, so the only document shipped today
-(documents/about_this_assistant.md) states facts that are verifiable
-from this codebase itself - what THIS ASSISTANT can and cannot do -
-and explicitly says it does not have verified information about
-Homilivo's actual policies.
+BACKING STORE: EMBEDDED CHROMA
+-------------------------------
+Retrieval is served from an embedded (in-process, no separate
+server) Chroma collection persisted under CHROMA_PERSIST_DIR (default
+data/chroma - see .env.example). This replaced an earlier in-process
+numpy array cached with lru_cache; the retrieval behavior it produces
+is unchanged: paragraph chunking, the same MiniLM embeddings, cosine
+similarity, top-K, and the relevance floor below.
 
-When real Homilivo FAQ/policy documents become available, drop them
-into app/knowledge/documents/ as markdown files with the same
-frontmatter shape (title/source/verified) and they are picked up
-automatically on the next process start - no code changes needed. A
-question that does not match any indexed document simply retrieves
-nothing (see MIN_RELEVANCE_SCORE below), and the caller must say so
-rather than asking an LLM to improvise an answer.
+Documents (app/knowledge/documents/*.md) are the source of truth, not
+the Chroma collection - ingest() rebuilds the collection from whatever
+markdown files are on disk, so editing/adding/removing a document and
+re-ingesting is always safe and never accumulates stale or duplicate
+chunks (see ingest() below and app/knowledge/ingest.py for the
+standalone re-runnable script).
+
+A question that does not match any indexed document with enough
+confidence simply retrieves nothing (see MIN_RELEVANCE_SCORE below),
+and the caller must say so rather than asking an LLM to improvise an
+answer.
 
 PIPELINE
 --------
 load documents -> split into paragraphs -> chunk to CHUNK_MAX_CHARS ->
 embed every chunk once with the shared SentenceTransformer (the same
 model app.guardrails.input_guardrail and app.experiments.interpreter
-already use) -> at query time, embed the query and rank chunks by
-cosine similarity -> keep the top TOP_K chunks that clear
+already use) -> store the embeddings in the Chroma collection -> at
+query time, embed the query and let Chroma rank chunks by cosine
+similarity -> keep the top TOP_K chunks that clear
 MIN_RELEVANCE_SCORE, each carrying its source document title for
 citation.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -50,6 +53,12 @@ DOCUMENTS_DIR = Path(__file__).resolve().parent / "documents"
 CHUNK_MAX_CHARS = 600
 TOP_K = 3
 MIN_RELEVANCE_SCORE = 0.35
+
+COLLECTION_NAME = "homilivo_knowledge"
+
+
+def _persist_dir() -> Path:
+    return Path(os.getenv("CHROMA_PERSIST_DIR", "data/chroma"))
 
 
 @dataclass(frozen=True)
@@ -108,6 +117,12 @@ def _chunk_text(text: str) -> list[str]:
 
 
 def _load_documents() -> list[KnowledgeChunk]:
+    """
+    Scan DOCUMENTS_DIR for every markdown file and chunk each one.
+    This is the whole folder, not a single hardcoded document - drop
+    any number of *.md files in here (with or without frontmatter) and
+    they are all picked up on the next ingest()/process start.
+    """
     chunks: list[KnowledgeChunk] = []
 
     if not DOCUMENTS_DIR.exists():
@@ -134,25 +149,90 @@ def _load_documents() -> list[KnowledgeChunk]:
 
 
 @lru_cache(maxsize=1)
-def _get_index():
+def _get_client():
     """
-    (chunks, embedding_matrix), computed once per process.
+    The embedded (no separate server/process) Chroma client, persisted
+    to disk under CHROMA_PERSIST_DIR. Returns None if chromadb isn't
+    importable or the persist directory can't be created, so callers
+    degrade to "nothing retrieved" instead of raising - matching how
+    app.experiments.interpreter degrades when its model fails to load.
+    """
+    try:
+        import chromadb
+    except Exception:  # noqa: BLE001 - degrade gracefully
+        return None
 
-    Returns (chunks, None) when the embedding model is unavailable, so
-    retrieve() can degrade to "nothing retrieved" instead of raising -
-    matching how app.experiments.interpreter degrades when the model
-    fails to load.
+    persist_dir = _persist_dir()
+
+    try:
+        persist_dir.mkdir(parents=True, exist_ok=True)
+        return chromadb.PersistentClient(path=str(persist_dir))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _get_collection():
+    client = _get_client()
+    if client is None:
+        return None
+
+    return client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"},
+    )
+
+
+def ingest() -> dict[str, Any]:
+    """
+    (Re-)build the Chroma collection from whatever markdown documents
+    are currently in DOCUMENTS_DIR. Idempotent and safe to re-run any
+    time: the collection is dropped and recreated from the documents
+    on disk every call, so running this twice in a row - or after a
+    document was added, edited, or removed - never duplicates or
+    accumulates stale chunks; the indexed state always matches exactly
+    what's on disk right now.
+
+    Returns {"documents_loaded", "chunks_indexed",
+    "embedding_model_available"} - the same shape GET /knowledge/health
+    and index_stats() surface.
     """
     chunks = _load_documents()
+    documents_loaded = len({chunk.doc_id for chunk in chunks})
 
-    if not chunks:
-        return [], None
+    client = _get_client()
+    if client is None:
+        return {
+            "documents_loaded": documents_loaded,
+            "chunks_indexed": 0,
+            "embedding_model_available": False,
+        }
 
     try:
         from app.embeddings import get_shared_model
         model = get_shared_model()
-    except Exception:  # noqa: BLE001 - degrade gracefully
-        return chunks, None
+    except Exception:  # noqa: BLE001
+        return {
+            "documents_loaded": documents_loaded,
+            "chunks_indexed": 0,
+            "embedding_model_available": False,
+        }
+
+    try:
+        client.delete_collection(COLLECTION_NAME)
+    except Exception:  # noqa: BLE001 - fine, collection didn't exist yet
+        pass
+
+    collection = client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"},
+    )
+
+    if not chunks:
+        return {
+            "documents_loaded": 0,
+            "chunks_indexed": 0,
+            "embedding_model_available": True,
+        }
 
     embeddings = model.encode(
         [chunk.text for chunk in chunks],
@@ -160,23 +240,54 @@ def _get_index():
         convert_to_numpy=True,
     )
 
-    return chunks, embeddings
+    collection.add(
+        ids=[f"{chunk.doc_id}::{i}" for i, chunk in enumerate(chunks)],
+        embeddings=embeddings.tolist(),
+        documents=[chunk.text for chunk in chunks],
+        metadatas=[
+            {
+                "doc_id": chunk.doc_id,
+                "title": chunk.title,
+                "source": chunk.source,
+                "verified": chunk.verified,
+            }
+            for chunk in chunks
+        ],
+    )
+
+    return {
+        "documents_loaded": documents_loaded,
+        "chunks_indexed": len(chunks),
+        "embedding_model_available": True,
+    }
+
+
+@lru_cache(maxsize=1)
+def _ensure_ready() -> dict[str, Any]:
+    """Build the collection once per process, exactly like the old lru_cache'd index."""
+    return ingest()
+
+
+def _reset_caches() -> None:
+    """
+    Test-only: drop the process-level client/readiness caches so a
+    changed CHROMA_PERSIST_DIR or document set takes effect without a
+    process restart. Production code never calls this - a fresh
+    process is expected to pick up documents once at warmup(), exactly
+    like the store this replaced.
+    """
+    _get_client.cache_clear()
+    _ensure_ready.cache_clear()
 
 
 def warmup() -> None:
     """Force the index to build ahead of the first request."""
-    _get_index()
+    _ensure_ready()
 
 
 def index_stats() -> dict[str, Any]:
     """Summary used by GET /knowledge/health."""
-    chunks, embeddings = _get_index()
-
-    return {
-        "documents_loaded": len({chunk.doc_id for chunk in chunks}),
-        "chunks_indexed": len(chunks),
-        "embedding_model_available": embeddings is not None,
-    }
+    return dict(_ensure_ready())
 
 
 def retrieve(
@@ -193,9 +304,8 @@ def retrieve(
     if not query or not query.strip():
         return []
 
-    chunks, embeddings = _get_index()
-
-    if not chunks or embeddings is None:
+    stats = _ensure_ready()
+    if not stats["embedding_model_available"] or stats["chunks_indexed"] == 0:
         return []
 
     try:
@@ -204,18 +314,44 @@ def retrieve(
     except Exception:  # noqa: BLE001
         return []
 
+    collection = _get_collection()
+    if collection is None:
+        return []
+
     query_embedding = model.encode(
         [query],
         normalize_embeddings=True,
         convert_to_numpy=True,
     )[0]
 
-    scores = embeddings @ query_embedding
+    result = collection.query(
+        query_embeddings=[query_embedding.tolist()],
+        n_results=top_k,
+        include=["documents", "metadatas", "distances"],
+    )
 
-    ranked_indices = scores.argsort()[::-1][:top_k]
+    if not result["ids"] or not result["ids"][0]:
+        return []
 
-    return [
-        RetrievedChunk(chunk=chunks[i], score=float(scores[i]))
-        for i in ranked_indices
-        if scores[i] >= min_score
-    ]
+    retrieved: list[RetrievedChunk] = []
+
+    for doc_text, metadata, distance in zip(
+        result["documents"][0], result["metadatas"][0], result["distances"][0]
+    ):
+        # Chroma's cosine space reports distance = 1 - cosine_similarity
+        # for normalized vectors, so undo that to recover the same
+        # similarity score the old numpy dot-product path produced.
+        score = 1.0 - float(distance)
+        if score < min_score:
+            continue
+
+        chunk = KnowledgeChunk(
+            doc_id=metadata["doc_id"],
+            title=metadata["title"],
+            source=metadata["source"],
+            verified=bool(metadata["verified"]),
+            text=doc_text,
+        )
+        retrieved.append(RetrievedChunk(chunk=chunk, score=score))
+
+    return retrieved

@@ -459,10 +459,17 @@ def submit_feedback(feedback: FeedbackRequest):
 #   {"event": "done", ...same fields as ChatResponse...}
 # or, on a problem with that specific turn (not the connection):
 #   {"event": "error", "detail": "..."}
+# During any quiet period longer than WS_HEARTBEAT_INTERVAL_SECONDS
+# (no turn in flight), the server also sends {"event": "ping"} so the
+# client can detect a dead connection; clients should ignore it.
 # A browser's WebSocket API cannot set an Authorization header, so the
 # token travels as a query parameter here instead - either a real BYOT
 # Homilivo token or an opaque demo token (app/demo_auth.py), exactly
 # like /chat's Authorization header accepts either.
+#
+# Full contract (connect URL, every event shape, close codes, reconnect
+# expectations, REST fallback parity) is documented for frontend
+# integrators in docs/WEBSOCKET_CONTRACT.md (v1) - keep both in sync.
 
 WS_MAX_MESSAGE_LENGTH = 500
 STREAM_CHUNK_DELAY_SECONDS = float(os.getenv("STREAM_CHUNK_DELAY_SECONDS", "0.02"))

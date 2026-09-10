@@ -1,24 +1,41 @@
 """
-Tests for app/rate_limit.py: the in-memory backend directly, and the
+Tests for app/rate_limit.py: both backends directly, and the
 FastAPI-level 429/Retry-After behavior on /chat.
 """
 
 from __future__ import annotations
 
+import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api import app
 import app.rate_limit as rate_limit_module
-from app.rate_limit import InMemoryRateLimiter
+from app.rate_limit import InMemoryRateLimiter, RedisRateLimiter
 
 
 # ============================================================
-# BACKEND UNIT TESTS
+# BACKEND UNIT TESTS - parametrized over both backends
 # ============================================================
+#
+# RedisRateLimiter is exercised here against fakeredis (a pure-Python,
+# in-memory Redis-protocol server), so its actual code path - Redis
+# commands and all - gets the same coverage as InMemoryRateLimiter
+# without requiring a live Redis server. See
+# tests/test_state_backend_smoke.py for a real-Redis check that two
+# separate limiter instances share one counter, skipped cleanly when
+# no real Redis is reachable.
 
-def test_allows_requests_under_the_limit():
-    limiter = InMemoryRateLimiter()
+@pytest.fixture(params=["memory", "redis"])
+def limiter_factory(request):
+    if request.param == "redis":
+        client = fakeredis.FakeStrictRedis(decode_responses=True)
+        return lambda: RedisRateLimiter(redis_client=client)
+    return lambda: InMemoryRateLimiter()
+
+
+def test_allows_requests_under_the_limit(limiter_factory):
+    limiter = limiter_factory()
 
     for _ in range(5):
         result = limiter.hit("client-a", limit=5, window_seconds=60, now=1000.0)
@@ -29,8 +46,8 @@ def test_allows_requests_under_the_limit():
     assert denied.retry_after_seconds > 0
 
 
-def test_window_resets_after_expiry():
-    limiter = InMemoryRateLimiter()
+def test_window_resets_after_expiry(limiter_factory):
+    limiter = limiter_factory()
 
     for _ in range(3):
         limiter.hit("client-b", limit=3, window_seconds=10, now=1000.0)
@@ -42,8 +59,8 @@ def test_window_resets_after_expiry():
     assert allowed_again.allowed is True
 
 
-def test_keys_are_isolated():
-    limiter = InMemoryRateLimiter()
+def test_keys_are_isolated(limiter_factory):
+    limiter = limiter_factory()
 
     for _ in range(3):
         limiter.hit("client-x", limit=3, window_seconds=60, now=1000.0)
@@ -52,6 +69,14 @@ def test_keys_are_isolated():
     result = limiter.hit("client-y", limit=3, window_seconds=60, now=1000.0)
     assert result.allowed is True
 
+
+# ============================================================
+# IN-MEMORY-BACKEND-SPECIFIC UNIT TESTS
+# ============================================================
+# Stale-window purging is an InMemoryRateLimiter memory-hygiene detail
+# (bounding the size of its in-process dict); Redis's own EXPIRE
+# already reclaims stale keys, so RedisRateLimiter has nothing
+# equivalent to test here.
 
 def test_stale_windows_are_purged(monkeypatch):
     limiter = InMemoryRateLimiter(stale_after_seconds=100.0)

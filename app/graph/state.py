@@ -12,7 +12,7 @@ remains the single source of truth for conversation memory.
 
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, Callable, TypedDict
 
 from app.experiments.agent_modes import ConversationState
 
@@ -24,3 +24,8 @@ class GraphState(TypedDict):
     conversation_state: ConversationState
     branch: str | None
     result: dict[str, Any] | None
+    # Phase 8 true streaming: forwarded unchanged to process_message()'s
+    # own on_token - see app/graph/nodes/execute.py. None on every REST
+    # turn, golden eval, and existing test - only a live WebSocket LLM
+    # turn (app.api.chat_websocket) ever sets this.
+    on_token: Callable[[str], None] | None

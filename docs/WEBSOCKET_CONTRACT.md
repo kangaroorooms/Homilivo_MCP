@@ -233,12 +233,33 @@ than eagerly in the background.
 
 ## 9. What this version does **not** do
 
-- **Streaming is not yet token-by-token.** Today's `"token"` events
-  are the finished response chunked word-by-word after the fact, not
-  emitted as the model generates them. Phase 8 will make this
-  genuinely incremental — the event shapes above will not change when
-  it does.
 - **No mid-connection re-authentication.** The token is only checked
   (for presence) at connect time; it is re-resolved (demo token →
   real credential) on every turn, but the connection itself is not
   re-authorized.
+
+**Update (Phase 8):** streaming is now genuinely token-by-token for the
+`qwen`/`gemma`/`groq` modes, whenever a turn actually reaches a model
+call — `"token"` events carry the model's own incrementally-generated
+chunks, emitted as they're produced, not a word-split of the finished
+reply done after the fact. `fast` mode, and any turn (in any mode)
+answered from a deterministic structured answer without a model call,
+still uses the pre-Phase-8 simulated word-chunking. Either way, the
+event shapes on this page are unchanged, exactly as anticipated above,
+and the invariant in §3 still holds: concatenating every `"token"`
+event's `text` in order reconstructs the `"done"` event's `message`.
+
+The one nuance worth knowing as an integrator: because live tokens are
+now relayed *before* the OUTPUT guardrail validates the complete reply
+(true streaming and always-validate-before-sending-anything are
+mutually exclusive — the guardrail's checks need the full text), a
+client should treat the `"done"` event as the sole authoritative result
+and be prepared to discard/replace whatever it rendered live if
+`"done"` comes back with `success: false`. This only diverges from the
+live preview on the rare turn the output guardrail blocks (a hijacked
+model leaking a secret, an oversized response, etc.) — see
+`docs/RUNBOOK.md` §5.2 for the full explanation and
+`tests/test_streaming.py` for the regression coverage. This does not
+change anything a client needs to *do* differently — `success` was
+always the field to check — it just now matters that a client doesn't
+assume the live-streamed text alone is the final answer.

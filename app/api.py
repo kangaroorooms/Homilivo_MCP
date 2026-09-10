@@ -33,7 +33,11 @@ from app.feedback_store import record_feedback
 
 # The real conversational engine (routing, follow-ups, refinements,
 # clarifications, FAST/QWEN3/GEMMA, embedding fallback) lives here.
-from app.experiments.agent_modes import process_message, ConversationState
+from app.experiments.agent_modes import ConversationState
+# Every turn is orchestrated through the LangGraph router (Phase 5),
+# which wraps the deterministic router and process_message() unchanged
+# - see app/graph/router.py.
+from app.graph.router import run_graph
 from app.session_store import SessionStore
 
 
@@ -331,7 +335,7 @@ async def _run_chat_turn(session_id: str, mode: str, message: str) -> dict:
 
     try:
         async with Client(mcp) as client:
-            result = await process_message(
+            result = await run_graph(
                 user_query=message,
                 mode=mode,
                 client=client,

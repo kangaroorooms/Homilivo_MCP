@@ -4573,6 +4573,7 @@ async def process_message(
     client,
     state: ConversationState,
     on_token: OnToken | None = None,
+    route: MessageRoute | None = None,
 ) -> dict[str, Any]:
 
     result_state = {
@@ -4643,10 +4644,11 @@ async def process_message(
     # 3. ROUTE BEFORE EXPENSIVE LLM CLASSIFICATION
     # ========================================================
 
-    route = route_message(
-        user_query,
-        state,
-    )
+    if route is None:
+        route = route_message(
+            user_query,
+            state,
+        )
 
     # Captured for structured observability logging (app/observability.py)
     # regardless of which branch below eventually returns - re-set at

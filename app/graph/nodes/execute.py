@@ -46,6 +46,7 @@ async def _run_turn(state: GraphState) -> dict[str, Any]:
         client=state["client"],
         state=state["conversation_state"],
         on_token=state.get("on_token"),
+        route=state.get("route"),
     )
     return {"result": result}
 

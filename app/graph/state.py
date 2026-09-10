@@ -14,7 +14,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, TypedDict
 
-from app.experiments.agent_modes import ConversationState
+from app.experiments.agent_modes import (
+    ConversationState,
+    MessageRoute,
+)
 
 
 class GraphState(TypedDict):
@@ -23,6 +26,7 @@ class GraphState(TypedDict):
     client: Any  # an open mcp.Client, as process_message() already expects
     conversation_state: ConversationState
     branch: str | None
+    route: MessageRoute | None
     result: dict[str, Any] | None
     # Phase 8 true streaming: forwarded unchanged to process_message()'s
     # own on_token - see app/graph/nodes/execute.py. None on every REST

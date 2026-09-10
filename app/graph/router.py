@@ -115,6 +115,7 @@ async def run_graph(
             "client": client,
             "conversation_state": state,
             "branch": None,
+            "route": None,
             "result": None,
             "on_token": on_token,
         }

@@ -87,5 +87,12 @@ def classify_branch(route: MessageRoute) -> str:
 
 
 def fast_path_node(state: GraphState) -> dict:
-    route = route_message(state["user_query"], state["conversation_state"])
-    return {"branch": classify_branch(route)}
+    route = route_message(
+        state["user_query"],
+        state["conversation_state"],
+    )
+
+    return {
+        "route": route,
+        "branch": classify_branch(route),
+    }

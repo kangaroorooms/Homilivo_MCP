@@ -534,6 +534,81 @@ def get_room_ideal_for(
 
     return [value]
 
+def format_rooms_as_table(
+    rooms: list[dict[str, Any]],
+) -> str | None:
+    """
+    Format verified room data as a Markdown table.
+
+    Uses verified room data without requiring an LLM call.
+    """
+
+    if not rooms:
+
+        return None
+
+    rows = [
+        "| # | Room | Type | Location | Monthly Rent | Ideal For |",
+        "|---|---|---|---|---:|---|",
+    ]
+
+    for index, room in enumerate(
+        rooms,
+        start=1,
+    ):
+
+        title = get_room_title(
+            room
+        )
+
+        room_type = get_room_type(
+            room
+        )
+
+        room_type_text = (
+            str(room_type)
+            if room_type is not None
+            else "Not specified"
+        )
+
+        location = (
+            get_room_location(room)
+            or "Not specified"
+        )
+
+        price = get_room_price(
+            room
+        )
+
+        price_text = (
+            f"₹{price:,.0f}"
+            if price is not None
+            else "Not specified"
+        )
+
+        ideal_for = get_room_ideal_for(
+            room
+        )
+
+        ideal_for_text = (
+            ", ".join(
+                str(value)
+                for value in ideal_for
+            )
+            if ideal_for
+            else "Not specified"
+        )
+
+        rows.append(
+            f"| {index} | {title} | "
+            f"{room_type_text} | {location} | "
+            f"{price_text} | {ideal_for_text} |"
+        )
+
+    return "\n".join(
+        rows
+    )
+
 
 # ============================================================
 # GENERIC TOKEN / CONCEPT HELPERS
@@ -684,6 +759,18 @@ _DETAILS_CORE = (
     "describe",
     "what about this",
     "what about that",
+)
+
+_TABLE_FORMAT_CORE = (
+    "table format",
+    "in a table",
+    "as a table",
+    "table view",
+    "tabular format",
+    "tabular form",
+    "format as a table",
+    "show in table",
+    "display in table",
 )
 
 _LAST_CORE = (
@@ -892,6 +979,10 @@ def detect_room_operation(
         or is_amenity_shaped_question(text)
     ):
         return "AMENITY"
+
+    # Room data display formatting
+    if contains_any(text, _TABLE_FORMAT_CORE):
+        return "ROOM_TABLE"
 
     # General room information
     if contains_any(text, _DETAILS_CORE):
@@ -4222,12 +4313,26 @@ def generate_response(
 
     if is_followup:
 
+    # --------------------------------------------------------
+    # ROOM TABLE
+    # --------------------------------------------------------
+
+        if detect_room_operation(user_query) == "ROOM_TABLE":
+
+            table_response = format_rooms_as_table(
+                rooms
+            )
+
+            if table_response is not None:
+                    return table_response
+
         comparison_response, _ = (
             answer_room_comparison(
-                user_query,
-                rooms,
-            )
+            user_query,
+            rooms,
         )
+    )
+
 
         if comparison_response is not None:
 

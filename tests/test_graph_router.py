@@ -43,6 +43,8 @@ from app.experiments.agent_modes import (
     MessageRoute,
 )
 from app.graph import router as router_module
+from app.graph.nodes import execute as execute_module
+from app.graph.nodes import fast_path as fast_path_module
 from app.graph.nodes.fast_path import (
     BRANCH_API_REQUEST,
     BRANCH_CONVERSATION,
@@ -153,7 +155,68 @@ def test_fast_path_node_routes_real_queries_to_the_correct_branch(
     state = {"user_query": query, "conversation_state": make_state()}
     assert fast_path_node(state)["branch"] == expected_branch
 
+# ============================================================
+# 2.5. Single routing - route is created once and reused
+# ============================================================
 
+@pytest.mark.anyio
+async def test_graph_reuses_route_created_by_fast_path(monkeypatch):
+
+    call_count = 0
+
+    original_route_message = fast_path_module.route_message
+
+    def spy_route_message(*args, **kwargs):
+
+        nonlocal call_count
+
+        call_count += 1
+
+        return original_route_message(*args, **kwargs)
+
+    monkeypatch.setattr(
+        fast_path_module,
+        "route_message",
+        spy_route_message,
+    )
+
+    captured_route = None
+
+    async def fake_process_message(**kwargs):
+
+        nonlocal captured_route
+
+        captured_route = kwargs.get("route")
+
+        return {"response": "test"}
+
+    monkeypatch.setattr(
+        execute_module,
+        "process_message",
+        fake_process_message,
+    )
+
+    conversation_state = ConversationState()
+
+    graph_state = {
+        "user_query": "hello",
+        "mode": "fast",
+        "client": None,
+        "conversation_state": conversation_state,
+        "branch": None,
+        "route": None,
+        "result": None,
+        "on_token": None,
+    }
+
+    fast_result = fast_path_node(graph_state)
+
+    graph_state.update(fast_result)
+
+    await execute_module._run_turn(graph_state)
+
+    assert call_count == 1
+    assert captured_route is fast_result["route"]
 # ============================================================
 # 3. The compiled graph reaches the branch the classifier picked,
 #    and a follow-up resolves via conversation memory end to end.

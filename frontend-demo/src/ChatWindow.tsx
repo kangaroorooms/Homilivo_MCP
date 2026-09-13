@@ -1,4 +1,6 @@
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { FormEvent } from "react";
 import { useChatSocket } from "./useChatSocket";
 import type { ConnectionStatus, Mode } from "./types";
@@ -19,14 +21,21 @@ const STATUS_LABEL: Record<ConnectionStatus, string> = {
 export function ChatWindow({ backendUrl, token }: ChatWindowProps) {
   const { messages, status, isTyping, isSending, sendMessage } =
     useChatSocket({ backendUrl, token });
+
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<Mode>("fast");
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
+
     const text = input.trim();
-    if (!text || isSending) return;
+
+    if (!text || isSending) {
+      return;
+    }
+
     setInput("");
+
     void sendMessage(text, mode);
   };
 
@@ -34,6 +43,7 @@ export function ChatWindow({ backendUrl, token }: ChatWindowProps) {
     <div className="chat-window">
       <header className="chat-header">
         <h1>Homilivo Demo Client</h1>
+
         <div className="chat-header-controls">
           <span
             className={`status-badge status-${status}`}
@@ -41,6 +51,7 @@ export function ChatWindow({ backendUrl, token }: ChatWindowProps) {
           >
             {STATUS_LABEL[status]}
           </span>
+
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as Mode)}
@@ -54,29 +65,60 @@ export function ChatWindow({ backendUrl, token }: ChatWindowProps) {
         </div>
       </header>
 
-      <div className="message-list" data-testid="message-list">
-        {messages.map((m) => (
-          <div key={m.id} className={`message-row message-row-${m.role}`}>
+      <div
+        className="message-list"
+        data-testid="message-list"
+      >
+        {messages.map((m) => {
+          const isRoomTable =
+            m.role === "assistant" &&
+            m.text.includes("| # | Room |");
+
+          return (
             <div
-              className={`message-bubble${m.isError ? " message-error" : ""}`}
+              key={m.id}
+              className={`message-row message-row-${m.role}`}
             >
-              {m.text}
+              <div
+                className={
+                  `message-bubble` +
+                  `${m.isError ? " message-error" : ""}` +
+                  `${isRoomTable ? " message-table" : ""}`
+                }
+              >
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                   {m.text}
+                </ReactMarkdown>
+              </div>
+
+              {m.rooms &&
+                m.rooms.length > 0 &&
+                !isRoomTable && (
+                  <ul className="room-list">
+                    {m.rooms.map((room) => (
+                      <li
+                        key={room.id}
+                        className="room-card"
+                      >
+                        <div className="room-title">
+                          {room.title}
+                        </div>
+
+                        <div className="room-meta">
+                          {room.location}, {room.city}
+                          {" · "}
+                          {room.room_type}
+                          {" · ₹"}
+                          {room.price_per_month}/month
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
             </div>
-            {m.rooms && m.rooms.length > 0 && (
-              <ul className="room-list">
-                {m.rooms.map((room) => (
-                  <li key={room.id} className="room-card">
-                    <div className="room-title">{room.title}</div>
-                    <div className="room-meta">
-                      {room.location}, {room.city} · {room.room_type} · ₹
-                      {room.price_per_month}/month
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ))}
+          );
+        })}
+
         {isTyping && (
           <div className="message-row message-row-assistant">
             <div className="message-bubble message-typing">
@@ -86,7 +128,10 @@ export function ChatWindow({ backendUrl, token }: ChatWindowProps) {
         )}
       </div>
 
-      <form className="composer" onSubmit={handleSubmit}>
+      <form
+        className="composer"
+        onSubmit={handleSubmit}
+      >
         <input
           type="text"
           value={input}
@@ -96,7 +141,11 @@ export function ChatWindow({ backendUrl, token }: ChatWindowProps) {
           disabled={isSending}
           aria-label="Message"
         />
-        <button type="submit" disabled={isSending || !input.trim()}>
+
+        <button
+          type="submit"
+          disabled={isSending || !input.trim()}
+        >
           Send
         </button>
       </form>

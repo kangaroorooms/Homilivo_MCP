@@ -116,13 +116,13 @@ body {
 }
 
 .message-bubble {
-  max-width: 78%;
-  padding: 10px 14px;
+  max-width: 90%;
+  padding: 12px 16px;
   border-radius: 14px;
   font-size: 14px;
   line-height: 1.45;
-  white-space: pre-wrap;
   word-wrap: break-word;
+  overflow-x: auto;
 }
 
 .message-row-user .message-bubble {
@@ -199,4 +199,74 @@ body {
 .composer button:disabled {
   background: #a9c0f5;
   cursor: not-allowed;
+}
+/* Markdown content */
+.message-bubble p {
+  margin: 0;
+}
+
+.message-bubble p + p {
+  margin-top: 10px;
+}
+
+/* Room data table */
+.message-bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  font-size: 13px;
+  white-space: normal;
+}
+
+.message-bubble th,
+.message-bubble td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.message-bubble th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.message-bubble td {
+  min-width: 90px;
+}
+
+.message-bubble tr:last-child td {
+  border-bottom: none;
+}
+.message-bubble {
+  max-width: 100%;
+}
+
+.message-bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.message-bubble th,
+.message-bubble td {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.message-bubble th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.message-bubble p {
+  margin: 0;
+}
+
+/* Allow wide tables to scroll instead of breaking the chat layout */
+.message-row-assistant .message-bubble {
+  overflow-x: auto;
 }

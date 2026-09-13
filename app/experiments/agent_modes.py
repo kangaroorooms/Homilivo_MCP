@@ -611,6 +611,236 @@ def format_rooms_as_table(
 
 
 # ============================================================
+# PROPERTY INTEREST -> SUBSCRIPTION PRICING
+#
+# Deterministic follow-up branch, same shape as ROOM_TABLE above:
+# a keyword-matched user intent answered from verified session data
+# (never the LLM, never the user's raw message) plus one outbound
+# call to the Homilivo pricing API. Lives here (not in
+# process_message()) because this is where ROOM_TABLE-style
+# dispatch already runs, inside the plain-sync generate_response() -
+# see the TRUE STREAMING note above _generate_response_maybe_streamed()
+# for why that function is intentionally sync.
+# ============================================================
+
+PRICING_API_URL = os.getenv(
+    "PRICING_API_URL",
+    "https://kangaroo-rooms-backend.onrender.com"
+    "/api/tenant-subscriptions/pricing",
+)
+
+# Matches server.py's HOMILIVO_API_TIMEOUT_SECONDS default.
+PRICING_API_TIMEOUT_SECONDS = 10.0
+
+_PROPERTY_INTEREST_PHRASES = (
+    "contact the owner",
+    "owner's number",
+    "owner number",
+    "get the number",
+    "contact number",
+    "phone number",
+    "i want this",
+    "i want this room",
+    "i want this property",
+    "book this",
+    "book the room",
+    "i want to book",
+    "schedule a visit",
+    "visit this",
+    "i am interested in this",
+    "i'm interested in this",
+    "want to proceed",
+    "how do i proceed",
+)
+
+
+def detect_property_interest(
+    message: str,
+) -> bool:
+    """
+    Deterministic keyword match for "the user wants to act on a
+    specific property" (contact owner / book / visit / proceed).
+
+    No LLM. Mirrors detect_room_operation()'s contains_any() pattern.
+    """
+
+    text = message.lower().strip()
+
+    return contains_any(
+        text,
+        _PROPERTY_INTEREST_PHRASES,
+    )
+
+
+def extract_verified_city(
+    selected_room: dict[str, Any] | None,
+    rooms: list[dict[str, Any]],
+) -> str | None:
+    """
+    Extract a verified city from session room data only.
+
+    Strict city extraction - never falls back to area/locality
+    (unlike get_room_location()), since the pricing API needs a
+    real city, not a neighbourhood name. Never reads the user's
+    raw message. Never raises.
+    """
+
+    def city_from_room(
+        room: dict[str, Any],
+    ) -> str | None:
+
+        try:
+
+            value = room.get("city")
+
+            if isinstance(value, str) and value.strip():
+
+                return value.strip().lower()
+
+            location = room.get("location")
+
+            if isinstance(location, dict):
+
+                nested = location.get("city")
+
+                if isinstance(nested, str) and nested.strip():
+
+                    return nested.strip().lower()
+
+        except AttributeError:
+
+            return None
+
+        return None
+
+    try:
+
+        if isinstance(selected_room, dict):
+
+            city = city_from_room(selected_room)
+
+            if city is not None:
+
+                return city
+
+        if rooms:
+
+            return city_from_room(rooms[0])
+
+    except Exception:
+
+        return None
+
+    return None
+
+
+def fetch_subscription_plans(
+    city: str,
+) -> list[dict[str, Any]] | None:
+    """
+    Fetch subscription plans for a verified city from the Homilivo
+    pricing API.
+
+    Synchronous (httpx.Client), matching generate_response() - the
+    integration point this is called from is a plain sync function,
+    and there is no event loop to await into without introducing new
+    event-loop management (asyncio.to_thread() already exists one
+    layer up, for streaming, and is unrelated to this call).
+
+    Never raises. Returns None on any failure.
+    """
+
+    import httpx
+
+    try:
+
+        with httpx.Client(timeout=PRICING_API_TIMEOUT_SECONDS) as client:
+
+            response = client.get(
+                PRICING_API_URL,
+                params={"city": city},
+            )
+
+            response.raise_for_status()
+
+            data = response.json()
+
+        if isinstance(data, list):
+
+            return data
+
+        if isinstance(data, dict):
+
+            plans = data.get("plans")
+
+            if isinstance(plans, list):
+
+                return plans
+
+        return None
+
+    except Exception as error:
+
+        print(
+            f"[pricing] fetch_subscription_plans failed: {error}"
+        )
+
+        return None
+
+
+def format_subscription_plans(
+    plans: list[dict[str, Any]],
+    city: str,
+) -> str:
+    """
+    Format subscription plans as Markdown. Uses .get() everywhere -
+    never assumes an API field exists.
+    """
+
+    if not plans:
+
+        return (
+            "I wasn't able to find subscription plans for "
+            f"{city.title()} right now. Please visit "
+            "[homilivo.com](https://homilivo.com) to view plans."
+        )
+
+    lines = [
+        "To connect with the owner, you'll need a Homilivo "
+        f"subscription for **{city.title()}**:",
+        "",
+    ]
+
+    for plan in plans:
+
+        name = str(plan.get("name", "Plan")).upper()
+
+        price = plan.get("price", 0)
+
+        try:
+
+            price_text = f"₹{float(price):,.0f}"
+
+        except (TypeError, ValueError):
+
+            price_text = str(price)
+
+        lines.append(f"**{name}** — {price_text}")
+
+        for feature in plan.get("features", []) or []:
+
+            lines.append(f"• {feature}")
+
+        lines.append("")
+
+    lines.append(
+        "Visit [homilivo.com](https://homilivo.com) to subscribe."
+    )
+
+    return "\n".join(lines).strip()
+
+
+# ============================================================
 # GENERIC TOKEN / CONCEPT HELPERS
 # ============================================================
 
@@ -4325,6 +4555,46 @@ def generate_response(
 
             if table_response is not None:
                     return table_response
+
+    # --------------------------------------------------------
+    # PROPERTY INTEREST -> SUBSCRIPTION PRICING
+    #
+    # Case 1: no room context at all -> ask user to search first.
+    # Case 2: room context exists but no verified city -> fall
+    #         through untouched, let the existing flow continue.
+    # Case 3: room context + verified city -> fetch and return
+    #         subscription plans.
+    # --------------------------------------------------------
+
+        if detect_property_interest(user_query):
+
+            rooms_available = bool(rooms) or selected_room is not None
+
+            if not rooms_available:
+
+                return (
+                    "Please search for a room first so I can help "
+                    "you with the available subscription plans."
+                )
+
+            city = extract_verified_city(selected_room, rooms)
+
+            if city is not None:
+
+                plans = fetch_subscription_plans(city)
+
+                if plans is None:
+
+                    return (
+                        "I wasn't able to retrieve subscription "
+                        "plans right now. Please visit "
+                        "homilivo.com to view plans."
+                    )
+
+                return format_subscription_plans(plans, city)
+
+            # Case 2: rooms exist but no verified city - fall
+            # through to the rest of the pipeline unmodified.
 
         comparison_response, _ = (
             answer_room_comparison(

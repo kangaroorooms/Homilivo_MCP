@@ -5158,6 +5158,10 @@ async def process_message(
     # 4. STATIC RESPONSE ROUTES
     # ========================================================
 
+    # NOTE: Greeting messages are now handled directly in
+    # conversation_node (app/graph/nodes/execute.py) before
+    # process_message() is called. This branch remains as
+    # a defence-in-depth fallback for any direct caller.
     if route.message_type == MESSAGE_GREETING:
 
         final_text = GREETING_RESPONSE
@@ -5197,6 +5201,11 @@ async def process_message(
 
         return result_state
 
+    # NOTE: Platform knowledge questions are now handled
+    # directly in faq_node (app/graph/nodes/execute.py)
+    # before process_message() is called. This branch
+    # remains as a defence-in-depth fallback for any
+    # direct caller.
     if route.message_type == MESSAGE_PLATFORM_KNOWLEDGE:
 
         # Deterministic, LLM-free: grounded strictly in whatever the

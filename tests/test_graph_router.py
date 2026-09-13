@@ -164,7 +164,7 @@ async def test_graph_reuses_route_created_by_fast_path(monkeypatch):
 
     call_count = 0
 
-    original_route_message = fast_path_module.route_messagegit grep -n "def detect_room_operation" app/experiments/agent_modes.py
+    original_route_message = fast_path_module.route_message
 
     def spy_route_message(*args, **kwargs):
 

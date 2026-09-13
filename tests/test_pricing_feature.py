@@ -45,6 +45,18 @@ POSITIVE_PHRASES = [
     "i'm interested in this",
     "want to proceed",
     "how do i proceed",
+    # Tier B semantic fallback - natural variations not literally in
+    # _PROPERTY_INTEREST_PHRASES, caught via embedding similarity
+    # against _PROPERTY_INTEREST_ANCHORS (gated by a margin over
+    # _PROPERTY_INTEREST_DECOY_ANCHORS - see
+    # _detect_property_interest_semantically()).
+    "i want to contact owner",
+    "how do i reach the owner",
+    "get me the contact details",
+    "connect me with the landlord",
+    "can i get their number",
+    "i want to contact the owner",
+    "i want to book this room",
 ]
 
 NEGATIVE_PHRASES = [
@@ -55,6 +67,11 @@ NEGATIVE_PHRASES = [
     "show in table",
     "under 8000",
     "which is cheapest",
+    # Same room-follow-up vocabulary as the decoy anchors - must not
+    # trip the Tier B semantic fallback via shared vocabulary alone
+    # ("room", "rent") with no real property-interest intent.
+    "show me rooms in bangalore",
+    "compare these rooms",
 ]
 
 

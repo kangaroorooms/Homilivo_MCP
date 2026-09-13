@@ -159,30 +159,44 @@ def validate_ai_response(
         )
 
     # --------------------------------------------------------
-    # SENSITIVE INFORMATION
+    # SENSITIVE / INTERNAL INFORMATION
+    #
+    # Skipped for a structured markdown table (starts with "| ",
+    # e.g. format_rooms_as_table()'s output). These two checks exist
+    # to catch the AI/system leaking ITS OWN credentials or internals
+    # in free-form generated text - they are not meant to censor
+    # verified, deterministically-rendered room data (title, location,
+    # amenities) that already passed the parameter and api-data
+    # guardrails, and whose content is not chosen by this system. A
+    # real listing whose title happens to contain an ordinary English
+    # word like "secret" or "password" must not have its entire table
+    # blocked. Every other check below (length, empty, control
+    # characters, excessive blank lines) still runs on a table, and
+    # every non-table response still gets full coverage of both
+    # checks.
     # --------------------------------------------------------
 
-    if contains_sensitive_information(
-        response
-    ):
+    is_markdown_table = response.lstrip().startswith("| ")
 
-        return (
-            False,
-            "The response contained potentially sensitive information.",
-        )
+    if not is_markdown_table:
 
-    # --------------------------------------------------------
-    # INTERNAL INFORMATION
-    # --------------------------------------------------------
+        if contains_sensitive_information(
+            response
+        ):
 
-    if contains_internal_information(
-        response
-    ):
+            return (
+                False,
+                "The response contained potentially sensitive information.",
+            )
 
-        return (
-            False,
-            "The response contained internal system information.",
-        )
+        if contains_internal_information(
+            response
+        ):
+
+            return (
+                False,
+                "The response contained internal system information.",
+            )
 
     # --------------------------------------------------------
     # CONTROL CHARACTERS

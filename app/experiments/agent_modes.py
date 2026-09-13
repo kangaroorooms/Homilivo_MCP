@@ -634,42 +634,189 @@ PRICING_API_TIMEOUT_SECONDS = 10.0
 
 _PROPERTY_INTEREST_PHRASES = (
     "contact the owner",
+    "contact owner",
     "owner's number",
     "owner number",
-    "get the number",
-    "contact number",
-    "phone number",
-    "i want this",
-    "i want this room",
-    "i want this property",
     "book this",
     "book the room",
     "i want to book",
     "schedule a visit",
+    "want to proceed",
+    "i want this",
+    "i want this room",
+    "i want this property",
     "visit this",
     "i am interested in this",
     "i'm interested in this",
-    "want to proceed",
-    "how do i proceed",
+    "owner contact",
+    "owner details",
+    "owner information",
+    "get in touch",
+    "reach the owner",
+    "talk to the owner",
+    "speak to the owner",
+    "i want to contact",
 )
+
+# Tier B semantic fallback anchors - prototype phrasings of "the user
+# wants to act on a specific property" (contact owner / book / visit /
+# proceed). Mirrors app.experiments.interpreter's ANCHORS pattern: to
+# support a new way of asking, add ONE line here, never a new branch.
+# "Can I get their phone number" was added alongside the original 8
+# after verifying "can i get their number" alone did not clear
+# _PROPERTY_INTEREST_SEMANTIC_THRESHOLD against the first 8 (0.421),
+# even though its margin over every decoy below was already wide.
+_PROPERTY_INTEREST_ANCHORS = (
+    "I want to contact the property owner",
+    "How can I reach the owner of this room",
+    "I want to book this property",
+    "Can I schedule a visit to this room",
+    "How do I get the owner contact details",
+    "I am interested in renting this property",
+    "I want to proceed with this room",
+    "Connect me with the landlord",
+    "Can I get their phone number",
+)
+
+# Decoy anchors - prototype phrasings of the common room-follow-up
+# questions that share enough vocabulary with the interest anchors
+# above (price, "room", search) to otherwise score above
+# _PROPERTY_INTEREST_SEMANTIC_THRESHOLD on raw cosine similarity alone
+# (verified empirically: "compare these rooms" and "what is the rent"
+# both scored above 0.45 against _PROPERTY_INTEREST_ANCHORS with no
+# decoy set to discriminate against). Acceptance requires beating the
+# best-matching decoy by _PROPERTY_INTEREST_SEMANTIC_MARGIN, the same
+# competing-anchor-sets technique app.experiments.interpreter's
+# classify_operation() uses between operation slots, applied here as a
+# single interest-vs-not-interest competition.
+_PROPERTY_INTEREST_DECOY_ANCHORS = (
+    "What is the rent for this room",
+    "Does this room have air conditioning",
+    "Show me rooms in Bangalore",
+    "Compare these rooms",
+    "Show the results in a table",
+    "What amenities does this room have",
+    "Which room is the cheapest",
+    "Filter rooms under 8000",
+)
+
+# "Do not guess" threshold for the semantic property-interest fallback -
+# same value as app.experiments.interpreter.ACCEPT_THRESHOLD.
+_PROPERTY_INTEREST_SEMANTIC_THRESHOLD = 0.45
+
+# Same value as app.experiments.interpreter.SLOT_MARGIN - the winning
+# side (interest vs decoy) must beat the other by at least this much,
+# otherwise the query is treated as ambiguous/not-interest.
+_PROPERTY_INTEREST_SEMANTIC_MARGIN = 0.04
+
+_property_interest_index: "tuple[Any, Any] | None" = None
+_property_interest_index_failed = False
+
+
+def _build_property_interest_index():
+    """
+    Lazily embed both anchor sets in a single encode() batch call, then
+    split back into (interest_matrix, decoy_matrix). Returns None (and
+    remembers the failure) if the shared embedding model is
+    unavailable, mirroring _build_amenity_semantic_index() - callers
+    simply get no semantic match and fall back to the Tier A
+    (already-run) result of False.
+    """
+    global _property_interest_index, _property_interest_index_failed
+
+    if _property_interest_index is not None:
+        return _property_interest_index
+
+    if _property_interest_index_failed:
+        return None
+
+    try:
+        from app.embeddings import get_shared_model
+        model = get_shared_model()
+        num_interest = len(_PROPERTY_INTEREST_ANCHORS)
+        embeddings = model.encode(
+            list(_PROPERTY_INTEREST_ANCHORS) + list(_PROPERTY_INTEREST_DECOY_ANCHORS),
+            normalize_embeddings=True,
+        )
+        interest_matrix = embeddings[:num_interest]
+        decoy_matrix = embeddings[num_interest:]
+        _property_interest_index = (interest_matrix, decoy_matrix)
+        return _property_interest_index
+    except Exception:  # noqa: BLE001 - degrade gracefully
+        _property_interest_index_failed = True
+        return None
+
+
+def _detect_property_interest_semantically(
+    text: str,
+) -> bool:
+
+    index = _build_property_interest_index()
+
+    if index is None:
+
+        return False
+
+    interest_matrix, decoy_matrix = index
+
+    try:
+        from app.embeddings import get_shared_model
+        from sentence_transformers import util
+
+        model = get_shared_model()
+        query_embedding = model.encode(
+            text,
+            normalize_embeddings=True,
+        )
+        interest_score = float(util.cos_sim(query_embedding, interest_matrix)[0].max())
+        decoy_score = float(util.cos_sim(query_embedding, decoy_matrix)[0].max())
+    except Exception:  # noqa: BLE001 - degrade gracefully
+        return False
+
+    if interest_score < _PROPERTY_INTEREST_SEMANTIC_THRESHOLD:
+
+        return False
+
+    return (interest_score - decoy_score) > _PROPERTY_INTEREST_SEMANTIC_MARGIN
 
 
 def detect_property_interest(
     message: str,
 ) -> bool:
     """
-    Deterministic keyword match for "the user wants to act on a
-    specific property" (contact owner / book / visit / proceed).
+    Detect "the user wants to act on a specific property" (contact
+    owner / book / visit / proceed).
 
-    No LLM. Mirrors detect_room_operation()'s contains_any() pattern.
+    Two tiers, same shape as detect_room_operation():
+
+    TIER A - deterministic keyword match (contains_any() over a small,
+    unambiguous core phrase list). Fast, no model cost.
+
+    TIER B - semantic fallback (_detect_property_interest_semantically()),
+    reached only when Tier A finds nothing. Handles natural variations
+    the fixed phrase list does not literally contain (e.g. "how do i
+    reach them", "get me the number"). No LLM - a local encode + cosine
+    against a small interest-anchor set, gated by both a minimum
+    similarity and a margin over a decoy anchor set representing common
+    non-interest room follow-ups (price/amenity/comparison/table/
+    search) - the same competing-anchor-sets technique
+    app.experiments.interpreter.classify_operation() uses between
+    operation slots. If the embedding model is unavailable, this tier
+    silently returns False and Tier A's result (already False, or it
+    would have returned already) stands - never raises, never blocks
+    the pipeline.
     """
 
     text = message.lower().strip()
 
-    return contains_any(
+    if contains_any(
         text,
         _PROPERTY_INTEREST_PHRASES,
-    )
+    ):
+
+        return True
+
+    return _detect_property_interest_semantically(text)
 
 
 def extract_verified_city(

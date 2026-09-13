@@ -116,9 +116,9 @@ def test_extract_verified_city_nested_location_dict() -> None:
 def test_format_subscription_plans() -> None:
 
     plans = [
-        {"name": "free", "price": 0, "features": ["Browse listings"]},
-        {"name": "gold", "price": 149, "features": ["Contact 5 owners"]},
-        {"name": "platinum", "price": 299, "features": ["Unlimited contacts"]},
+        {"plan": "free", "price": 0, "features": ["Browse listings"]},
+        {"plan": "gold", "price": 149, "features": ["Contact 5 owners"]},
+        {"plan": "platinum", "price": 299, "features": ["Unlimited contacts"]},
     ]
 
     output = format_subscription_plans(plans, "bangalore")
@@ -181,7 +181,10 @@ class _FakeClient:
     def get(self, url, params=None):
 
         return _FakeResponse(
-            [{"name": "free", "price": 0, "features": []}]
+            {
+                "success": True,
+                "data": [{"plan": "free", "price": 0, "features": []}],
+            }
         )
 
 
@@ -211,7 +214,7 @@ def test_fetch_subscription_plans_success(monkeypatch: pytest.MonkeyPatch) -> No
     result = fetch_subscription_plans("bangalore")
 
     assert isinstance(result, list)
-    assert result[0]["name"] == "free"
+    assert result[0]["plan"] == "free"
 
 
 def test_fetch_subscription_plans_failure(monkeypatch: pytest.MonkeyPatch) -> None:

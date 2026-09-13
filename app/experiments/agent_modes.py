@@ -771,7 +771,7 @@ def fetch_subscription_plans(
 
         if isinstance(data, dict):
 
-            plans = data.get("plans")
+            plans = data.get("data")
 
             if isinstance(plans, list):
 
@@ -813,7 +813,7 @@ def format_subscription_plans(
 
     for plan in plans:
 
-        name = str(plan.get("name", "Plan")).upper()
+        name = str(plan.get("plan", "Plan")).upper()
 
         price = plan.get("price", 0)
 

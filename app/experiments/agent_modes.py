@@ -4739,6 +4739,10 @@ async def process_message(
         "Running input guardrail..."
     )
 
+    # Full context-aware input guardrail. Runs here (not just at the
+    # api.py boundary) because it needs conversation context to
+    # correctly handle follow-ups. The api.py security hard-block
+    # (is_security_blocked) handles context-free rejection upstream.
     input_allowed, input_message = (
         validate_user_input(
             user_query

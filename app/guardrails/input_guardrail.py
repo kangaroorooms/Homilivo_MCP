@@ -152,6 +152,54 @@ BLOCKED_PATTERNS = [
 
 
 # ============================================================
+# CONTEXT-FREE SECURITY HARD-BLOCK
+# ============================================================
+# Reuses BLOCKED_PATTERNS above - never a second, independently
+# maintained pattern list. Deliberately narrower than
+# validate_user_input(): no semantic intent classification, no
+# conversation-context awareness. This is meant to be called at a
+# request boundary BEFORE any routing/context is available (see
+# app/api.py's _run_chat_turn), where a context-aware "is this
+# allowed" decision cannot be made yet - only an unambiguous
+# security-pattern match can be. validate_user_input() remains the
+# full guardrail, and keeps running unchanged inside
+# app.experiments.agent_modes.process_message(), where conversation
+# context IS available.
+
+def is_security_blocked(
+    message: str,
+) -> tuple[bool, str]:
+    """
+    Fast, context-free security check.
+
+    Only blocks messages that match BLOCKED_PATTERNS - credentials,
+    injection attempts, hacking patterns. Does NOT do semantic intent
+    classification. Does NOT consider conversation history.
+
+    Returns (True, rejection_message) if blocked, (False, "") if clean.
+    """
+
+    if not isinstance(message, str):
+        return False, ""
+
+    query = normalize_text(message)
+
+    for pattern in BLOCKED_PATTERNS:
+
+        if re.search(
+            pattern,
+            query,
+            flags=re.IGNORECASE,
+        ):
+            return (
+                True,
+                "I can only help with accommodation and room searches.",
+            )
+
+    return False, ""
+
+
+# ============================================================
 # INTENT CLASSIFICATION
 # ============================================================
 

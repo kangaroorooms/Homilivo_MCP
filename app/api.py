@@ -27,6 +27,7 @@ from mcp import Client
 from app.server import mcp, set_kangaroo_token
 from app.rate_limit import check_rate_limit, client_host_identifier, enforce_rate_limit
 from app.demo_auth import issue_demo_token, redeem_demo_token, server_credential_configured
+from app.guardrails import is_security_blocked
 from app.streaming import chunk_for_streaming, LiveTokenRelay
 from app.observability import get_metrics_snapshot, record_turn
 from app.feedback_store import record_feedback
@@ -345,6 +346,36 @@ async def _run_chat_turn(
     """
     request_id = str(uuid4())
     started_at = time.monotonic()
+
+    # Security hard-block: reject clearly malicious input before
+    # entering the graph. Context-aware guardrail logic remains
+    # inside process_message() unchanged.
+    security_blocked, block_msg = is_security_blocked(message)
+    if security_blocked:
+        record_turn(
+            request_id=request_id,
+            session_id=session_id,
+            intent="OUT_OF_SCOPE",
+            operation=None,
+            tool=None,
+            mode=mode,
+            status="blocked",
+            error_category="security_hard_block",
+            latency_ms=(time.monotonic() - started_at) * 1000,
+        )
+        return {
+            "success": False,
+            "session_id": session_id,
+            "request_id": request_id,
+            "mode": mode,
+            "message": block_msg,
+            "room_count": 0,
+            "rooms": [],
+            "selected_room": None,
+            "pending_clarification": False,
+            "sources": [],
+            "search_performed": False,
+        }
 
     state = SESSIONS.get(session_id)
     state.conversation_history.append({"role": "user", "content": message})

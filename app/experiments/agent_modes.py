@@ -994,6 +994,7 @@ _DETAILS_CORE = (
 _TABLE_FORMAT_CORE = (
     "table format",
     "in a table",
+    "in table",
     "as a table",
     "table view",
     "tabular format",
@@ -2731,6 +2732,21 @@ def is_likely_followup(
     )
 
     if operation is not None:
+
+        return True
+
+    # A property-interest phrase ("contact the owner", "book this",
+    # "schedule a visit", ...) with active room context (guaranteed by
+    # the guard at the top of this function) is a follow-up on the
+    # room(s) just shown, not a generic platform-knowledge question -
+    # even though some of these phrases (e.g. "contact the owner")
+    # also appear in _PLATFORM_KNOWLEDGE_PATTERNS for the case with NO
+    # room context. Checked here, before is_platform_knowledge_question()
+    # runs in route_message(), so an active search session's "I want to
+    # contact the owner" reaches MESSAGE_FOLLOWUP -> generate_response()
+    # -> detect_property_interest() (app/experiments/agent_modes.py)
+    # instead of being answered by the FAQ/RAG branch.
+    if detect_property_interest(user_query):
 
         return True
 

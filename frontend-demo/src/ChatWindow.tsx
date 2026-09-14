@@ -3,7 +3,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { FormEvent } from "react";
 import { useChatSocket } from "./useChatSocket";
+import { VoiceInput } from "./VoiceInput";
 import type { ConnectionStatus, Mode } from "./types";
+
+const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY ?? "";
 
 interface ChatWindowProps {
   backendUrl: string;
@@ -37,6 +40,18 @@ export function ChatWindow({ backendUrl, token }: ChatWindowProps) {
     setInput("");
 
     void sendMessage(text, mode);
+  };
+
+  const handleVoiceTranscript = (text: string) => {
+    const trimmed = text.trim();
+
+    if (!trimmed || isSending) {
+      return;
+    }
+
+    setInput("");
+
+    void sendMessage(trimmed, mode);
   };
 
   return (
@@ -140,6 +155,12 @@ export function ChatWindow({ backendUrl, token }: ChatWindowProps) {
           onChange={(e) => setInput(e.target.value)}
           disabled={isSending}
           aria-label="Message"
+        />
+
+        <VoiceInput
+          apiKey={DEEPGRAM_API_KEY}
+          onTranscript={handleVoiceTranscript}
+          disabled={isSending}
         />
 
         <button

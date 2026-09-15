@@ -105,6 +105,7 @@ MESSAGE_UNKNOWN = "UNKNOWN"
 MESSAGE_EXIT = "EXIT"
 MESSAGE_PLATFORM_KNOWLEDGE = "PLATFORM_KNOWLEDGE"
 MESSAGE_UNSUPPORTED_ACTION = "UNSUPPORTED_ACTION"
+MESSAGE_CONVERSATION_META = "CONVERSATION_META"
 
 
 # Split so process_message can reply naturally (a farewell vs a
@@ -221,6 +222,10 @@ class ConversationState:
 
     pending_search: dict[str, Any] = field(
         default_factory=dict
+    )
+
+    user_queries: list = field(
+        default_factory=list
     )
 
 
@@ -817,6 +822,57 @@ def detect_property_interest(
         return True
 
     return _detect_property_interest_semantically(text)
+
+
+# ============================================================
+# CONVERSATION META QUERIES
+# ============================================================
+
+_CONVERSATION_META_PHRASES = (
+    "what was my last query",
+    "what was my first query",
+    "what did i ask",
+    "what have i asked",
+    "what have i searched",
+    "show my history",
+    "my previous query",
+    "my last query",
+    "my first query",
+    "what was my previous",
+    "repeat my last",
+    "what queries have i",
+    "history of my queries",
+    "what did i search",
+    "my search history",
+)
+
+
+def detect_conversation_meta_query(
+    message: str,
+) -> bool:
+    """
+    Detect "the user is asking about their own query history in this
+    session" (what was my last/first query, show my history, ...).
+
+    Tier A only - deterministic keyword match (contains_any() over a
+    small, unambiguous core phrase list), same pattern as
+    detect_property_interest()'s Tier A. No semantic fallback: these
+    phrases are specific enough that a fixed list is sufficient. Never
+    raises.
+    """
+
+    try:
+
+        text = message.lower().strip()
+
+        return contains_any(
+            text,
+            _CONVERSATION_META_PHRASES,
+        )
+
+    except Exception:  # noqa: BLE001 - never raise, default to False
+
+        return False
 
 
 def extract_verified_city(
@@ -3429,6 +3485,21 @@ def route_message(
         )
 
     # --------------------------------------------------------
+    # CONVERSATION META QUERY
+    # --------------------------------------------------------
+    # Checked after CLARIFICATION but before ROOM_FOLLOWUP: a meta
+    # query about the user's own query history must be handled here,
+    # before the room-followup check gets a chance to misinterpret it
+    # (e.g. as a follow-up on the previously selected room).
+
+    if detect_conversation_meta_query(user_query):
+
+        return MessageRoute(
+            message_type=MESSAGE_CONVERSATION_META,
+            reason="User is asking about their conversation history",
+        )
+
+    # --------------------------------------------------------
     # ROOM CONTEXT
     # --------------------------------------------------------
 
@@ -5114,6 +5185,11 @@ async def process_message(
     route: MessageRoute | None = None,
 ) -> dict[str, Any]:
 
+    # Silently record every user message for this session, before any
+    # routing or guardrail logic runs - backs the conversation meta
+    # query handler (MESSAGE_CONVERSATION_META) below.
+    state.user_queries.append(user_query)
+
     result_state = {
         "response": None,
         "rooms": state.previous_rooms,
@@ -5237,6 +5313,12 @@ async def process_message(
             # fallback (or is blocked outright) instead of the fixed,
             # honest "can't complete that action yet" response.
             MESSAGE_UNSUPPORTED_ACTION,
+            # A deterministic keyword match against the conversation-
+            # meta phrase list ("what was my last query", ...) has no
+            # room-search vocabulary and would otherwise be flagged
+            # out-of-scope by the semantic input guardrail - trusted
+            # the same way the matches above are.
+            MESSAGE_CONVERSATION_META,
         }
     )
 
@@ -5355,6 +5437,63 @@ async def process_message(
         # claims the action was completed, never routes through a
         # follow-up path that could sound like it processed a booking.
         final_text = UNSUPPORTED_ACTION_RESPONSE
+
+        if print_validated_response(
+            final_text
+        ):
+
+            result_state["response"] = final_text
+
+        return result_state
+
+    if route.message_type == MESSAGE_CONVERSATION_META:
+
+        # Deterministic, no LLM, no MCP call - answers strictly from
+        # state.user_queries, which CHANGE 2 above populates on every
+        # turn. The current message (just appended at the top of this
+        # function) is excluded so it never answers "what was my last
+        # query" with the meta question itself.
+        queries = state.user_queries
+
+        previous_queries = queries[:-1]
+
+        text = normalize_text(
+            user_query
+        )
+
+        if not previous_queries:
+
+            final_text = (
+                "You haven't asked anything yet in this session. "
+                "How can I help you find a room?"
+            )
+
+        elif contains_any(
+            text,
+            ("last", "previous"),
+        ):
+
+            final_text = (
+                f'Your last query was: "{previous_queries[-1]}"'
+            )
+
+        elif "first" in text:
+
+            final_text = (
+                f'Your first query was: "{previous_queries[0]}"'
+            )
+
+        else:
+
+            numbered_list = "\n".join(
+                f"{i + 1}. {q}"
+                for i, q in enumerate(previous_queries)
+            )
+
+            final_text = (
+                "Here is what you have asked in this session:\n"
+                f"{numbered_list}"
+            )
 
         if print_validated_response(
             final_text

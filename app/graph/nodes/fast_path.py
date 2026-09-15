@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from app.experiments.agent_modes import (
     MESSAGE_CLARIFICATION,
+    MESSAGE_CONVERSATION_META,
     MESSAGE_EXIT,
     MESSAGE_FOLLOWUP,
     MESSAGE_GREETING,
@@ -66,6 +67,12 @@ _MESSAGE_TYPE_TO_BRANCH: dict[str, str] = {
     MESSAGE_INFO: BRANCH_CONVERSATION,
     MESSAGE_EXIT: BRANCH_CONVERSATION,
     MESSAGE_UNSUPPORTED_ACTION: BRANCH_CONVERSATION,
+    # A deterministic meta-query answer, same as UNSUPPORTED_ACTION
+    # above - no LLM, no MCP call, so it belongs with Conversation,
+    # not API-request. Explicit here because the default fallback in
+    # classify_branch() below is BRANCH_API_REQUEST, which would
+    # incorrectly trigger an MCP search call for this route.
+    MESSAGE_CONVERSATION_META: BRANCH_CONVERSATION,
     MESSAGE_PLATFORM_KNOWLEDGE: BRANCH_FAQ,
     MESSAGE_NEW_SEARCH: BRANCH_API_REQUEST,
     MESSAGE_REFINEMENT: BRANCH_API_REQUEST,

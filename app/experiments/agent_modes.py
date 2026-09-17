@@ -4385,6 +4385,95 @@ def _neutralize_prompt_delimiters(value: Any) -> Any:
     return value
 
 
+# ============================================================
+# PROPERTY DATA SANITIZATION (P1-06)
+# ============================================================
+# validate_room_data() (app/guardrails/api_data_guardrail.py) checks
+# structure/type only - it never cleans string CONTENT, and fields
+# like "description"/"amenities" aren't validated at all there. The
+# Homilivo API is an untrusted external source, so free-text fields
+# (title, description, amenities, location, and any other string
+# field) are truncated, stripped of control characters/null bytes,
+# and whitespace-normalized here before the room dict is json.dumps()d
+# into the LLM prompt by build_llm_room_context(). This runs AFTER
+# the guardrail and AFTER _neutralize_prompt_delimiters() - it is an
+# additional layer, not a replacement for either. See
+# tests/test_p1_06_property_data_sanitization.py.
+
+_SANITIZE_FIELD_MAX_LENGTHS = {
+    "title": 200,
+    "description": 500,
+    "amenities": 300,
+    "location": 200,
+}
+_SANITIZE_DEFAULT_MAX_LENGTH = 300
+
+_CONTROL_CHAR_RE = re.compile(
+    "[" + "".join(chr(c) for c in range(0, 32) if c not in (9, 10)) + "]"
+)
+_MULTI_SPACE_RE = re.compile(r" {3,}")
+_MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
+
+
+def _sanitize_string_value(value: str, max_length: int) -> str:
+
+    cleaned = value.replace("\x00", "")
+    cleaned = _CONTROL_CHAR_RE.sub("", cleaned)
+    cleaned = _MULTI_SPACE_RE.sub(" ", cleaned)
+    cleaned = _MULTI_NEWLINE_RE.sub("\n\n", cleaned)
+    cleaned = cleaned.strip()
+
+    return cleaned[:max_length]
+
+
+def sanitize_room_for_llm_context(
+    room: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Return a sanitized copy of an untrusted room dict, safe to embed in
+    an LLM prompt. Never raises - falls back to returning the original
+    value unchanged on any unexpected error.
+    """
+
+    try:
+
+        if not isinstance(room, dict):
+            return room
+
+        sanitized: dict[str, Any] = {}
+
+        for key, value in room.items():
+
+            max_length = _SANITIZE_FIELD_MAX_LENGTHS.get(
+                key, _SANITIZE_DEFAULT_MAX_LENGTH
+            )
+
+            if isinstance(value, str):
+
+                sanitized[key] = _sanitize_string_value(
+                    value, max_length
+                )
+
+            elif isinstance(value, list):
+
+                sanitized[key] = [
+                    _sanitize_string_value(item, max_length)
+                    if isinstance(item, str)
+                    else item
+                    for item in value
+                ]
+
+            else:
+
+                sanitized[key] = value
+
+        return sanitized
+
+    except Exception:
+
+        return room
+
+
 def build_llm_room_context(
     rooms: list[dict[str, Any]],
     selected_room: dict[str, Any] | None,
@@ -4397,6 +4486,9 @@ def build_llm_room_context(
     selected_room = _neutralize_prompt_delimiters(selected_room)
     search_request = _neutralize_prompt_delimiters(search_request)
     conversation_history = _neutralize_prompt_delimiters(conversation_history)
+
+    rooms = [sanitize_room_for_llm_context(room) for room in rooms]
+    selected_room = sanitize_room_for_llm_context(selected_room)
 
     return f"""
 <verified_data>

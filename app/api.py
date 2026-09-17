@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from app.chatbot.routes import router as chatbot_router
+
+
 # The conversational engine logs with Unicode symbols (arrows, checkmarks).
 # On Windows, stdout defaults to cp1252 whenever it isn't an interactive
 # UTF-8 console (piped, redirected to a log file, run under a process
@@ -15,6 +18,7 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
         pass
+
 
 from fastapi import FastAPI, Depends
 from fastapi.responses import FileResponse
@@ -53,25 +57,32 @@ class SessionStore:
     def _enforce_cap(self) -> None:
         if len(self._data) <= self._max:
             return
+
         ordered = sorted(self._data.items(), key=lambda kv: kv[1][0])
+
         for sid, _ in ordered[: len(self._data) - self._max]:
             del self._data[sid]
 
     def get(self, session_id: str) -> ConversationState:
         now = time.time()
+
         with self._lock:
             self._evict_expired(now)
+
             item = self._data.get(session_id)
+
             if item is None:
                 state = ConversationState()
                 self._data[session_id] = [now, state]
                 self._enforce_cap()
                 return state
+
             item[0] = now
             return item[1]
 
     def save(self, session_id: str, state: ConversationState) -> None:
         now = time.time()
+
         with self._lock:
             self._data[session_id] = [now, state]
             self._enforce_cap()
@@ -95,13 +106,30 @@ app = FastAPI(
     version="2.0.0",
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Separate Google File Search chatbot router.
+# This does NOT modify the existing /chat endpoint.
+app.include_router(chatbot_router)
+
+
 SESSIONS = SessionStore()
+
 
 # Single source of truth for the valid response modes. Pydantic enforces
 # this on ChatRequest.mode below, so an invalid mode is rejected with a
 # normal 422 before the request ever reaches the conversational engine
 # - it is never silently coerced to "fast".
 ChatMode = Literal["fast", "qwen", "gemma", "groq"]
+
 
 # ------------------------------------------------------------
 # AUTH: this renders the green "Authorize" button in /docs.
@@ -119,12 +147,14 @@ async def _warmup_models() -> None:
     # intent examples), once at boot so the first user request isn't slow.
     try:
         from app.experiments.interpreter import warmup as warmup_interpreter
+
         warmup_interpreter()
     except Exception as error:  # noqa: BLE001
         print(f"⚠ interpreter warmup skipped: {error}")
 
     try:
         from app.guardrails.input_guardrail import get_intent_embeddings
+
         get_intent_embeddings()
     except Exception as error:  # noqa: BLE001
         print(f"⚠ input guardrail warmup skipped: {error}")
@@ -141,11 +171,16 @@ class ChatRequest(BaseModel):
         max_length=500,
         description="Room-search request or follow-up from the user",
     )
+
     session_id: str | None = Field(
         None,
         description="Omit on the first call; reuse the returned value for follow-ups.",
     )
-    mode: ChatMode = Field("fast", description="fast | qwen | gemma | groq")
+
+    mode: ChatMode = Field(
+        "fast",
+        description="fast | qwen | gemma | groq",
+    )
 
 
 class RoomResponse(BaseModel):
@@ -175,8 +210,10 @@ class ChatResponse(BaseModel):
 
 def _structure_room(room: dict) -> dict:
     price = room.get("pricePerMonth")
+
     if price is None:
         price = room.get("price")
+
     return {
         "id": str(room.get("id")),
         "title": room.get("title", "Untitled Room"),
@@ -188,26 +225,44 @@ def _structure_room(room: dict) -> dict:
     }
 
 
-def _apply_result_to_state(state: ConversationState, result: dict) -> str | None:
+def _apply_result_to_state(
+    state: ConversationState,
+    result: dict,
+) -> str | None:
     """Mirror the memory-update logic from the terminal loop."""
+
     response = result.get("response")
 
     if response:
-        state.conversation_history.append({"role": "assistant", "content": response})
+        state.conversation_history.append(
+            {
+                "role": "assistant",
+                "content": response,
+            }
+        )
 
     rooms = result.get("rooms")
+
     if isinstance(rooms, list):
         state.previous_rooms = rooms
 
     search = result.get("search")
+
     if isinstance(search, dict):
         state.previous_search = search
 
     selected_room = result.get("selected_room")
-    state.selected_room = selected_room if isinstance(selected_room, dict) else None
+
+    state.selected_room = (
+        selected_room
+        if isinstance(selected_room, dict)
+        else None
+    )
+
     state.selected_room_id = result.get("selected_room_id")
 
     pending = result.get("pending_search")
+
     if isinstance(pending, dict):
         state.pending_search = pending
 
@@ -220,12 +275,18 @@ def _apply_result_to_state(state: ConversationState, result: dict) -> str | None
 
 @app.get("/")
 def root():
-    return {"status": "success", "message": "Homilivo Room Search API is running"}
+    return {
+        "status": "success",
+        "message": "Homilivo Room Search API is running",
+    }
 
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "active_sessions": len(SESSIONS)}
+    return {
+        "status": "healthy",
+        "active_sessions": len(SESSIONS),
+    }
 
 
 # Demo chat UI: a static page (no build step, no framework) that talks to
@@ -252,11 +313,18 @@ async def chat_endpoint(
     set_kangaroo_token(credentials.credentials)
 
     session_id = request.session_id or str(uuid4())
+
     # request.mode is already validated to be one of ChatMode by Pydantic.
     mode = request.mode
 
     state = SESSIONS.get(session_id)
-    state.conversation_history.append({"role": "user", "content": request.message})
+
+    state.conversation_history.append(
+        {
+            "role": "user",
+            "content": request.message,
+        }
+    )
 
     async with Client(mcp) as client:
         result = await process_message(
@@ -267,16 +335,26 @@ async def chat_endpoint(
         )
 
     response_text = _apply_result_to_state(state, result)
+
     SESSIONS.save(session_id, state)
 
-    rooms = [_structure_room(r) for r in state.previous_rooms]
-    selected = _structure_room(state.selected_room) if state.selected_room else None
+    rooms = [
+        _structure_room(r)
+        for r in state.previous_rooms
+    ]
+
+    selected = (
+        _structure_room(state.selected_room)
+        if state.selected_room
+        else None
+    )
 
     return ChatResponse(
         success=response_text is not None,
         session_id=session_id,
         mode=mode,
-        message=response_text or "Sorry, I couldn't process that request. Please rephrase.",
+        message=response_text
+        or "Sorry, I couldn't process that request. Please rephrase.",
         room_count=len(rooms),
         rooms=rooms,
         selected_room=selected,
@@ -287,4 +365,9 @@ async def chat_endpoint(
 @app.post("/chat/reset")
 def reset_session(session_id: str):
     existed = SESSIONS.reset(session_id)
-    return {"status": "success", "session_id": session_id, "existed": existed}
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "existed": existed,
+    }

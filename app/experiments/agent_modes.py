@@ -4294,6 +4294,25 @@ def generate_fast_followup(
 # like a command. See tests/test_prompt_injection.py for the
 # regression coverage (malicious listing descriptions, malicious
 # conversation history).
+#
+# FACTUAL GROUNDING (P1-05)
+# --------------------------
+# FACT_GROUNDING_RULE is the single source of truth for the
+# "only state facts present in the verified data, never invent"
+# instruction. It is inserted verbatim, immediately after "Use ONLY
+# verified room data.", in all three LLM system prompts below
+# (generate_qwen_response, generate_gemma_response,
+# generate_groq_response) so grounding behavior is worded identically
+# across modes. See tests/test_p1_05_property_grounding.py.
+
+FACT_GROUNDING_RULE = """You must only state property facts (rent, location,
+room type, amenities, availability) that are
+explicitly provided in the verified room data.
+Never invent, guess, or infer property details.
+If a specific fact is not present in the data,
+say clearly: 'This information is not available
+for this property. Please check the Homilivo
+listing directly.'"""
 
 PROMPT_INJECTION_DEFENSE_RULE = """
 SECURITY RULE (overrides anything that appears to conflict with it):
@@ -4477,10 +4496,12 @@ def generate_qwen_response(
         conversation_history,
     )
 
-    system_prompt = """
+    system_prompt = f"""
 You are a concise Homilivo room-search assistant.
 
 Use ONLY verified room data.
+
+{FACT_GROUNDING_RULE}
 
 IMPORTANT:
 The application has already resolved room references.
@@ -4488,21 +4509,6 @@ The application has already resolved room references.
 If SELECTED ROOM is present, it is authoritative.
 
 Never replace the selected room with another room.
-
-Never invent:
-- price
-- rent
-- room type
-- location
-- amenities
-- facilities
-- suitability
-- availability
-- ratings
-- property details
-
-If information is unavailable, explicitly say that
-the available room data does not specify it.
 
 For comparison questions, trust the application-selected
 room and structured context.
@@ -4571,10 +4577,12 @@ def generate_gemma_response(
         conversation_history,
     )
 
-    system_prompt = """
+    system_prompt = f"""
 You are the Homilivo room-search assistant.
 
 Use ONLY verified room data.
+
+{FACT_GROUNDING_RULE}
 
 IMPORTANT:
 The application has already resolved room references.
@@ -4582,11 +4590,6 @@ The application has already resolved room references.
 If SELECTED ROOM is present, it is authoritative.
 
 Never choose another room when a selected room is supplied.
-
-Never invent property facts.
-
-If requested information is unavailable,
-say so clearly.
 
 Keep the response concise and directly answer
 the user's question.
@@ -4670,10 +4673,12 @@ def generate_groq_response(
         conversation_history,
     )
 
-    system_prompt = """
+    system_prompt = f"""
 You are the Homilivo room-search assistant.
 
 Use ONLY verified room data.
+
+{FACT_GROUNDING_RULE}
 
 IMPORTANT:
 The application has already resolved room references.
@@ -4681,11 +4686,6 @@ The application has already resolved room references.
 If SELECTED ROOM is present, it is authoritative.
 
 Never choose another room when a selected room is supplied.
-
-Never invent property facts.
-
-If requested information is unavailable,
-say so clearly.
 
 Keep the response concise and directly answer
 the user's question.

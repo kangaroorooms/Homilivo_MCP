@@ -78,6 +78,8 @@ from app.server import MCP_TOOL_TIMEOUT_SECONDS, mcp
 from app.knowledge.answer import answer_platform_question
 from app.observability import record_llm_latency, record_llm_usage
 
+logger = logging.getLogger(__name__)
+
 # Callback signature for live token relay (Phase 8 true streaming) -
 # see generate_qwen_response()/generate_gemma_response()/
 # generate_groq_response() below and app/streaming.py's LiveTokenRelay.
@@ -985,9 +987,11 @@ def fetch_subscription_plans(
             try:
                 data = response.json()
             except ValueError:
-                print(
+                # Body length only - never echo API response content.
+                logger.warning(
                     "[pricing] fetch_subscription_plans: malformed "
-                    f"JSON: {response.text[:200]}"
+                    "JSON (%d chars)",
+                    len(response.text),
                 )
                 return None
 
@@ -1007,8 +1011,10 @@ def fetch_subscription_plans(
 
     except Exception as error:
 
-        print(
-            f"[pricing] fetch_subscription_plans failed: {error}"
+        logger.warning(
+            "[pricing] fetch_subscription_plans failed: %s: %s",
+            type(error).__name__,
+            error,
         )
 
         return None
@@ -3991,8 +3997,6 @@ def _extract_search_parameters_via_groq(
             f"Groq extraction failed: {error}"
         ) from error
 
-
-logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------
 # Per-turn cost controls (P2-11)

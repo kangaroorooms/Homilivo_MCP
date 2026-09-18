@@ -154,6 +154,8 @@ def test_concurrent_session_writes_do_not_cross(store: InMemorySessionStore):
     assert all(r["title"].startswith("B-") for r in final_b.previous_rooms)
 
 
+# P3-18: /chat and /ws/chat now only accept UUID-format session_ids
+# (anything else is replaced server-side), so these fixtures are UUIDs.
 def test_rest_endpoint_uses_provided_session_id(
     client: TestClient, mock_homilivo_success, auth_headers
 ):
@@ -172,7 +174,7 @@ def test_rest_endpoint_uses_provided_session_id(
         "/chat",
         json={
             "message": "find rooms in Jaipur",
-            "session_id": "test-session-rest-A",
+            "session_id": "aaaaaaaa-0000-4000-8000-00000000000a",
             "mode": "fast",
         },
         headers=auth_headers,
@@ -181,7 +183,7 @@ def test_rest_endpoint_uses_provided_session_id(
         "/chat",
         json={
             "message": "find rooms in Jaipur",
-            "session_id": "test-session-rest-B",
+            "session_id": "bbbbbbbb-0000-4000-8000-00000000000b",
             "mode": "fast",
         },
         headers=auth_headers,
@@ -190,8 +192,8 @@ def test_rest_endpoint_uses_provided_session_id(
     assert resp_a.status_code == 200
     assert resp_b.status_code == 200
 
-    state_a = SESSIONS.get("test-session-rest-A")
-    state_b = SESSIONS.get("test-session-rest-B")
+    state_a = SESSIONS.get("aaaaaaaa-0000-4000-8000-00000000000a")
+    state_b = SESSIONS.get("bbbbbbbb-0000-4000-8000-00000000000b")
 
     history_a = [m["content"] for m in state_a.conversation_history]
     history_b = [m["content"] for m in state_b.conversation_history]
@@ -216,7 +218,7 @@ def test_websocket_sessions_are_isolated(client: TestClient, mock_homilivo_succe
         ws_a.send_json(
             {
                 "message": "find rooms in Jaipur",
-                "session_id": "test-session-ws-A",
+                "session_id": "aaaaaaaa-0000-4000-8000-0000000000a1",
                 "mode": "fast",
             }
         )
@@ -230,7 +232,7 @@ def test_websocket_sessions_are_isolated(client: TestClient, mock_homilivo_succe
         ws_b.send_json(
             {
                 "message": "find rooms in Jaipur",
-                "session_id": "test-session-ws-B",
+                "session_id": "bbbbbbbb-0000-4000-8000-0000000000b1",
                 "mode": "fast",
             }
         )
@@ -240,11 +242,11 @@ def test_websocket_sessions_are_isolated(client: TestClient, mock_homilivo_succe
             if event["event"] == "done":
                 done_b = event
 
-    assert done_a["session_id"] == "test-session-ws-A"
-    assert done_b["session_id"] == "test-session-ws-B"
+    assert done_a["session_id"] == "aaaaaaaa-0000-4000-8000-0000000000a1"
+    assert done_b["session_id"] == "bbbbbbbb-0000-4000-8000-0000000000b1"
 
-    state_a = SESSIONS.get("test-session-ws-A")
-    state_b = SESSIONS.get("test-session-ws-B")
+    state_a = SESSIONS.get("aaaaaaaa-0000-4000-8000-0000000000a1")
+    state_b = SESSIONS.get("bbbbbbbb-0000-4000-8000-0000000000b1")
 
     assert state_a is not state_b
 

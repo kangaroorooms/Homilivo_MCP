@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -48,6 +49,33 @@ from app.session_store import SessionStore
 # ============================================================
 
 logger = logging.getLogger(__name__)
+
+# P3-18: only UUID-format session ids may reach logs or the session
+# store. A client-supplied id is otherwise free text (could be an email
+# or name), and record_turn() logs session_id.
+_SESSION_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}"
+    r"-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_session_id(candidate: object) -> str:
+    """
+    Return `candidate` if it is a UUID-format string, else a fresh
+    server-side UUID. The invalid value itself is never logged.
+    """
+    if candidate is None or candidate == "":
+        return str(uuid4())
+
+    if isinstance(candidate, str) and _SESSION_ID_RE.match(candidate):
+        # Case-fold so ABC... and abc... resolve to the same session.
+        return candidate.lower()
+
+    logger.warning(
+        "Invalid session_id format received - generating new session_id"
+    )
+    return str(uuid4())
 
 
 def validate_secrets() -> None:
@@ -543,7 +571,7 @@ async def chat_endpoint(
     # through here. Never logged, never written to a process-global.
     set_kangaroo_token(_resolve_homilivo_token(credentials.credentials))
 
-    session_id = request.session_id or str(uuid4())
+    session_id = _normalize_session_id(request.session_id)
     # request.mode is already validated to be one of ChatMode by Pydantic.
     turn = await _run_chat_turn(session_id, request.mode, request.message)
 
@@ -650,7 +678,11 @@ async def chat_websocket(websocket: WebSocket) -> None:
 
             message = payload.get("message")
             mode = payload.get("mode", "fast")
-            session_id = payload.get("session_id") or session_id or str(uuid4())
+            supplied_session_id = payload.get("session_id")
+            if supplied_session_id:
+                session_id = _normalize_session_id(supplied_session_id)
+            else:
+                session_id = session_id or str(uuid4())
 
             if (
                 not isinstance(message, str)

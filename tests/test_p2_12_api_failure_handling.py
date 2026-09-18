@@ -215,11 +215,13 @@ def test_pricing_api_timeout_returns_none():
         assert fetch_subscription_plans("Mumbai") is None
 
 
-def test_pricing_api_malformed_json_returns_none(capsys):
-    with _mock_httpx_client(_httpx_response(200, "{not json")):
-        assert fetch_subscription_plans("Mumbai") is None
+def test_pricing_api_malformed_json_returns_none(caplog):
+    # P3-18: this is now a logger.warning() rather than a print().
+    with caplog.at_level("WARNING"):
+        with _mock_httpx_client(_httpx_response(200, "{not json")):
+            assert fetch_subscription_plans("Mumbai") is None
 
-    assert "malformed JSON" in capsys.readouterr().out
+    assert "malformed JSON" in caplog.text
 
 
 def test_pricing_api_empty_plans_returns_empty_list():

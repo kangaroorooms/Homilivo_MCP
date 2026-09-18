@@ -15,7 +15,9 @@ IMPORTANT:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
+import logging
 import os
 import re
 import sys
@@ -67,7 +69,7 @@ from pydantic import ValidationError
 
 from app.schemas.chat import SearchParameters
 
-from app.server import mcp
+from app.server import MCP_TOOL_TIMEOUT_SECONDS, mcp
 
 # Stable-platform-question grounding (verification, fees, contacting
 # an owner, booking) - a separate concern from the live Homilivo room
@@ -3983,6 +3985,101 @@ def _extract_search_parameters_via_groq(
         ) from error
 
 
+logger = logging.getLogger(__name__)
+
+# ------------------------------------------------------------
+# Per-turn cost controls (P2-11)
+# ------------------------------------------------------------
+# process_message() installs a fresh budget at the start of every turn.
+# A ContextVar (not a module global) keeps concurrent requests from
+# sharing or resetting each other's counts. When no turn is active
+# (the budget is None, e.g. a helper called directly from a unit test)
+# nothing is limited, so existing behavior outside a turn is unchanged.
+# Only the two "fallback" LLM helpers are budgeted; the mode's own
+# generate_*_response() call is intentionally not counted.
+
+MAX_LLM_CALLS_PER_TURN = 2
+MAX_TOOL_CALLS_PER_TURN = 1
+
+# Documents the timeout the LLM SDK clients already enforce; nothing in
+# this module reads it. MCP_TOOL_TIMEOUT_SECONDS (imported from
+# app.server) is the one that is actively applied, in
+# _call_search_rooms_with_timeout() below.
+LLM_CALL_TIMEOUT_SECONDS = 30
+
+_turn_budget: contextvars.ContextVar[dict[str, int] | None] = (
+    contextvars.ContextVar("turn_budget", default=None)
+)
+
+
+def _start_turn_budget() -> None:
+    _turn_budget.set({"llm": 0, "tool": 0})
+
+
+def _consume_llm_call(name: str) -> bool:
+    """True if this fallback LLM call may run; False once the
+    per-turn limit is reached (caller uses its deterministic path)."""
+    budget = _turn_budget.get()
+
+    if budget is None:
+        return True
+
+    if budget["llm"] >= MAX_LLM_CALLS_PER_TURN:
+        logger.warning(
+            "LLM call limit (%d per turn) reached; skipping %s "
+            "and using the deterministic fallback",
+            MAX_LLM_CALLS_PER_TURN,
+            name,
+        )
+        return False
+
+    budget["llm"] += 1
+    return True
+
+
+def _note_tool_call() -> None:
+    """Defensive only: search_rooms is called once per turn by design."""
+    budget = _turn_budget.get()
+
+    if budget is None:
+        return
+
+    budget["tool"] += 1
+
+    if budget["tool"] > MAX_TOOL_CALLS_PER_TURN:
+        logger.warning(
+            "search_rooms MCP tool called %d times in one turn "
+            "(expected at most %d)",
+            budget["tool"],
+            MAX_TOOL_CALLS_PER_TURN,
+        )
+
+
+async def _call_search_rooms_with_timeout(client, search_request):
+    """
+    Await the search_rooms MCP tool, bounded by MCP_TOOL_TIMEOUT_SECONDS
+    so a hung MCP process can't stall the turn forever. On timeout it
+    logs and re-raises asyncio.TimeoutError, which the call site's
+    existing `except Exception` turns into the standard "Homilivo is
+    temporarily unavailable" reply (never a fake "0 rooms found").
+    """
+    try:
+
+        return await asyncio.wait_for(
+            client.call_tool("search_rooms", search_request),
+            timeout=MCP_TOOL_TIMEOUT_SECONDS,
+        )
+
+    except asyncio.TimeoutError:
+
+        logger.warning(
+            "search_rooms MCP tool timed out after %ss",
+            MCP_TOOL_TIMEOUT_SECONDS,
+        )
+
+        raise
+
+
 def extract_search_parameters_via_llm(
     user_query: str,
 ) -> dict[str, Any] | None:
@@ -3997,6 +4094,10 @@ def extract_search_parameters_via_llm(
     None exactly like "no extra information available" and fall back
     to the existing clarification-question behavior.
     """
+
+    if not _consume_llm_call("extract_search_parameters_via_llm"):
+
+        return None
 
     raw: dict[str, Any] | None = None
 
@@ -4499,6 +4600,10 @@ def sanitize_room_for_llm_context(
         return room
 
 
+MAX_LLM_CONTEXT_CHARS = 8000
+MAX_LLM_CONTEXT_ROOMS = 5
+
+
 def build_llm_room_context(
     rooms: list[dict[str, Any]],
     selected_room: dict[str, Any] | None,
@@ -4515,11 +4620,12 @@ def build_llm_room_context(
     rooms = [sanitize_room_for_llm_context(room) for room in rooms]
     selected_room = sanitize_room_for_llm_context(selected_room)
 
-    return f"""
+    def _render(history: list, room_list: list) -> str:
+        return f"""
 <verified_data>
 RECENT CONVERSATION:
 {json.dumps(
-    conversation_history[-10:],
+    history,
     indent=2,
     ensure_ascii=False,
 )}
@@ -4543,12 +4649,44 @@ SELECTED ROOM:
 
 ALL VERIFIED ROOM DATA:
 {json.dumps(
-    rooms,
+    room_list,
     indent=2,
     ensure_ascii=False,
 )}
 </verified_data>
 """
+
+    history = conversation_history[-10:]
+    context = _render(history, rooms)
+
+    if len(context) <= MAX_LLM_CONTEXT_CHARS:
+        return context
+
+    # Cost control (P2-11): safety net against an oversized prompt.
+    # Drop the oldest history entries first, then keep only the top
+    # rooms. The user query and system prompt are added by the callers
+    # and are never touched here.
+    original_length = len(context)
+
+    while history and len(context) > MAX_LLM_CONTEXT_CHARS:
+        history = history[1:]
+        context = _render(history, rooms)
+
+    if len(context) > MAX_LLM_CONTEXT_CHARS and len(rooms) > MAX_LLM_CONTEXT_ROOMS:
+        rooms = rooms[:MAX_LLM_CONTEXT_ROOMS]
+        context = _render(history, rooms)
+
+    logger.warning(
+        "LLM context truncated: %d -> %d chars (limit %d), "
+        "%d history entries and %d rooms kept",
+        original_length,
+        len(context),
+        MAX_LLM_CONTEXT_CHARS,
+        len(history),
+        len(rooms),
+    )
+
+    return context
 
 
 # ============================================================
@@ -5183,6 +5321,10 @@ def fallback_llm_intent(
     It should NOT run for normal contextual room questions.
     """
 
+    if not _consume_llm_call("fallback_llm_intent"):
+
+        return None
+
     print_step(
         "Using semantic LLM intent classification "
         "as fallback..."
@@ -5306,6 +5448,8 @@ async def process_message(
     # routing or guardrail logic runs - backs the conversation meta
     # query handler (MESSAGE_CONVERSATION_META) below.
     state.user_queries.append(user_query)
+
+    _start_turn_budget()
 
     result_state = {
         "response": None,
@@ -6137,10 +6281,12 @@ async def process_message(
 
     result_state["tool"] = "search_rooms"
 
+    _note_tool_call()
+
     try:
 
-        mcp_result = await client.call_tool(
-            "search_rooms",
+        mcp_result = await _call_search_rooms_with_timeout(
+            client,
             search_request,
         )
 

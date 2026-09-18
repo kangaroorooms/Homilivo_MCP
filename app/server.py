@@ -26,6 +26,12 @@ HOMILIVO_API_TIMEOUT_SECONDS = float(
     os.getenv("HOMILIVO_API_TIMEOUT_SECONDS", "10")
 )
 
+# Upper bound (P2-11) on how long a caller may await the search_rooms
+# MCP tool end to end, retries included. Applied with asyncio.wait_for()
+# at the client.call_tool() site in app/experiments/agent_modes.py;
+# defined here beside the other search_rooms limits.
+MCP_TOOL_TIMEOUT_SECONDS = 15
+
 # search_rooms is a read-only GET, so limited retries are safe here -
 # this must never be applied to a write/non-idempotent operation.
 HOMILIVO_API_MAX_ATTEMPTS = max(

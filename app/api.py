@@ -316,6 +316,13 @@ def chat_ui_demo_token():
     return {"token": token}
 
 
+MAX_USER_MESSAGE_LENGTH = 2000
+MESSAGE_TOO_LONG_RESPONSE = (
+    "Your message is too long. Please keep your search query "
+    "under 2000 characters."
+)
+
+
 async def _run_chat_turn(
     session_id: str,
     mode: str,
@@ -346,6 +353,37 @@ async def _run_chat_turn(
     """
     request_id = str(uuid4())
     started_at = time.monotonic()
+
+    # Cost control (P2-11), defence in depth: ChatRequest and the
+    # WebSocket handler already cap messages at 500 characters, so this
+    # only triggers if a caller reaches _run_chat_turn() some other way.
+    # Runs before any guardrail/LLM work so an oversized message never
+    # reaches either.
+    if len(message) > MAX_USER_MESSAGE_LENGTH:
+        record_turn(
+            request_id=request_id,
+            session_id=session_id,
+            intent="OUT_OF_SCOPE",
+            operation=None,
+            tool=None,
+            mode=mode,
+            status="blocked",
+            error_category="message_too_long",
+            latency_ms=(time.monotonic() - started_at) * 1000,
+        )
+        return {
+            "success": False,
+            "session_id": session_id,
+            "request_id": request_id,
+            "mode": mode,
+            "message": MESSAGE_TOO_LONG_RESPONSE,
+            "room_count": 0,
+            "rooms": [],
+            "selected_room": None,
+            "pending_clarification": False,
+            "sources": [],
+            "search_performed": False,
+        }
 
     # Security hard-block: reject clearly malicious input before
     # entering the graph. Context-aware guardrail logic remains

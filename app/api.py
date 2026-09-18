@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import sys
 import time
@@ -46,8 +47,39 @@ from app.session_store import SessionStore
 # FASTAPI APP
 # ============================================================
 
+logger = logging.getLogger(__name__)
+
+
+def validate_secrets() -> None:
+    """
+    Fail fast at startup (P3-13) if a required secret is missing, rather
+    than crashing mid-request. Only secret NAMES are ever logged or put
+    in an error message - never a value.
+    """
+    required = {"KANGAROO_TOKEN": os.getenv("KANGAROO_TOKEN")}
+    optional = {"GROQ_API_KEY": os.getenv("GROQ_API_KEY")}
+
+    for name, value in required.items():
+        if not value:
+            logger.error("Required secret %s is not set.", name)
+            raise RuntimeError(
+                f"Required secret {name} is not set. "
+                f"Cannot start the application."
+            )
+
+    for name, value in optional.items():
+        if not value:
+            logger.warning(
+                "Optional secret %s is not set — "
+                "dependent features will be unavailable.",
+                name,
+            )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    validate_secrets()
+
     # Load the shared embedding model, plus every module's precomputed
     # embeddings (interpreter's operation anchors, the input guardrail's
     # intent examples, the knowledge base's document index), once at

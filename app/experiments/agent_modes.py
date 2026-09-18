@@ -982,7 +982,14 @@ def fetch_subscription_plans(
 
             response.raise_for_status()
 
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                print(
+                    "[pricing] fetch_subscription_plans: malformed "
+                    f"JSON: {response.text[:200]}"
+                )
+                return None
 
         if isinstance(data, list):
 

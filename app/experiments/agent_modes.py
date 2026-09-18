@@ -844,6 +844,20 @@ _CONVERSATION_META_PHRASES = (
     "history of my queries",
     "what did i search",
     "my search history",
+    # Hindi/Hinglish variants (additional phrases only - none of the
+    # English phrases above are removed).
+    "maine pehle kya pucha",
+    "meri pehli query",
+    "meri last query",
+    "maine kya poocha",
+    "pehle kya search kiya",
+    "abhi tak kya pucha",
+    "meri queries",
+    "purani query",
+    "abhi tak maine kya",
+    "kya kya poocha",
+    "kya kya pucha",
+    "maine kya kya",
 )
 
 
@@ -3251,7 +3265,13 @@ _ROOM_SEARCH_VOCABULARY_RE = re.compile(
     # none of the English terms above are modified). Lets a query with
     # no English room noun at all (e.g. "das hazaar mein chahiye")
     # still satisfy this vocabulary check.
-    r"chahiye|dhundna|dikhao|makan|kiraya|किराया)\b"
+    r"chahiye|dhundna|dikhao|makan|kiraya|किराया|"
+    # Spelled-out Hindi numeral + BHK ("teen bhk", "do bhk") - mirrors
+    # the same HINDI_NUMBER_WORDS set fast_parser.py already accepts
+    # for room-type extraction, so this vocabulary check recognizes
+    # exactly the phrasing extract_search_parameters() can already
+    # resolve into a room type.
+    r"(?:ek|do|teen|char|paanch|das|bees)\s*bhk)\b"
 )
 
 

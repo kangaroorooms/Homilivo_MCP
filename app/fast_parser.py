@@ -32,16 +32,21 @@ CITY_ALIASES = {
     "bengalore": "Bangalore",
     "banglore": "Bangalore",
     "bangalor": "Bangalore",
+    "bangalre": "Bangalore",
+    "bangaloru": "Bangalore",
     "dilli": "Delhi",
     "dilhi": "Delhi",
     "new dilli": "New Delhi",
     "bambai": "Mumbai",
     "mumba": "Mumbai",
+    "mumbia": "Mumbai",
+    "mumabi": "Mumbai",
     "chenai": "Chennai",
     "madras": "Chennai",
     "calcutta": "Kolkata",
     "kolkatta": "Kolkata",
     "hydrabad": "Hyderabad",
+    "hydarabad": "Hyderabad",
     "punne": "Pune",
 }
 
@@ -260,6 +265,29 @@ def extract_search_parameters(
 
                     result["city"] = _resolve_city_name(candidate)
 
+        # Position-aware check for the other end of the same lowercase
+        # Hinglish phrasing: a city mentioned as the FIRST word instead
+        # of trailing ("bengaluru jaana hai room dhundh do"). Same
+        # safety rule as the trailing-word check above - only trusted
+        # when it is a KNOWN city/alias, never an arbitrary guess.
+        if result["city"] is None:
+
+            leading_word = re.search(
+                r"^\s*([A-Za-z]+)\b",
+                query,
+            )
+
+            if leading_word:
+
+                candidate = leading_word.group(1)
+
+                if (
+                    candidate.lower() in CITY_ALIASES
+                    or candidate.lower() in KNOWN_CANONICAL_CITIES
+                ):
+
+                    result["city"] = _resolve_city_name(candidate)
+
     # ========================================================
     # PRICE
     # ========================================================
@@ -292,6 +320,34 @@ def extract_search_parameters(
             range_match.group(2)
         )
 
+    # --------------------------------------------------------
+    # Mixed English/Hindi "under N hazaar" budget phrasing - must run
+    # BEFORE the plain English under/below/upto pattern further down,
+    # otherwise that pattern captures the bare digit run ("10" out of
+    # "under 10 hazaar") and sets max_price before the hazaar
+    # multiplier ever gets a chance to apply.
+    # --------------------------------------------------------
+
+    hazaar_max_match = re.search(
+        r"(?:under|below|upto|up to)\s+(\d+)\s*hazaar\b",
+        query,
+        re.IGNORECASE
+    )
+
+    if hazaar_max_match and result["max_price"] is None:
+
+        result["max_price"] = int(hazaar_max_match.group(1)) * 1000
+
+    hazaar_min_match = re.search(
+        r"(?:above|over)\s+(\d+)\s*hazaar\b",
+        query,
+        re.IGNORECASE
+    )
+
+    if hazaar_min_match and result["min_price"] is None:
+
+        result["min_price"] = int(hazaar_min_match.group(1)) * 1000
+
     max_price_match = re.search(
         r"(?:under|below|upto|up to)\s*[₹rs.\s]*([\d,]+\s*[kK]?)",
         query,
@@ -302,6 +358,20 @@ def extract_search_parameters(
 
         result["max_price"] = _parse_price_token(
             max_price_match.group(1)
+        )
+
+    # "budget 10000", "budget is 8k" - a bare number after "budget" with
+    # no under/below/upto keyword, common Hinglish phrasing.
+    budget_match = re.search(
+        r"budget\s+(?:is\s+|of\s+)?[₹rs.\s]*([\d,]+\s*[kK]?)",
+        query,
+        re.IGNORECASE
+    )
+
+    if budget_match and result["max_price"] is None:
+
+        result["max_price"] = _parse_price_token(
+            budget_match.group(1)
         )
 
     # --------------------------------------------------------

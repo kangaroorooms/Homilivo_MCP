@@ -93,6 +93,15 @@ ROOM_SEARCH_EXAMPLES = [
     "Mujhe kiraya ke liye makan chahiye",
     "Chennai mein 2 BHK chahiye",
     "Pune mein accommodation chahiye",
+    # Additional discriminating examples: these clearly signal "find me a
+    # place to live" rather than "explain what the chatbot does", to keep
+    # ROOM_SEARCH separated from CHATBOT_INFO under the multilingual model.
+    "I need a flat to rent in Jaipur for 15000",
+    "Find accommodation in Jaipur under 15000 for students",
+    "Looking for student accommodation in Jaipur",
+    "Search for rooms in Jaipur below 15000",
+    "I want to rent a room in Jaipur",
+    "Show available rooms in Jaipur for students",
 ]
 
 
@@ -161,6 +170,10 @@ BLOCKED_PATTERNS = [
     r"\bransomware\b",
     r"\bexploit(?:ation)?\b",
     r"\bsql[\s_-]*injection\b",
+    r"system\s+prompt",
+    r"\btoken\s+(batao|do|bhi|dena|dijiye)",
+    r"prompt\s+inject",
+    r"jailbreak",
 ]
 
 

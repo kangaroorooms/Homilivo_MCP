@@ -19,7 +19,13 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-MODEL_NAME = "all-MiniLM-L6-v2"
+# Multilingual model supporting 50+ languages
+# including Hindi and Hinglish for Indian users.
+# Produces 384-dim embeddings — same as previous
+# all-MiniLM-L6-v2, Chroma collection compatible.
+# Switched in P2-09b after fixing anchor/example
+# regressions in input_guardrail.py and interpreter.py
+MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 
 @lru_cache(maxsize=1)

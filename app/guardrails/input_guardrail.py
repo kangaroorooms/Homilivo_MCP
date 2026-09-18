@@ -80,6 +80,19 @@ ROOM_SEARCH_EXAMPLES = [
     "I need accommodation for next month",
     "Help me find a place to live",
     "I want to rent a 2BHK",
+    # Hinglish/Hindi phrasings (additional examples only - none of the
+    # English examples above are removed or modified), so the same
+    # room-search intent is recognized regardless of language mixing.
+    "Bambai mein flat chahiye",
+    "Mujhe room chahiye",
+    "Dilli mein ghar chahiye",
+    "Bangalore mein PG chahiye",
+    "10 hazaar mein room chahiye bangalore",
+    "Mumbai mein flat dhundna hai",
+    "Room dikhao bangalore mein",
+    "Mujhe kiraya ke liye makan chahiye",
+    "Chennai mein 2 BHK chahiye",
+    "Pune mein accommodation chahiye",
 ]
 
 

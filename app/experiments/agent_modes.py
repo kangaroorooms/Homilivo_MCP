@@ -3246,7 +3246,12 @@ def detect_simple_intent(
 
 _ROOM_SEARCH_VOCABULARY_RE = re.compile(
     r"\b(room|rooms|accommodation|flat|flats|apartment|apartments|"
-    r"hostel|pg|\d+\s*bhk|\d+\s*rk)\b"
+    r"hostel|pg|\d+\s*bhk|\d+\s*rk|"
+    # Hindi/Hinglish room-search vocabulary (additional terms only -
+    # none of the English terms above are modified). Lets a query with
+    # no English room noun at all (e.g. "das hazaar mein chahiye")
+    # still satisfy this vocabulary check.
+    r"chahiye|dhundna|dikhao|makan|kiraya|किराया)\b"
 )
 
 
@@ -5411,6 +5416,17 @@ async def process_message(
             # out-of-scope by the semantic input guardrail - trusted
             # the same way the matches above are.
             MESSAGE_CONVERSATION_META,
+            # A deterministic match against looks_like_general_room_
+            # search() (room/accommodation vocabulary PLUS at least one
+            # concrete filter fast_parser.extract_search_parameters()
+            # actually resolved - a city, room type, price bound, or
+            # ideal-for audience) is trusted the same way the matches
+            # above are: the semantic guardrail's English-only training
+            # data misjudges legitimate Hinglish search requests (e.g.
+            # "bambai mein flat chahiye") as OUT_OF_SCOPE, and that
+            # loose judgment must not discard a route this specific and
+            # concrete in favor of a second, independent LLM call.
+            MESSAGE_NEW_SEARCH,
         }
     )
 

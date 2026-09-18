@@ -43,6 +43,12 @@ VALID_IDEAL_FOR = {
     "STUDENTS",
     "WORKING PROFESSIONALS",
     "FAMILY",
+    # Confirmed via live Homilivo API testing across 7 cities + Mumbai
+    # (2026-09-18): the backend returns this value in room idealFor
+    # data. Incoming-data value only - NOT added to
+    # parameter_guardrail.py/schemas/chat.py, since there is no
+    # confirmation Homilivo accepts it as a search FILTER parameter.
+    "SMALL FAMILY",
 }
 
 

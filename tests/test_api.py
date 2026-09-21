@@ -39,8 +39,7 @@ def test_health_endpoint(client):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "healthy"
-    assert "active_sessions" in body
+    assert body == {"status": "ok", "service": "homilivo-chatbot"}
 
 
 def test_chat_ui_is_served_same_origin(client):
@@ -185,7 +184,7 @@ def test_chat_reset_clears_session(client, auth_headers, mock_homilivo_success):
     assert reset["existed"] is True
 
     after_reset = client.get("/health").json()
-    assert after_reset["status"] == "healthy"
+    assert after_reset["status"] == "ok"
 
 
 def test_chat_reset_nonexistent_session_returns_existed_false(client):

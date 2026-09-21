@@ -21,7 +21,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
@@ -337,7 +337,121 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "active_sessions": len(SESSIONS)}
+    """
+    P3-15 liveness: the process is up and serving. Deliberately no I/O
+    and no dependency checks (active_sessions lives in /metrics), so a
+    degraded dependency never makes a load balancer restart the
+    instance - that is /ready's job.
+    """
+    return {"status": "ok", "service": "homilivo-chatbot"}
+
+
+READINESS_REDIS_TIMEOUT_SECONDS = 2.0
+
+
+def _check_embedding_model() -> str:
+    try:
+        from app.embeddings import get_shared_model
+
+        # Instant when warm (lru_cache); a broken model raises every time.
+        get_shared_model()
+        return "ok"
+    except Exception:  # noqa: BLE001
+        return "failed"
+
+
+def _check_knowledge_base() -> str:
+    try:
+        from app.knowledge import store
+
+        collection = store._get_collection()
+        if collection is None:
+            return "failed"
+        # Cheap metadata call - no embedding, no search. An empty
+        # index cannot answer platform questions, so it is not ready.
+        return "ok" if collection.count() > 0 else "failed"
+    except Exception:  # noqa: BLE001
+        return "failed"
+
+
+async def _check_mcp_server() -> str:
+    """
+    In-process MCP server: open a client session and confirm the
+    search_rooms tool is registered. Does not call the tool, so no
+    outbound Homilivo request is made. An unexpected failure of the
+    probe itself is "unknown", not "failed".
+    """
+    try:
+        async with Client(mcp) as mcp_client:
+            listing = await mcp_client.list_tools()
+        names = {tool.name for tool in listing.tools}
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+    return "ok" if "search_rooms" in names else "failed"
+
+
+def _check_groq_api_key() -> str:
+    return "ok" if os.getenv("GROQ_API_KEY") else "missing"
+
+
+async def _check_redis() -> str:
+    try:
+        if os.getenv("STATE_BACKEND", "memory").strip().lower() != "redis":
+            return "not_configured"
+
+        client = getattr(SESSIONS, "_redis", None)
+        if client is None:
+            return "failed"
+
+        await asyncio.wait_for(
+            asyncio.to_thread(client.ping),
+            timeout=READINESS_REDIS_TIMEOUT_SECONDS,
+        )
+        return "ok"
+    except Exception:  # noqa: BLE001
+        return "failed"
+
+
+@app.get("/ready")
+async def ready():
+    """
+    P3-15 readiness: 200 only if every REQUIRED dependency is usable,
+    else 503. Optional dependencies (Groq key, Redis) are reported but
+    never change the status code. Never raises.
+    """
+    try:
+        checks = {
+            "embedding_model": await asyncio.to_thread(_check_embedding_model),
+            "knowledge_base": await asyncio.to_thread(_check_knowledge_base),
+            "mcp_server": await _check_mcp_server(),
+        }
+    except Exception:  # noqa: BLE001
+        checks = {
+            "embedding_model": "failed",
+            "knowledge_base": "failed",
+            "mcp_server": "failed",
+        }
+
+    try:
+        optional = {
+            "groq_api_key": _check_groq_api_key(),
+            "redis": await _check_redis(),
+        }
+    except Exception:  # noqa: BLE001
+        optional = {"groq_api_key": "unknown", "redis": "unknown"}
+
+    # "unknown" (MCP probe itself broke) is not evidence of an outage.
+    is_ready = all(value != "failed" for value in checks.values())
+
+    return JSONResponse(
+        status_code=200 if is_ready else 503,
+        content={
+            "status": "ready" if is_ready else "not_ready",
+            "checks": checks,
+            "optional": optional,
+        },
+    )
 
 
 @app.get("/knowledge/health")

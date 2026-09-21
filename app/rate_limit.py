@@ -178,6 +178,15 @@ class RedisRateLimiter:
 
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "30"))
 RATE_LIMIT_WINDOW_SECONDS = float(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+# P2-10: second, per-session budget applied alongside the per-IP one
+# (a request is rejected if EITHER is exceeded), so one abusive session
+# cannot exhaust a shared NAT/proxy IP's budget for everyone else, and
+# one session cannot consume unbounded resources while staying under
+# the IP limit.
+SESSION_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("SESSION_RATE_LIMIT_MAX_REQUESTS", "20"))
+SESSION_RATE_LIMIT_WINDOW_SECONDS = float(
+    os.getenv("SESSION_RATE_LIMIT_WINDOW_SECONDS", "60")
+)
 RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() not in (
     "0",
     "false",
@@ -233,6 +242,28 @@ def check_rate_limit(key: str) -> RateLimitResult:
         return RateLimitResult(allowed=True, remaining=-1, retry_after_seconds=0.0)
 
     result = get_rate_limiter().hit(key, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SECONDS)
+
+    if not result.allowed:
+        from app.observability import record_rate_limit_event
+        record_rate_limit_event()
+
+    return result
+
+
+def check_session_rate_limit(session_id: str) -> RateLimitResult:
+    """
+    Same as check_rate_limit() but keyed by session id. The "session:"
+    prefix keeps these keys from colliding with IP keys in the shared
+    backend.
+    """
+    if not RATE_LIMIT_ENABLED:
+        return RateLimitResult(allowed=True, remaining=-1, retry_after_seconds=0.0)
+
+    result = get_rate_limiter().hit(
+        f"session:{session_id}",
+        SESSION_RATE_LIMIT_MAX_REQUESTS,
+        SESSION_RATE_LIMIT_WINDOW_SECONDS,
+    )
 
     if not result.allowed:
         from app.observability import record_rate_limit_event

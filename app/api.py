@@ -27,7 +27,12 @@ from pydantic import BaseModel, Field
 
 from mcp import Client
 from app.server import mcp, set_kangaroo_token
-from app.rate_limit import check_rate_limit, client_host_identifier, enforce_rate_limit
+from app.rate_limit import (
+    check_rate_limit,
+    check_session_rate_limit,
+    client_host_identifier,
+    enforce_rate_limit,
+)
 from app.demo_auth import issue_demo_token, redeem_demo_token, server_credential_configured
 from app.guardrails import is_security_blocked
 from app.streaming import chunk_for_streaming, LiveTokenRelay
@@ -76,6 +81,22 @@ def _normalize_session_id(candidate: object) -> str:
         "Invalid session_id format received - generating new session_id"
     )
     return str(uuid4())
+
+
+def _enforce_session_rate_limit(session_id: str) -> None:
+    """
+    P2-10: per-session limit, applied after the per-IP dependency.
+    Raises the same 429 shape as app.rate_limit.enforce_rate_limit().
+    """
+    result = check_session_rate_limit(session_id)
+
+    if not result.allowed:
+        retry_after = max(1, int(result.retry_after_seconds) + 1)
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Please slow down and try again shortly.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
 
 def validate_secrets() -> None:
@@ -572,6 +593,10 @@ async def chat_endpoint(
     set_kangaroo_token(_resolve_homilivo_token(credentials.credentials))
 
     session_id = _normalize_session_id(request.session_id)
+    # Only a client-supplied session_id is limited; a server-generated
+    # one is brand new every time, so the per-IP limit is the backstop.
+    if request.session_id:
+        _enforce_session_rate_limit(session_id)
     # request.mode is already validated to be one of ChatMode by Pydantic.
     turn = await _run_chat_turn(session_id, request.mode, request.message)
 
@@ -705,6 +730,15 @@ async def chat_websocket(websocket: WebSocket) -> None:
 
             turn_rate_limit = check_rate_limit(client_key)
             if not turn_rate_limit.allowed:
+                await websocket.send_json(
+                    {"event": "error", "detail": "Too many requests. Please slow down."}
+                )
+                continue
+
+            # P2-10: per-session limit, after the per-IP one above.
+            # session_id is always set by this point.
+            turn_session_limit = check_session_rate_limit(session_id)
+            if not turn_session_limit.allowed:
                 await websocket.send_json(
                     {"event": "error", "detail": "Too many requests. Please slow down."}
                 )

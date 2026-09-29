@@ -5201,15 +5201,37 @@ def generate_response(
 
     if mode == MODE_QWEN:
 
-        return generate_qwen_response(
-            user_query=user_query,
-            rooms=rooms,
-            conversation_history=conversation_history,
-            selected_room=selected_room,
-            selected_room_id=selected_room_id,
-            search_request=search_request,
-            on_token=on_token,
-        )
+        try:
+
+            return generate_qwen_response(
+                user_query=user_query,
+                rooms=rooms,
+                conversation_history=conversation_history,
+                selected_room=selected_room,
+                selected_room_id=selected_room_id,
+                search_request=search_request,
+                on_token=on_token,
+            )
+
+        except Exception as error:
+
+            print_failure(
+                f"Qwen failed, falling back to FAST: {error}"
+            )
+
+            if is_followup:
+
+                return generate_fast_followup(
+                    user_query,
+                    rooms,
+                    selected_room,
+                )
+
+            return generate_fast_response(
+                user_query,
+                rooms,
+                search_request,
+            )
 
     # --------------------------------------------------------
     # GEMMA3
@@ -5217,15 +5239,37 @@ def generate_response(
 
     if mode == MODE_GEMMA:
 
-        return generate_gemma_response(
-            user_query=user_query,
-            rooms=rooms,
-            conversation_history=conversation_history,
-            selected_room=selected_room,
-            selected_room_id=selected_room_id,
-            search_request=search_request,
-            on_token=on_token,
-        )
+        try:
+
+            return generate_gemma_response(
+                user_query=user_query,
+                rooms=rooms,
+                conversation_history=conversation_history,
+                selected_room=selected_room,
+                selected_room_id=selected_room_id,
+                search_request=search_request,
+                on_token=on_token,
+            )
+
+        except Exception as error:
+
+            print_failure(
+                f"Gemma failed, falling back to FAST: {error}"
+            )
+
+            if is_followup:
+
+                return generate_fast_followup(
+                    user_query,
+                    rooms,
+                    selected_room,
+                )
+
+            return generate_fast_response(
+                user_query,
+                rooms,
+                search_request,
+            )
 
     # --------------------------------------------------------
     # GROQ (falls back to FAST if the Groq call fails)

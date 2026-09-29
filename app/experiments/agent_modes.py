@@ -1176,6 +1176,10 @@ _LOWEST_CORE = (
     "lowest priced",
     "most affordable",
     "least costly",
+    "sabse sasta",
+    "sab se sasta",
+    "sabse kam kimat",
+    "sabse kam wala",
 )
 
 _HIGHEST_CORE = (

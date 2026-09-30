@@ -266,3 +266,25 @@ def test_sabse_sasta_does_not_affect_expensive():
     print(f"  'sabse mehanga' -> {result}")
     assert result == "HIGHEST_PRICE"
     print("PASS: adding 'sabse sasta' to LOWEST_PRICE did not affect HIGHEST_PRICE")
+
+
+def test_sabse_kam_wala_maps_to_lowest_price():
+    result = detect_room_operation("sabse kam wala")
+    print(f"  'sabse kam wala' -> {result}")
+    assert result == "LOWEST_PRICE"
+    print("PASS: 'sabse kam wala' maps to LOWEST_PRICE")
+
+
+def test_sabse_kam_wala_latent_risk_documented():
+    # LATENT RISK: "sabse kam wala" is a generic pattern. If a user asks
+    # "sabse kam rating wala" (lowest rated) it could match LOWEST_PRICE
+    # incorrectly. Rating-based follow-ups are not a supported operation.
+    # Monitor if rating queries are added in future.
+    #
+    # Currently returns None - "rating" breaks the substring match so no
+    # false positive occurs today. This test locks in the safe behavior
+    # and will fail loudly if a broader pattern match is added that causes
+    # "sabse kam rating wala" to incorrectly match LOWEST_PRICE in future.
+    result = detect_room_operation("sabse kam rating wala")
+    print(f"  'sabse kam rating wala' -> {result}")
+    assert result != "LOWEST_PRICE"

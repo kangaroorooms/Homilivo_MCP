@@ -2,7 +2,7 @@
 Lightweight structured logging + in-memory metrics.
 
 Not a monitoring stack. logging.getLogger("chatbot") writes one
-structured line per event (safe metadata only - see _sanitize() below),
+structured line per event (safe metadata only - fixed scalar fields),
 and a small in-memory registry backs GET /metrics. This is enough for
 a demo/small deployment; swapping the registry for
 OpenTelemetry/Prometheus/a real log shipper later would only mean
@@ -11,16 +11,15 @@ record_turn() / record_api_latency() / record_llm_latency() /
 record_rate_limit_event() rather than logging directly.
 
 NEVER pass a token, Authorization header, password, or other secret
-into any function here - _sanitize() redacts anything whose key looks
-secret-shaped, but callers must still not log raw credentials in the
-first place (redaction is defense in depth, not a substitute for care).
+into any function here. Every function takes fixed scalar fields only
+(no free-form payloads), so safety comes from what callers pass; see
+tests/test_p3_18_observability.py for the no-credentials-in-logs checks.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import re
 import threading
 from collections import deque
 from typing import Any
@@ -32,23 +31,6 @@ if not logger.handlers:
     logger.addHandler(_handler)
     logger.setLevel(logging.INFO)
     logger.propagate = False
-
-
-_SECRET_KEY_PATTERN = re.compile(
-    r"(token|secret|password|authorization|api[_-]?key|credential)", re.IGNORECASE
-)
-
-
-def _sanitize(value: Any) -> Any:
-    """Redact anything whose dict key looks secret-shaped before it is logged."""
-    if isinstance(value, dict):
-        return {
-            key: ("[redacted]" if _SECRET_KEY_PATTERN.search(str(key)) else _sanitize(val))
-            for key, val in value.items()
-        }
-    if isinstance(value, list):
-        return [_sanitize(v) for v in value]
-    return value
 
 
 def _latency_stats(values: "deque[float]") -> dict[str, Any]:

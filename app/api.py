@@ -159,6 +159,7 @@ app = FastAPI(
     title="Homilivo Room Search API",
     description="FastAPI service for the Homilivo MCP AI agent",
     version="2.0.0",
+    debug=False,
     lifespan=_lifespan,
 )
 

@@ -1180,6 +1180,7 @@ _LOWEST_CORE = (
     "sab se sasta",
     "sabse kam kimat",
     "sabse kam wala",
+    "sabse kam",
 )
 
 _HIGHEST_CORE = (

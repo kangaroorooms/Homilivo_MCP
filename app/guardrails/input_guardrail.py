@@ -12,6 +12,9 @@ CHATBOT_INFO
 GREETING
     Basic greetings.
 
+ACKNOWLEDGMENT
+    Short conversational replies ("ok", "thanks", "achha", "theek hai").
+
 OUT_OF_SCOPE
     Requests unrelated to the chatbot's purpose.
 
@@ -136,6 +139,40 @@ GREETING_EXAMPLES = [
 ]
 
 
+ACKNOWLEDGMENT_EXAMPLES = [
+    "ok",
+    "okay",
+    "okey",
+    "alright",
+    "got it",
+    "understood",
+    "sure",
+    "fine",
+    "cool",
+    "nice",
+    "great",
+    "hmm",
+    "hmm ok",
+    "i see",
+    "makes sense",
+    "thanks",
+    "thank you",
+    "ok thanks",
+    "thanks a lot",
+    # Hindi/Hinglish acknowledgments
+    "achha",
+    "accha",
+    "theek hai",
+    "thik hai",
+    "haan",
+    "ji",
+    "shukriya",
+    "dhanyavaad",
+    "samajh gaya",
+    "badhiya",
+]
+
+
 OUT_OF_SCOPE_EXAMPLES = [
     "Tell me a joke",
     "Write Python code for me",
@@ -233,6 +270,7 @@ INTENT_EXAMPLES = {
     "ROOM_SEARCH": ROOM_SEARCH_EXAMPLES,
     "CHATBOT_INFO": CHATBOT_INFO_EXAMPLES,
     "GREETING": GREETING_EXAMPLES,
+    "ACKNOWLEDGMENT": ACKNOWLEDGMENT_EXAMPLES,
     "OUT_OF_SCOPE": OUT_OF_SCOPE_EXAMPLES,
 }
 
@@ -370,6 +408,7 @@ def validate_user_input(
         "ROOM_SEARCH",
         "CHATBOT_INFO",
         "GREETING",
+        "ACKNOWLEDGMENT",
     }:
         return True, intent
 

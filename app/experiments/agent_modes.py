@@ -110,6 +110,7 @@ MESSAGE_EXIT = "EXIT"
 MESSAGE_PLATFORM_KNOWLEDGE = "PLATFORM_KNOWLEDGE"
 MESSAGE_UNSUPPORTED_ACTION = "UNSUPPORTED_ACTION"
 MESSAGE_CONVERSATION_META = "CONVERSATION_META"
+MESSAGE_ACKNOWLEDGMENT = "ACKNOWLEDGMENT"
 
 
 # Split so process_message can reply naturally (a farewell vs a
@@ -1195,6 +1196,31 @@ _HIGHEST_CORE = (
     "cost the most",
 )
 
+# Bare "expensive one" / "mehanga wala": a comparison word plus a
+# reference word that names a room by its price rank, as opposed to a
+# question about one already-selected room ("is this one expensive?",
+# "too expensive", "less expensive"), which stays ROOM_PRICE / LOWEST.
+_BARE_HIGHEST_WORD_RE = re.compile(
+    r"\b(?:expensive|costly|pricey|mehanga|mehenga|mahanga|महंगा)\b"
+)
+_BARE_HIGHEST_REFERENCE_RE = re.compile(
+    r"\b(?:one|wala|waala|wali|room|option|flat|place|property|pg)\b"
+)
+_BARE_HIGHEST_BLOCKERS_RE = re.compile(
+    r"\b(?:this|that|it|its|is|are|does|do|too|very|so|bit|quite|really"
+    r"|not|less|least|inexpensive|nahi|nahin|kam)\b"
+)
+
+
+def _is_bare_highest_reference(text: str) -> bool:
+
+    return bool(
+        _BARE_HIGHEST_WORD_RE.search(text)
+        and _BARE_HIGHEST_REFERENCE_RE.search(text)
+        and not _BARE_HIGHEST_BLOCKERS_RE.search(text)
+    )
+
+
 _TYPE_CORE = (
     "room type",
     "what type",
@@ -1308,6 +1334,25 @@ def detect_room_operation(
     user_query: str,
 ) -> str | None:
     """
+    Tier A (deterministic core) followed by the Tier B semantic fallback.
+    See detect_room_operation_tier_a() for the full description.
+    """
+
+    operation = detect_room_operation_tier_a(user_query)
+
+    if operation is not None:
+
+        return operation
+
+    return classify_operation(
+        normalize_text(user_query)
+    )
+
+
+def detect_room_operation_tier_a(
+    user_query: str,
+) -> str | None:
+    """
     Determine the semantic operation for a question about an already verified
     room or the current set of verified rooms.
 
@@ -1377,7 +1422,10 @@ def detect_room_operation(
     # Highest-price superlative. "Is A more expensive than B?" is a pairwise
     # comparison, not a request for the priciest room in the set; leave such
     # ambiguous questions to the fallback path.
-    if contains_any(text, _HIGHEST_CORE) and " than " not in f" {text} ":
+    if (
+        contains_any(text, _HIGHEST_CORE)
+        or _is_bare_highest_reference(text)
+    ) and " than " not in f" {text} ":
         return "HIGHEST_PRICE"
 
     # Price of the referenced/selected room
@@ -1475,13 +1523,8 @@ def detect_room_operation(
     if re.search(r"\b(third|3rd)\b", text):
         return "ORDINAL_3"
 
-    # --------------------------------------------------------
-    # TIER B - SEMANTIC FALLBACK (long tail)
-    # --------------------------------------------------------
-    # Reached only when the deterministic core matched nothing. Returns one of
-    # the operation constants above, or None (behaviour identical to before).
-
-    return classify_operation(text)
+    # Tier A found nothing; detect_room_operation() applies Tier B.
+    return None
 
 
 # ============================================================
@@ -1526,7 +1569,10 @@ def detect_room_reference_operation(
     if contains_any(text, _LOWEST_CORE):
         return "LOWEST_PRICE"
 
-    if contains_any(text, _HIGHEST_CORE) and " than " not in f" {text} ":
+    if (
+        contains_any(text, _HIGHEST_CORE)
+        or _is_bare_highest_reference(text)
+    ) and " than " not in f" {text} ":
         return "HIGHEST_PRICE"
 
     return None
@@ -5444,6 +5490,10 @@ def fallback_llm_intent(
 
         return MESSAGE_NEW_SEARCH
 
+    if intent == "ACKNOWLEDGMENT":
+
+        return MESSAGE_ACKNOWLEDGMENT
+
     return MESSAGE_UNKNOWN
 
 
@@ -5489,6 +5539,55 @@ async def _generate_response_maybe_streamed(
     return await asyncio.to_thread(
         generate_response, mode=mode, on_token=on_token, **generate_response_kwargs
     )
+
+
+# ============================================================
+# ACKNOWLEDGMENT DETECTION
+# ============================================================
+
+MAX_ACKNOWLEDGMENT_WORDS = 4
+
+
+def is_conversational_acknowledgment(
+    user_query: str,
+    input_message: str,
+    state: ConversationState,
+) -> bool:
+    """
+    True when the semantic input guardrail labelled a SHORT message as an
+    ACKNOWLEDGMENT ("okey", "got it", "achha", "theek hai") and nothing
+    in it is a deterministic room question. Checked before routing so
+    the Tier B semantic operation fallback cannot hijack it into a
+    price/amenity answer when room context is active. Skipped while a
+    clarification is pending, where a short reply may be the answer.
+    """
+
+    if input_message != "ACKNOWLEDGMENT":
+
+        return False
+
+    if state.pending_search:
+
+        return False
+
+    text = normalize_text(user_query)
+
+    if len(text.split()) > MAX_ACKNOWLEDGMENT_WORDS:
+
+        return False
+
+    # Deterministic action/knowledge/interest matches always win: a
+    # short command like "book it" sits close to "ok" in embedding
+    # space but must keep its own route.
+    if (
+        is_unsupported_action_request(text)
+        or is_platform_knowledge_question(text)
+        or detect_property_interest(user_query)
+    ):
+
+        return False
+
+    return detect_room_operation_tier_a(user_query) is None
 
 
 # ============================================================
@@ -5578,6 +5677,30 @@ async def process_message(
             user_query
         )
     )
+
+    # ========================================================
+    # 2b. CONVERSATIONAL ACKNOWLEDGMENT
+    # ========================================================
+
+    if input_allowed and is_conversational_acknowledgment(
+        user_query,
+        input_message,
+        state,
+    ):
+
+        result_state["intent"] = "GENERAL_CONVERSATION"
+
+        print_success(
+            "Conversational acknowledgment"
+        )
+
+        if print_validated_response(
+            ACKNOWLEDGMENT_RESPONSE
+        ):
+
+            result_state["response"] = ACKNOWLEDGMENT_RESPONSE
+
+        return result_state
 
     # ========================================================
     # 3. ROUTE BEFORE EXPENSIVE LLM CLASSIFICATION
@@ -5688,6 +5811,18 @@ async def process_message(
                 ):
 
                     result_state["response"] = OUT_OF_SCOPE_RESPONSE
+
+                return result_state
+
+            if fallback_intent == MESSAGE_ACKNOWLEDGMENT:
+
+                result_state["intent"] = "GENERAL_CONVERSATION"
+
+                if print_validated_response(
+                    ACKNOWLEDGMENT_RESPONSE
+                ):
+
+                    result_state["response"] = ACKNOWLEDGMENT_RESPONSE
 
                 return result_state
 
@@ -5921,6 +6056,18 @@ async def process_message(
             fallback_intent = fallback_llm_intent(
                 user_query
             )
+
+        if fallback_intent == MESSAGE_ACKNOWLEDGMENT:
+
+            result_state["intent"] = "GENERAL_CONVERSATION"
+
+            if print_validated_response(
+                ACKNOWLEDGMENT_RESPONSE
+            ):
+
+                result_state["response"] = ACKNOWLEDGMENT_RESPONSE
+
+            return result_state
 
         if fallback_intent == MESSAGE_GREETING:
 

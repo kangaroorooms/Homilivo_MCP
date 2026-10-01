@@ -183,6 +183,15 @@ ACCEPT_THRESHOLD = 0.45
 # short Hindi/Hinglish anchors in the future.
 SLOT_MARGIN = 0.06
 
+# Stricter floor for the two price-direction slots. Off-topic or meta
+# phrasing ("kuch aur dikhao", "i dont understand", "ye wala nahi chahiye")
+# scores 0.46-0.59 against the price anchors and used to win HIGHEST_PRICE
+# with a wide margin (the margin only measures distance from the runner-up,
+# not absolute confidence). Genuine Tier-B price phrasings score >= ~0.67;
+# Hinglish "sabse sasta/kam" are resolved by Tier A and never rely on this.
+PRICE_SLOT_THRESHOLD = 0.65
+_PRICE_SLOTS = frozenset({LOWEST_PRICE, HIGHEST_PRICE})
+
 
 # ============================================================
 # LAZY SINGLETON STATE
@@ -319,7 +328,10 @@ def classify_operation(text: str) -> Optional[str]:
     top_slot, top_score = ranked[0]
     second_score = ranked[1][1] if len(ranked) > 1 else -1.0
 
-    if top_score < ACCEPT_THRESHOLD:
+    threshold = (
+        PRICE_SLOT_THRESHOLD if top_slot in _PRICE_SLOTS else ACCEPT_THRESHOLD
+    )
+    if top_score < threshold:
         return None
     if (top_score - second_score) < SLOT_MARGIN:
         return None

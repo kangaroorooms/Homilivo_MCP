@@ -1194,6 +1194,10 @@ _HIGHEST_CORE = (
     "most costly",
     "costs the most",
     "cost the most",
+    # Hinglish mirror of _LOWEST_CORE's "sabse sasta" entries.
+    "sabse mehanga",
+    "sabse mehenga",
+    "sab se mehanga",
 )
 
 # Bare "expensive one" / "mehanga wala": a comparison word plus a
@@ -3490,6 +3494,41 @@ def is_platform_knowledge_question(
 # CONTEXTUAL ROUTER
 # ============================================================
 
+# Whole-phrase triggers for "show me different options". Deliberately
+# narrower than _REQUEST_SIGNAL_RE (a veto list): bare "again", "other",
+# "nahi" etc. would misroute ordinary messages.
+_SHOW_ALTERNATIVES_RE = re.compile(
+    r"\b(?:kuch\s+(?:aur|or)"
+    r"|(?:something|anything)\s+else"
+    r"|anything\s+better"
+    r"|show\s+(?:me\s+)?(?:more|other|different|another)"
+    r"|(?:more|other|different)\s+options?"
+    r"|(?:dusra|dusre|dusri)\s+(?:option|wala|wali|dikhao|dikha)"
+    r"|dusra\s+dikhao"
+    r"|aur\s+dikha(?:o)?)\b"
+)
+
+# Fixed reply for a "show me different options" request: the request is
+# understood, but fetching different listings is not supported yet.
+# Shared by generate_response() (every mode) and generate_fast_followup().
+SHOW_ALTERNATIVES_RESPONSE = (
+    "I can't pull up different listings from here yet, but I can "
+    "compare the rooms I found, or you can tell me a new budget, "
+    "area or room type to search again."
+)
+
+
+def is_show_alternatives_request(user_query: str) -> bool:
+    """True for a bare "show me different options" message (no specific
+    room operation, not itself a concrete search)."""
+
+    return bool(
+        _SHOW_ALTERNATIVES_RE.search(normalize_text(user_query))
+        and detect_room_operation(user_query) is None
+        and not looks_like_general_room_search(user_query)
+    )
+
+
 def route_message(
     user_query: str,
     state: ConversationState,
@@ -3658,6 +3697,26 @@ def route_message(
                 message_type=MESSAGE_REFINEMENT,
                 reason="Short message interpreted as a refinement of the previous search.",
             )
+
+    # --------------------------------------------------------
+    # SHOW ALTERNATIVES ("kuch aur dikhao", "something else")
+    # --------------------------------------------------------
+    # With room/search context and no specific room operation, a
+    # request for different options is a follow-up on the rooms just
+    # shown - routed as MESSAGE_FOLLOWUP so it joins the trusted
+    # contextual allowlist instead of being refused as OUT_OF_SCOPE.
+    # Skipped when the message is itself a concrete search ("something
+    # else in Pune") so NEW_SEARCH below still claims it.
+
+    if (
+        (state.previous_rooms or state.previous_search)
+        and is_show_alternatives_request(user_query)
+    ):
+
+        return MessageRoute(
+            message_type=MESSAGE_FOLLOWUP,
+            reason="User asks for different options than the rooms shown.",
+        )
 
     # --------------------------------------------------------
     # CITY-AGNOSTIC ROOM SEARCH (catch-all)
@@ -4457,6 +4516,20 @@ def generate_fast_followup(
             f"The selected room is **{title}**."
         )
 
+    # Genuinely unmatched follow-up: ask instead of implying capability
+    # for a question we could not classify.
+    if is_show_alternatives_request(user_query):
+
+        return SHOW_ALTERNATIVES_RESPONSE
+
+    if detect_room_operation(user_query) is None:
+
+        return (
+            "I'm not sure what you're asking. I can tell "
+            "you about price, location, amenities, or help "
+            "you compare rooms — what would you like to know?"
+        )
+
     return (
         "I can answer questions about the verified "
         "rooms I found, including their price, room "
@@ -5221,6 +5294,18 @@ def generate_response(
             if set_wide_suitability_answer is not None:
 
                 return set_wide_suitability_answer
+
+    # --------------------------------------------------------
+    # SHOW ALTERNATIVES (every mode)
+    #
+    # Checked after the deterministic answerers and before mode
+    # dispatch, so qwen/gemma/groq never get to improvise an answer
+    # to a request we cannot fulfil.
+    # --------------------------------------------------------
+
+    if is_followup and is_show_alternatives_request(user_query):
+
+        return SHOW_ALTERNATIVES_RESPONSE
 
     # --------------------------------------------------------
     # FAST

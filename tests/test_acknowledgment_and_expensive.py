@@ -121,3 +121,56 @@ def test_cheapest_then_expensive_one_returns_actual_most_expensive():
         assert "15,000" in result["response"], result["response"]
         assert "7,000" not in result["response"]
         assert result["selected_room"]["id"] == "r2"
+
+
+# ---- request-signal words must never be treated as acknowledgments ----
+
+from app.experiments.agent_modes import (  # noqa: E402
+    _has_request_signal,
+    is_conversational_acknowledgment,
+)
+
+
+def _is_ack(message, state=None):
+    return is_conversational_acknowledgment(
+        message, "ACKNOWLEDGMENT", state or ConversationState()
+    )
+
+
+def test_something_else_not_acknowledgment():
+    assert not _is_ack("something else")
+
+
+def test_kuch_aur_dikhao_not_acknowledgment():
+    assert not _is_ack("kuch aur dikhao")
+
+
+def test_dusra_dikhao_not_acknowledgment():
+    assert not _is_ack("dusra dikhao")
+
+
+def test_ye_wala_nahi_not_acknowledgment():
+    assert not _is_ack("ye wala nahi chahiye")
+
+
+def test_say_that_again_not_acknowledgment():
+    assert not _is_ack("say that again")
+
+
+@pytest.mark.parametrize("message", ["ok", "thanks", "theek hai"])
+def test_pure_ok_still_acknowledgment(message):
+    assert _is_ack(message)
+    assert not _has_request_signal(message)
+    result = _run(message, ConversationState())
+    assert result["response"] == ACKNOWLEDGMENT_RESPONSE
+
+
+def test_okay_with_context_still_works():
+    result = _run("okay", _state(selected=ROOMS[0]))
+    assert result["response"] == ACKNOWLEDGMENT_RESPONSE
+
+
+def test_request_signal_uses_whole_words():
+    assert _has_request_signal("kuch aur dikhao")
+    assert not _has_request_signal("okay thanks")
+    assert not _has_request_signal("brother")  # contains "other"

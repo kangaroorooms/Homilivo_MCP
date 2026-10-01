@@ -5547,6 +5547,20 @@ async def _generate_response_maybe_streamed(
 
 MAX_ACKNOWLEDGMENT_WORDS = 4
 
+# Words that mark a message as a real request ("show something else",
+# "say that again", "not this one"), never a bare acknowledgment, however
+# close it sits to "ok" in embedding space.
+_REQUEST_SIGNAL_RE = re.compile(
+    r"\b(?:more|another|else|again|repeat|different|other"
+    r"|aur|dusra|dusri|nahi|nahin|wala nahi|phir se|dobara)\b"
+)
+
+
+def _has_request_signal(user_query: str) -> bool:
+    """Whole-word check for request words that veto ACKNOWLEDGMENT."""
+
+    return bool(_REQUEST_SIGNAL_RE.search(normalize_text(user_query)))
+
 
 def is_conversational_acknowledgment(
     user_query: str,
@@ -5567,6 +5581,10 @@ def is_conversational_acknowledgment(
         return False
 
     if state.pending_search:
+
+        return False
+
+    if _has_request_signal(user_query):
 
         return False
 
@@ -5814,7 +5832,10 @@ async def process_message(
 
                 return result_state
 
-            if fallback_intent == MESSAGE_ACKNOWLEDGMENT:
+            if (
+                fallback_intent == MESSAGE_ACKNOWLEDGMENT
+                and not _has_request_signal(user_query)
+            ):
 
                 result_state["intent"] = "GENERAL_CONVERSATION"
 
@@ -6057,7 +6078,10 @@ async def process_message(
                 user_query
             )
 
-        if fallback_intent == MESSAGE_ACKNOWLEDGMENT:
+        if (
+            fallback_intent == MESSAGE_ACKNOWLEDGMENT
+            and not _has_request_signal(user_query)
+        ):
 
             result_state["intent"] = "GENERAL_CONVERSATION"
 

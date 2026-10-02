@@ -3381,6 +3381,117 @@ def looks_like_general_room_search(
 
 
 # ============================================================
+# CLEAR NEW-SEARCH DETECTION (beats room-context routes)
+# ============================================================
+# With room context, is_likely_followup() / is_likely_search_refinement()
+# fire on weak signals (a bare "room" word, an operation keyword such as
+# "professional") and used to hijack messages that are plainly NEW
+# searches. This guard runs before them in route_message(). It only
+# DISABLES the follow-up/refinement routes; it never creates a route
+# itself, so the message still has to be claimed by the normal
+# NEW_SEARCH / UNKNOWN paths below. Messages that point at the shown
+# rooms ("this", "it", "the 2bhk", ordinals, questions) are never
+# treated as new searches.
+
+_ROOM_DEICTIC_RE = re.compile(
+    r"\b(this|that|these|those|it|its|them|one|ones|first|second|third|"
+    r"last|1st|2nd|3rd|cheapest|costliest|expensive|also|which|"
+    r"the\s+\d+\s*bhk)\b"
+)
+
+_QUESTION_START_RE = re.compile(
+    r"^(is|are|does|do|did|can|could|would|will|what|which|where|how|why|"
+    r"who|tell)\b"
+)
+
+_SEARCH_VERB_RE = re.compile(
+    r"^(find|show|get|give|search|look|looking|i\s+need|i\s+want|need|want)\b"
+)
+
+_ACCOMMODATION_NOUN_RE = re.compile(
+    r"^(pg|hostel|rooms?|flats?|apartments?|accommodation|\d+\s*bhk)\b"
+)
+
+_ACCOMMODATION_ONLY_TOKENS = frozenset(
+    {"room", "rooms", "pg", "hostel", "flat", "flats", "apartment",
+     "apartments", "accommodation"}
+)
+
+
+def is_clear_new_search(
+    user_query: str,
+    previous_search: dict[str, Any],
+) -> bool:
+    """
+    True when the message is unambiguously a fresh search (or a bare
+    accommodation word with nothing to follow up on) and must not be
+    claimed as a room follow-up or refinement of the shown rooms.
+    """
+
+    text = normalize_text(
+        user_query
+    )
+
+    if not text or _ROOM_DEICTIC_RE.search(text):
+
+        return False
+
+    if _QUESTION_START_RE.search(text):
+
+        return False
+
+    tokens = text.split()
+
+    # "room room room room" - no filter, no question: nothing to
+    # follow up on and nothing to search for. Falls through to UNKNOWN.
+    if set(tokens) <= _ACCOMMODATION_ONLY_TOKENS:
+
+        return True
+
+    if not _ROOM_SEARCH_VOCABULARY_RE.search(text):
+
+        return False
+
+    params = extract_search_parameters(
+        user_query
+    )
+
+    city = params.get("city")
+
+    previous_city = (previous_search or {}).get("city")
+
+    # A different city is a new search, never a refinement.
+    if city and (
+        not previous_city
+        or str(city).lower() != str(previous_city).lower()
+    ):
+
+        return True
+
+    # "find me a room" - search verb + room noun, no filter at all.
+    if _SEARCH_VERB_RE.search(text) and not (
+        city
+        or params.get("room_types")
+        or params.get("min_price")
+        or params.get("max_price")
+        or params.get("ideal_for")
+    ):
+
+        return True
+
+    # "pg for working professionals" - listing noun leads the message.
+    if _ACCOMMODATION_NOUN_RE.search(text) and (
+        params.get("room_types")
+        or params.get("ideal_for")
+        or city
+    ):
+
+        return True
+
+    return False
+
+
+# ============================================================
 # UNSUPPORTED WRITE ACTION DETECTION
 # ============================================================
 # Direct COMMANDS to perform an action this system cannot actually do
@@ -3633,7 +3744,12 @@ def route_message(
     # ROOM CONTEXT
     # --------------------------------------------------------
 
-    if is_likely_followup(
+    clear_new_search = is_clear_new_search(
+        user_query,
+        state.previous_search,
+    )
+
+    if not clear_new_search and is_likely_followup(
         user_query,
         state.previous_rooms,
         state.selected_room,
@@ -3653,7 +3769,7 @@ def route_message(
     # SEARCH REFINEMENT
     # --------------------------------------------------------
 
-    if is_likely_search_refinement(
+    if not clear_new_search and is_likely_search_refinement(
         user_query,
         state.previous_search,
         state.previous_rooms,
@@ -3668,7 +3784,7 @@ def route_message(
     # SHORT VALUES AFTER A SEARCH
     # --------------------------------------------------------
 
-    if state.previous_search:
+    if state.previous_search and not clear_new_search:
 
         # "2bhk"
         # "under 10000"

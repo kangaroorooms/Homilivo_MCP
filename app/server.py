@@ -1,6 +1,7 @@
 import contextvars
 import os
 import json
+import logging
 import time
 import urllib.error
 import urllib.parse
@@ -9,6 +10,8 @@ import urllib.request
 from mcp.server import MCPServer
 
 from app.observability import record_api_latency
+
+logger = logging.getLogger(__name__)
 
 mcp = MCPServer("Homilivo Room Search MCP")
 
@@ -26,6 +29,12 @@ HOMILIVO_API_TIMEOUT_SECONDS = float(
     os.getenv("HOMILIVO_API_TIMEOUT_SECONDS", "10")
 )
 
+# Upper bound (P2-11) on how long a caller may await the search_rooms
+# MCP tool end to end, retries included. Applied with asyncio.wait_for()
+# at the client.call_tool() site in app/experiments/agent_modes.py;
+# defined here beside the other search_rooms limits.
+MCP_TOOL_TIMEOUT_SECONDS = 15
+
 # search_rooms is a read-only GET, so limited retries are safe here -
 # this must never be applied to a write/non-idempotent operation.
 HOMILIVO_API_MAX_ATTEMPTS = max(
@@ -36,6 +45,41 @@ HOMILIVO_API_MAX_ATTEMPTS = max(
 HOMILIVO_API_RETRY_BACKOFF_SECONDS = float(
     os.getenv("HOMILIVO_API_RETRY_BACKOFF_SECONDS", "0.3")
 )
+
+
+def _failure(error: str) -> dict:
+    """
+    Single safe failure shape for every Homilivo API failure. Never
+    contains rooms - results are never fabricated after an API failure.
+    """
+    return {
+        "success": False,
+        "count": 0,
+        "rooms": [],
+        "error": error,
+    }
+
+
+_HTTP_ERROR_MESSAGES = {
+    400: "Homilivo API bad request (400)",
+    401: "Homilivo API unauthorized (401) - check KANGAROO_TOKEN",
+    403: "Homilivo API forbidden (403)",
+    404: "Homilivo API endpoint not found (404)",
+    429: "Homilivo API rate limited (429)",
+}
+
+
+def _log_http_error(code: int) -> None:
+    message = _HTTP_ERROR_MESSAGES.get(code)
+
+    if message is None:
+        message = (
+            f"Homilivo API server error ({code})"
+            if code in (500, 502, 503)
+            else f"Homilivo API error ({code})"
+        )
+
+    logger.error(message)
 
 
 def _record_api_latency(started_at: float, success: bool) -> None:
@@ -119,10 +163,7 @@ def search_rooms(
     token = _get_kangaroo_token()
 
     if not token:
-        return {
-            "success": False,
-            "error": "KANGAROO_TOKEN environment variable is not set."
-        }
+        return _failure("KANGAROO_TOKEN environment variable is not set.")
 
     params = {
         "city": city,
@@ -166,11 +207,34 @@ def search_rooms(
                 timeout=HOMILIVO_API_TIMEOUT_SECONDS,
             ) as response:
 
-                data = json.loads(
-                    response.read().decode()
-                )
+                raw_response = response.read().decode()
 
-            rooms = data.get("data", [])
+            # Malformed / empty bodies are not transient: retrying the
+            # same request would not change the body, so fail at once.
+            if not raw_response.strip():
+                logger.warning("Homilivo API returned empty body")
+                _record_api_latency(_started_at, success=False)
+                return _failure("Homilivo API returned an empty response.")
+
+            try:
+                data = json.loads(raw_response)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Homilivo API returned malformed JSON: %s",
+                    raw_response[:200],
+                )
+                _record_api_latency(_started_at, success=False)
+                return _failure("Homilivo API returned malformed JSON.")
+
+            rooms = data.get("data", []) if isinstance(data, dict) else None
+
+            if not isinstance(rooms, list):
+                logger.warning(
+                    "Homilivo API returned unexpected payload shape: %s",
+                    raw_response[:200],
+                )
+                _record_api_latency(_started_at, success=False)
+                return _failure("Homilivo API returned an unexpected response.")
 
             _record_api_latency(_started_at, success=True)
 
@@ -183,6 +247,9 @@ def search_rooms(
         except Exception as e:
 
             last_error = e
+
+            if isinstance(e, urllib.error.HTTPError):
+                _log_http_error(e.code)
 
             is_last_attempt = attempt == HOMILIVO_API_MAX_ATTEMPTS
 
@@ -199,14 +266,11 @@ def search_rooms(
     # out of the tool. The caller (app/experiments/agent_modes.py) turns
     # success=False into a user-facing "temporarily unavailable" message
     # rather than a stack trace.
-    return {
-        "success": False,
-        "error": (
-            "Homilivo API request timed out."
-            if isinstance(last_error, TimeoutError)
-            else str(last_error)
-        ),
-    }
+    return _failure(
+        "Homilivo API request timed out."
+        if isinstance(last_error, TimeoutError)
+        else str(last_error)
+    )
 
 
 if __name__ == "__main__":

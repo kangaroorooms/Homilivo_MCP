@@ -12,6 +12,9 @@ CHATBOT_INFO
 GREETING
     Basic greetings.
 
+ACKNOWLEDGMENT
+    Short conversational replies ("ok", "thanks", "achha", "theek hai").
+
 OUT_OF_SCOPE
     Requests unrelated to the chatbot's purpose.
 
@@ -80,6 +83,28 @@ ROOM_SEARCH_EXAMPLES = [
     "I need accommodation for next month",
     "Help me find a place to live",
     "I want to rent a 2BHK",
+    # Hinglish/Hindi phrasings (additional examples only - none of the
+    # English examples above are removed or modified), so the same
+    # room-search intent is recognized regardless of language mixing.
+    "Bambai mein flat chahiye",
+    "Mujhe room chahiye",
+    "Dilli mein ghar chahiye",
+    "Bangalore mein PG chahiye",
+    "10 hazaar mein room chahiye bangalore",
+    "Mumbai mein flat dhundna hai",
+    "Room dikhao bangalore mein",
+    "Mujhe kiraya ke liye makan chahiye",
+    "Chennai mein 2 BHK chahiye",
+    "Pune mein accommodation chahiye",
+    # Additional discriminating examples: these clearly signal "find me a
+    # place to live" rather than "explain what the chatbot does", to keep
+    # ROOM_SEARCH separated from CHATBOT_INFO under the multilingual model.
+    "I need a flat to rent in Jaipur for 15000",
+    "Find accommodation in Jaipur under 15000 for students",
+    "Looking for student accommodation in Jaipur",
+    "Search for rooms in Jaipur below 15000",
+    "I want to rent a room in Jaipur",
+    "Show available rooms in Jaipur for students",
 ]
 
 
@@ -111,6 +136,40 @@ GREETING_EXAMPLES = [
     "Good evening",
     "Hi there",
     "Hello there",
+]
+
+
+ACKNOWLEDGMENT_EXAMPLES = [
+    "ok",
+    "okay",
+    "okey",
+    "alright",
+    "got it",
+    "understood",
+    "sure",
+    "fine",
+    "cool",
+    "nice",
+    "great",
+    "hmm",
+    "hmm ok",
+    "i see",
+    "makes sense",
+    "thanks",
+    "thank you",
+    "ok thanks",
+    "thanks a lot",
+    # Hindi/Hinglish acknowledgments
+    "achha",
+    "accha",
+    "theek hai",
+    "thik hai",
+    "haan",
+    "ji",
+    "shukriya",
+    "dhanyavaad",
+    "samajh gaya",
+    "badhiya",
 ]
 
 
@@ -148,6 +207,10 @@ BLOCKED_PATTERNS = [
     r"\bransomware\b",
     r"\bexploit(?:ation)?\b",
     r"\bsql[\s_-]*injection\b",
+    r"system\s+prompt",
+    r"\btoken\s+(batao|do|bhi|dena|dijiye)",
+    r"prompt\s+inject",
+    r"jailbreak",
 ]
 
 
@@ -207,6 +270,7 @@ INTENT_EXAMPLES = {
     "ROOM_SEARCH": ROOM_SEARCH_EXAMPLES,
     "CHATBOT_INFO": CHATBOT_INFO_EXAMPLES,
     "GREETING": GREETING_EXAMPLES,
+    "ACKNOWLEDGMENT": ACKNOWLEDGMENT_EXAMPLES,
     "OUT_OF_SCOPE": OUT_OF_SCOPE_EXAMPLES,
 }
 
@@ -344,6 +408,7 @@ def validate_user_input(
         "ROOM_SEARCH",
         "CHATBOT_INFO",
         "GREETING",
+        "ACKNOWLEDGMENT",
     }:
         return True, intent
 

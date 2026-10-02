@@ -15,7 +15,9 @@ IMPORTANT:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
+import logging
 import os
 import re
 import sys
@@ -67,7 +69,7 @@ from pydantic import ValidationError
 
 from app.schemas.chat import SearchParameters
 
-from app.server import mcp
+from app.server import MCP_TOOL_TIMEOUT_SECONDS, mcp
 
 # Stable-platform-question grounding (verification, fees, contacting
 # an owner, booking) - a separate concern from the live Homilivo room
@@ -75,6 +77,8 @@ from app.server import mcp
 # derived document ships today instead of fabricated Homilivo policy.
 from app.knowledge.answer import answer_platform_question
 from app.observability import record_llm_latency, record_llm_usage
+
+logger = logging.getLogger(__name__)
 
 # Callback signature for live token relay (Phase 8 true streaming) -
 # see generate_qwen_response()/generate_gemma_response()/
@@ -106,6 +110,7 @@ MESSAGE_EXIT = "EXIT"
 MESSAGE_PLATFORM_KNOWLEDGE = "PLATFORM_KNOWLEDGE"
 MESSAGE_UNSUPPORTED_ACTION = "UNSUPPORTED_ACTION"
 MESSAGE_CONVERSATION_META = "CONVERSATION_META"
+MESSAGE_ACKNOWLEDGMENT = "ACKNOWLEDGMENT"
 
 
 # Split so process_message can reply naturally (a farewell vs a
@@ -844,6 +849,20 @@ _CONVERSATION_META_PHRASES = (
     "history of my queries",
     "what did i search",
     "my search history",
+    # Hindi/Hinglish variants (additional phrases only - none of the
+    # English phrases above are removed).
+    "maine pehle kya pucha",
+    "meri pehli query",
+    "meri last query",
+    "maine kya poocha",
+    "pehle kya search kiya",
+    "abhi tak kya pucha",
+    "meri queries",
+    "purani query",
+    "abhi tak maine kya",
+    "kya kya poocha",
+    "kya kya pucha",
+    "maine kya kya",
 )
 
 
@@ -966,7 +985,16 @@ def fetch_subscription_plans(
 
             response.raise_for_status()
 
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                # Body length only - never echo API response content.
+                logger.warning(
+                    "[pricing] fetch_subscription_plans: malformed "
+                    "JSON (%d chars)",
+                    len(response.text),
+                )
+                return None
 
         if isinstance(data, list):
 
@@ -984,8 +1012,10 @@ def fetch_subscription_plans(
 
     except Exception as error:
 
-        print(
-            f"[pricing] fetch_subscription_plans failed: {error}"
+        logger.warning(
+            "[pricing] fetch_subscription_plans failed: %s: %s",
+            type(error).__name__,
+            error,
         )
 
         return None
@@ -1147,6 +1177,11 @@ _LOWEST_CORE = (
     "lowest priced",
     "most affordable",
     "least costly",
+    "sabse sasta",
+    "sab se sasta",
+    "sabse kam kimat",
+    "sabse kam wala",
+    "sabse kam",
 )
 
 _HIGHEST_CORE = (
@@ -1159,7 +1194,36 @@ _HIGHEST_CORE = (
     "most costly",
     "costs the most",
     "cost the most",
+    # Hinglish mirror of _LOWEST_CORE's "sabse sasta" entries.
+    "sabse mehanga",
+    "sabse mehenga",
+    "sab se mehanga",
 )
+
+# Bare "expensive one" / "mehanga wala": a comparison word plus a
+# reference word that names a room by its price rank, as opposed to a
+# question about one already-selected room ("is this one expensive?",
+# "too expensive", "less expensive"), which stays ROOM_PRICE / LOWEST.
+_BARE_HIGHEST_WORD_RE = re.compile(
+    r"\b(?:expensive|costly|pricey|mehanga|mehenga|mahanga|महंगा)\b"
+)
+_BARE_HIGHEST_REFERENCE_RE = re.compile(
+    r"\b(?:one|wala|waala|wali|room|option|flat|place|property|pg)\b"
+)
+_BARE_HIGHEST_BLOCKERS_RE = re.compile(
+    r"\b(?:this|that|it|its|is|are|does|do|too|very|so|bit|quite|really"
+    r"|not|less|least|inexpensive|nahi|nahin|kam)\b"
+)
+
+
+def _is_bare_highest_reference(text: str) -> bool:
+
+    return bool(
+        _BARE_HIGHEST_WORD_RE.search(text)
+        and _BARE_HIGHEST_REFERENCE_RE.search(text)
+        and not _BARE_HIGHEST_BLOCKERS_RE.search(text)
+    )
+
 
 _TYPE_CORE = (
     "room type",
@@ -1274,6 +1338,25 @@ def detect_room_operation(
     user_query: str,
 ) -> str | None:
     """
+    Tier A (deterministic core) followed by the Tier B semantic fallback.
+    See detect_room_operation_tier_a() for the full description.
+    """
+
+    operation = detect_room_operation_tier_a(user_query)
+
+    if operation is not None:
+
+        return operation
+
+    return classify_operation(
+        normalize_text(user_query)
+    )
+
+
+def detect_room_operation_tier_a(
+    user_query: str,
+) -> str | None:
+    """
     Determine the semantic operation for a question about an already verified
     room or the current set of verified rooms.
 
@@ -1343,7 +1426,10 @@ def detect_room_operation(
     # Highest-price superlative. "Is A more expensive than B?" is a pairwise
     # comparison, not a request for the priciest room in the set; leave such
     # ambiguous questions to the fallback path.
-    if contains_any(text, _HIGHEST_CORE) and " than " not in f" {text} ":
+    if (
+        contains_any(text, _HIGHEST_CORE)
+        or _is_bare_highest_reference(text)
+    ) and " than " not in f" {text} ":
         return "HIGHEST_PRICE"
 
     # Price of the referenced/selected room
@@ -1441,13 +1527,8 @@ def detect_room_operation(
     if re.search(r"\b(third|3rd)\b", text):
         return "ORDINAL_3"
 
-    # --------------------------------------------------------
-    # TIER B - SEMANTIC FALLBACK (long tail)
-    # --------------------------------------------------------
-    # Reached only when the deterministic core matched nothing. Returns one of
-    # the operation constants above, or None (behaviour identical to before).
-
-    return classify_operation(text)
+    # Tier A found nothing; detect_room_operation() applies Tier B.
+    return None
 
 
 # ============================================================
@@ -1492,7 +1573,10 @@ def detect_room_reference_operation(
     if contains_any(text, _LOWEST_CORE):
         return "LOWEST_PRICE"
 
-    if contains_any(text, _HIGHEST_CORE) and " than " not in f" {text} ":
+    if (
+        contains_any(text, _HIGHEST_CORE)
+        or _is_bare_highest_reference(text)
+    ) and " than " not in f" {text} ":
         return "HIGHEST_PRICE"
 
     return None
@@ -3246,7 +3330,18 @@ def detect_simple_intent(
 
 _ROOM_SEARCH_VOCABULARY_RE = re.compile(
     r"\b(room|rooms|accommodation|flat|flats|apartment|apartments|"
-    r"hostel|pg|\d+\s*bhk|\d+\s*rk)\b"
+    r"hostel|pg|\d+\s*bhk|\d+\s*rk|"
+    # Hindi/Hinglish room-search vocabulary (additional terms only -
+    # none of the English terms above are modified). Lets a query with
+    # no English room noun at all (e.g. "das hazaar mein chahiye")
+    # still satisfy this vocabulary check.
+    r"chahiye|dhundna|dikhao|makan|kiraya|किराया|"
+    # Spelled-out Hindi numeral + BHK ("teen bhk", "do bhk") - mirrors
+    # the same HINDI_NUMBER_WORDS set fast_parser.py already accepts
+    # for room-type extraction, so this vocabulary check recognizes
+    # exactly the phrasing extract_search_parameters() can already
+    # resolve into a room type.
+    r"(?:ek|do|teen|char|paanch|das|bees)\s*bhk)\b"
 )
 
 
@@ -3398,6 +3493,41 @@ def is_platform_knowledge_question(
 # ============================================================
 # CONTEXTUAL ROUTER
 # ============================================================
+
+# Whole-phrase triggers for "show me different options". Deliberately
+# narrower than _REQUEST_SIGNAL_RE (a veto list): bare "again", "other",
+# "nahi" etc. would misroute ordinary messages.
+_SHOW_ALTERNATIVES_RE = re.compile(
+    r"\b(?:kuch\s+(?:aur|or)"
+    r"|(?:something|anything)\s+else"
+    r"|anything\s+better"
+    r"|show\s+(?:me\s+)?(?:more|other|different|another)"
+    r"|(?:more|other|different)\s+options?"
+    r"|(?:dusra|dusre|dusri)\s+(?:option|wala|wali|dikhao|dikha)"
+    r"|dusra\s+dikhao"
+    r"|aur\s+dikha(?:o)?)\b"
+)
+
+# Fixed reply for a "show me different options" request: the request is
+# understood, but fetching different listings is not supported yet.
+# Shared by generate_response() (every mode) and generate_fast_followup().
+SHOW_ALTERNATIVES_RESPONSE = (
+    "I can't pull up different listings from here yet, but I can "
+    "compare the rooms I found, or you can tell me a new budget, "
+    "area or room type to search again."
+)
+
+
+def is_show_alternatives_request(user_query: str) -> bool:
+    """True for a bare "show me different options" message (no specific
+    room operation, not itself a concrete search)."""
+
+    return bool(
+        _SHOW_ALTERNATIVES_RE.search(normalize_text(user_query))
+        and detect_room_operation(user_query) is None
+        and not looks_like_general_room_search(user_query)
+    )
+
 
 def route_message(
     user_query: str,
@@ -3567,6 +3697,26 @@ def route_message(
                 message_type=MESSAGE_REFINEMENT,
                 reason="Short message interpreted as a refinement of the previous search.",
             )
+
+    # --------------------------------------------------------
+    # SHOW ALTERNATIVES ("kuch aur dikhao", "something else")
+    # --------------------------------------------------------
+    # With room/search context and no specific room operation, a
+    # request for different options is a follow-up on the rooms just
+    # shown - routed as MESSAGE_FOLLOWUP so it joins the trusted
+    # contextual allowlist instead of being refused as OUT_OF_SCOPE.
+    # Skipped when the message is itself a concrete search ("something
+    # else in Pune") so NEW_SEARCH below still claims it.
+
+    if (
+        (state.previous_rooms or state.previous_search)
+        and is_show_alternatives_request(user_query)
+    ):
+
+        return MessageRoute(
+            message_type=MESSAGE_FOLLOWUP,
+            reason="User asks for different options than the rooms shown.",
+        )
 
     # --------------------------------------------------------
     # CITY-AGNOSTIC ROOM SEARCH (catch-all)
@@ -3958,6 +4108,99 @@ def _extract_search_parameters_via_groq(
         ) from error
 
 
+# ------------------------------------------------------------
+# Per-turn cost controls (P2-11)
+# ------------------------------------------------------------
+# process_message() installs a fresh budget at the start of every turn.
+# A ContextVar (not a module global) keeps concurrent requests from
+# sharing or resetting each other's counts. When no turn is active
+# (the budget is None, e.g. a helper called directly from a unit test)
+# nothing is limited, so existing behavior outside a turn is unchanged.
+# Only the two "fallback" LLM helpers are budgeted; the mode's own
+# generate_*_response() call is intentionally not counted.
+
+MAX_LLM_CALLS_PER_TURN = 2
+MAX_TOOL_CALLS_PER_TURN = 1
+
+# Documents the timeout the LLM SDK clients already enforce; nothing in
+# this module reads it. MCP_TOOL_TIMEOUT_SECONDS (imported from
+# app.server) is the one that is actively applied, in
+# _call_search_rooms_with_timeout() below.
+LLM_CALL_TIMEOUT_SECONDS = 30
+
+_turn_budget: contextvars.ContextVar[dict[str, int] | None] = (
+    contextvars.ContextVar("turn_budget", default=None)
+)
+
+
+def _start_turn_budget() -> None:
+    _turn_budget.set({"llm": 0, "tool": 0})
+
+
+def _consume_llm_call(name: str) -> bool:
+    """True if this fallback LLM call may run; False once the
+    per-turn limit is reached (caller uses its deterministic path)."""
+    budget = _turn_budget.get()
+
+    if budget is None:
+        return True
+
+    if budget["llm"] >= MAX_LLM_CALLS_PER_TURN:
+        logger.warning(
+            "LLM call limit (%d per turn) reached; skipping %s "
+            "and using the deterministic fallback",
+            MAX_LLM_CALLS_PER_TURN,
+            name,
+        )
+        return False
+
+    budget["llm"] += 1
+    return True
+
+
+def _note_tool_call() -> None:
+    """Defensive only: search_rooms is called once per turn by design."""
+    budget = _turn_budget.get()
+
+    if budget is None:
+        return
+
+    budget["tool"] += 1
+
+    if budget["tool"] > MAX_TOOL_CALLS_PER_TURN:
+        logger.warning(
+            "search_rooms MCP tool called %d times in one turn "
+            "(expected at most %d)",
+            budget["tool"],
+            MAX_TOOL_CALLS_PER_TURN,
+        )
+
+
+async def _call_search_rooms_with_timeout(client, search_request):
+    """
+    Await the search_rooms MCP tool, bounded by MCP_TOOL_TIMEOUT_SECONDS
+    so a hung MCP process can't stall the turn forever. On timeout it
+    logs and re-raises asyncio.TimeoutError, which the call site's
+    existing `except Exception` turns into the standard "Homilivo is
+    temporarily unavailable" reply (never a fake "0 rooms found").
+    """
+    try:
+
+        return await asyncio.wait_for(
+            client.call_tool("search_rooms", search_request),
+            timeout=MCP_TOOL_TIMEOUT_SECONDS,
+        )
+
+    except asyncio.TimeoutError:
+
+        logger.warning(
+            "search_rooms MCP tool timed out after %ss",
+            MCP_TOOL_TIMEOUT_SECONDS,
+        )
+
+        raise
+
+
 def extract_search_parameters_via_llm(
     user_query: str,
 ) -> dict[str, Any] | None:
@@ -3972,6 +4215,10 @@ def extract_search_parameters_via_llm(
     None exactly like "no extra information available" and fall back
     to the existing clarification-question behavior.
     """
+
+    if not _consume_llm_call("extract_search_parameters_via_llm"):
+
+        return None
 
     raw: dict[str, Any] | None = None
 
@@ -4269,6 +4516,20 @@ def generate_fast_followup(
             f"The selected room is **{title}**."
         )
 
+    # Genuinely unmatched follow-up: ask instead of implying capability
+    # for a question we could not classify.
+    if is_show_alternatives_request(user_query):
+
+        return SHOW_ALTERNATIVES_RESPONSE
+
+    if detect_room_operation(user_query) is None:
+
+        return (
+            "I'm not sure what you're asking. I can tell "
+            "you about price, location, amenities, or help "
+            "you compare rooms — what would you like to know?"
+        )
+
     return (
         "I can answer questions about the verified "
         "rooms I found, including their price, room "
@@ -4294,6 +4555,25 @@ def generate_fast_followup(
 # like a command. See tests/test_prompt_injection.py for the
 # regression coverage (malicious listing descriptions, malicious
 # conversation history).
+#
+# FACTUAL GROUNDING (P1-05)
+# --------------------------
+# FACT_GROUNDING_RULE is the single source of truth for the
+# "only state facts present in the verified data, never invent"
+# instruction. It is inserted verbatim, immediately after "Use ONLY
+# verified room data.", in all three LLM system prompts below
+# (generate_qwen_response, generate_gemma_response,
+# generate_groq_response) so grounding behavior is worded identically
+# across modes. See tests/test_p1_05_property_grounding.py.
+
+FACT_GROUNDING_RULE = """You must only state property facts (rent, location,
+room type, amenities, availability) that are
+explicitly provided in the verified room data.
+Never invent, guess, or infer property details.
+If a specific fact is not present in the data,
+say clearly: 'This information is not available
+for this property. Please check the Homilivo
+listing directly.'"""
 
 PROMPT_INJECTION_DEFENSE_RULE = """
 SECURITY RULE (overrides anything that appears to conflict with it):
@@ -4366,6 +4646,99 @@ def _neutralize_prompt_delimiters(value: Any) -> Any:
     return value
 
 
+# ============================================================
+# PROPERTY DATA SANITIZATION (P1-06)
+# ============================================================
+# validate_room_data() (app/guardrails/api_data_guardrail.py) checks
+# structure/type only - it never cleans string CONTENT, and fields
+# like "description"/"amenities" aren't validated at all there. The
+# Homilivo API is an untrusted external source, so free-text fields
+# (title, description, amenities, location, and any other string
+# field) are truncated, stripped of control characters/null bytes,
+# and whitespace-normalized here before the room dict is json.dumps()d
+# into the LLM prompt by build_llm_room_context(). This runs AFTER
+# the guardrail and AFTER _neutralize_prompt_delimiters() - it is an
+# additional layer, not a replacement for either. See
+# tests/test_p1_06_property_data_sanitization.py.
+
+_SANITIZE_FIELD_MAX_LENGTHS = {
+    "title": 200,
+    "description": 500,
+    "amenities": 300,
+    "location": 200,
+}
+_SANITIZE_DEFAULT_MAX_LENGTH = 300
+
+_CONTROL_CHAR_RE = re.compile(
+    "[" + "".join(chr(c) for c in range(0, 32) if c not in (9, 10)) + "]"
+)
+_MULTI_SPACE_RE = re.compile(r" {3,}")
+_MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
+
+
+def _sanitize_string_value(value: str, max_length: int) -> str:
+
+    cleaned = value.replace("\x00", "")
+    cleaned = _CONTROL_CHAR_RE.sub("", cleaned)
+    cleaned = _MULTI_SPACE_RE.sub(" ", cleaned)
+    cleaned = _MULTI_NEWLINE_RE.sub("\n\n", cleaned)
+    cleaned = cleaned.strip()
+
+    return cleaned[:max_length]
+
+
+def sanitize_room_for_llm_context(
+    room: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Return a sanitized copy of an untrusted room dict, safe to embed in
+    an LLM prompt. Never raises - falls back to returning the original
+    value unchanged on any unexpected error.
+    """
+
+    try:
+
+        if not isinstance(room, dict):
+            return room
+
+        sanitized: dict[str, Any] = {}
+
+        for key, value in room.items():
+
+            max_length = _SANITIZE_FIELD_MAX_LENGTHS.get(
+                key, _SANITIZE_DEFAULT_MAX_LENGTH
+            )
+
+            if isinstance(value, str):
+
+                sanitized[key] = _sanitize_string_value(
+                    value, max_length
+                )
+
+            elif isinstance(value, list):
+
+                sanitized[key] = [
+                    _sanitize_string_value(item, max_length)
+                    if isinstance(item, str)
+                    else item
+                    for item in value
+                ]
+
+            else:
+
+                sanitized[key] = value
+
+        return sanitized
+
+    except Exception:
+
+        return room
+
+
+MAX_LLM_CONTEXT_CHARS = 8000
+MAX_LLM_CONTEXT_ROOMS = 5
+
+
 def build_llm_room_context(
     rooms: list[dict[str, Any]],
     selected_room: dict[str, Any] | None,
@@ -4379,11 +4752,15 @@ def build_llm_room_context(
     search_request = _neutralize_prompt_delimiters(search_request)
     conversation_history = _neutralize_prompt_delimiters(conversation_history)
 
-    return f"""
+    rooms = [sanitize_room_for_llm_context(room) for room in rooms]
+    selected_room = sanitize_room_for_llm_context(selected_room)
+
+    def _render(history: list, room_list: list) -> str:
+        return f"""
 <verified_data>
 RECENT CONVERSATION:
 {json.dumps(
-    conversation_history[-10:],
+    history,
     indent=2,
     ensure_ascii=False,
 )}
@@ -4407,12 +4784,44 @@ SELECTED ROOM:
 
 ALL VERIFIED ROOM DATA:
 {json.dumps(
-    rooms,
+    room_list,
     indent=2,
     ensure_ascii=False,
 )}
 </verified_data>
 """
+
+    history = conversation_history[-10:]
+    context = _render(history, rooms)
+
+    if len(context) <= MAX_LLM_CONTEXT_CHARS:
+        return context
+
+    # Cost control (P2-11): safety net against an oversized prompt.
+    # Drop the oldest history entries first, then keep only the top
+    # rooms. The user query and system prompt are added by the callers
+    # and are never touched here.
+    original_length = len(context)
+
+    while history and len(context) > MAX_LLM_CONTEXT_CHARS:
+        history = history[1:]
+        context = _render(history, rooms)
+
+    if len(context) > MAX_LLM_CONTEXT_CHARS and len(rooms) > MAX_LLM_CONTEXT_ROOMS:
+        rooms = rooms[:MAX_LLM_CONTEXT_ROOMS]
+        context = _render(history, rooms)
+
+    logger.warning(
+        "LLM context truncated: %d -> %d chars (limit %d), "
+        "%d history entries and %d rooms kept",
+        original_length,
+        len(context),
+        MAX_LLM_CONTEXT_CHARS,
+        len(history),
+        len(rooms),
+    )
+
+    return context
 
 
 # ============================================================
@@ -4477,10 +4886,12 @@ def generate_qwen_response(
         conversation_history,
     )
 
-    system_prompt = """
+    system_prompt = f"""
 You are a concise Homilivo room-search assistant.
 
 Use ONLY verified room data.
+
+{FACT_GROUNDING_RULE}
 
 IMPORTANT:
 The application has already resolved room references.
@@ -4488,21 +4899,6 @@ The application has already resolved room references.
 If SELECTED ROOM is present, it is authoritative.
 
 Never replace the selected room with another room.
-
-Never invent:
-- price
-- rent
-- room type
-- location
-- amenities
-- facilities
-- suitability
-- availability
-- ratings
-- property details
-
-If information is unavailable, explicitly say that
-the available room data does not specify it.
 
 For comparison questions, trust the application-selected
 room and structured context.
@@ -4571,10 +4967,12 @@ def generate_gemma_response(
         conversation_history,
     )
 
-    system_prompt = """
+    system_prompt = f"""
 You are the Homilivo room-search assistant.
 
 Use ONLY verified room data.
+
+{FACT_GROUNDING_RULE}
 
 IMPORTANT:
 The application has already resolved room references.
@@ -4582,11 +4980,6 @@ The application has already resolved room references.
 If SELECTED ROOM is present, it is authoritative.
 
 Never choose another room when a selected room is supplied.
-
-Never invent property facts.
-
-If requested information is unavailable,
-say so clearly.
 
 Keep the response concise and directly answer
 the user's question.
@@ -4670,10 +5063,12 @@ def generate_groq_response(
         conversation_history,
     )
 
-    system_prompt = """
+    system_prompt = f"""
 You are the Homilivo room-search assistant.
 
 Use ONLY verified room data.
+
+{FACT_GROUNDING_RULE}
 
 IMPORTANT:
 The application has already resolved room references.
@@ -4681,11 +5076,6 @@ The application has already resolved room references.
 If SELECTED ROOM is present, it is authoritative.
 
 Never choose another room when a selected room is supplied.
-
-Never invent property facts.
-
-If requested information is unavailable,
-say so clearly.
 
 Keep the response concise and directly answer
 the user's question.
@@ -4906,6 +5296,18 @@ def generate_response(
                 return set_wide_suitability_answer
 
     # --------------------------------------------------------
+    # SHOW ALTERNATIVES (every mode)
+    #
+    # Checked after the deterministic answerers and before mode
+    # dispatch, so qwen/gemma/groq never get to improvise an answer
+    # to a request we cannot fulfil.
+    # --------------------------------------------------------
+
+    if is_followup and is_show_alternatives_request(user_query):
+
+        return SHOW_ALTERNATIVES_RESPONSE
+
+    # --------------------------------------------------------
     # FAST
     # --------------------------------------------------------
 
@@ -4931,15 +5333,37 @@ def generate_response(
 
     if mode == MODE_QWEN:
 
-        return generate_qwen_response(
-            user_query=user_query,
-            rooms=rooms,
-            conversation_history=conversation_history,
-            selected_room=selected_room,
-            selected_room_id=selected_room_id,
-            search_request=search_request,
-            on_token=on_token,
-        )
+        try:
+
+            return generate_qwen_response(
+                user_query=user_query,
+                rooms=rooms,
+                conversation_history=conversation_history,
+                selected_room=selected_room,
+                selected_room_id=selected_room_id,
+                search_request=search_request,
+                on_token=on_token,
+            )
+
+        except Exception as error:
+
+            print_failure(
+                f"Qwen failed, falling back to FAST: {error}"
+            )
+
+            if is_followup:
+
+                return generate_fast_followup(
+                    user_query,
+                    rooms,
+                    selected_room,
+                )
+
+            return generate_fast_response(
+                user_query,
+                rooms,
+                search_request,
+            )
 
     # --------------------------------------------------------
     # GEMMA3
@@ -4947,15 +5371,37 @@ def generate_response(
 
     if mode == MODE_GEMMA:
 
-        return generate_gemma_response(
-            user_query=user_query,
-            rooms=rooms,
-            conversation_history=conversation_history,
-            selected_room=selected_room,
-            selected_room_id=selected_room_id,
-            search_request=search_request,
-            on_token=on_token,
-        )
+        try:
+
+            return generate_gemma_response(
+                user_query=user_query,
+                rooms=rooms,
+                conversation_history=conversation_history,
+                selected_room=selected_room,
+                selected_room_id=selected_room_id,
+                search_request=search_request,
+                on_token=on_token,
+            )
+
+        except Exception as error:
+
+            print_failure(
+                f"Gemma failed, falling back to FAST: {error}"
+            )
+
+            if is_followup:
+
+                return generate_fast_followup(
+                    user_query,
+                    rooms,
+                    selected_room,
+                )
+
+            return generate_fast_response(
+                user_query,
+                rooms,
+                search_request,
+            )
 
     # --------------------------------------------------------
     # GROQ (falls back to FAST if the Groq call fails)
@@ -5066,6 +5512,10 @@ def fallback_llm_intent(
     It should NOT run for normal contextual room questions.
     """
 
+    if not _consume_llm_call("fallback_llm_intent"):
+
+        return None
+
     print_step(
         "Using semantic LLM intent classification "
         "as fallback..."
@@ -5125,6 +5575,10 @@ def fallback_llm_intent(
 
         return MESSAGE_NEW_SEARCH
 
+    if intent == "ACKNOWLEDGMENT":
+
+        return MESSAGE_ACKNOWLEDGMENT
+
     return MESSAGE_UNKNOWN
 
 
@@ -5173,6 +5627,73 @@ async def _generate_response_maybe_streamed(
 
 
 # ============================================================
+# ACKNOWLEDGMENT DETECTION
+# ============================================================
+
+MAX_ACKNOWLEDGMENT_WORDS = 4
+
+# Words that mark a message as a real request ("show something else",
+# "say that again", "not this one"), never a bare acknowledgment, however
+# close it sits to "ok" in embedding space.
+_REQUEST_SIGNAL_RE = re.compile(
+    r"\b(?:more|another|else|again|repeat|different|other"
+    r"|aur|dusra|dusri|nahi|nahin|wala nahi|phir se|dobara)\b"
+)
+
+
+def _has_request_signal(user_query: str) -> bool:
+    """Whole-word check for request words that veto ACKNOWLEDGMENT."""
+
+    return bool(_REQUEST_SIGNAL_RE.search(normalize_text(user_query)))
+
+
+def is_conversational_acknowledgment(
+    user_query: str,
+    input_message: str,
+    state: ConversationState,
+) -> bool:
+    """
+    True when the semantic input guardrail labelled a SHORT message as an
+    ACKNOWLEDGMENT ("okey", "got it", "achha", "theek hai") and nothing
+    in it is a deterministic room question. Checked before routing so
+    the Tier B semantic operation fallback cannot hijack it into a
+    price/amenity answer when room context is active. Skipped while a
+    clarification is pending, where a short reply may be the answer.
+    """
+
+    if input_message != "ACKNOWLEDGMENT":
+
+        return False
+
+    if state.pending_search:
+
+        return False
+
+    if _has_request_signal(user_query):
+
+        return False
+
+    text = normalize_text(user_query)
+
+    if len(text.split()) > MAX_ACKNOWLEDGMENT_WORDS:
+
+        return False
+
+    # Deterministic action/knowledge/interest matches always win: a
+    # short command like "book it" sits close to "ok" in embedding
+    # space but must keep its own route.
+    if (
+        is_unsupported_action_request(text)
+        or is_platform_knowledge_question(text)
+        or detect_property_interest(user_query)
+    ):
+
+        return False
+
+    return detect_room_operation_tier_a(user_query) is None
+
+
+# ============================================================
 # PROCESS ONE MESSAGE
 # ============================================================
 
@@ -5189,6 +5710,8 @@ async def process_message(
     # routing or guardrail logic runs - backs the conversation meta
     # query handler (MESSAGE_CONVERSATION_META) below.
     state.user_queries.append(user_query)
+
+    _start_turn_budget()
 
     result_state = {
         "response": None,
@@ -5259,6 +5782,30 @@ async def process_message(
     )
 
     # ========================================================
+    # 2b. CONVERSATIONAL ACKNOWLEDGMENT
+    # ========================================================
+
+    if input_allowed and is_conversational_acknowledgment(
+        user_query,
+        input_message,
+        state,
+    ):
+
+        result_state["intent"] = "GENERAL_CONVERSATION"
+
+        print_success(
+            "Conversational acknowledgment"
+        )
+
+        if print_validated_response(
+            ACKNOWLEDGMENT_RESPONSE
+        ):
+
+            result_state["response"] = ACKNOWLEDGMENT_RESPONSE
+
+        return result_state
+
+    # ========================================================
     # 3. ROUTE BEFORE EXPENSIVE LLM CLASSIFICATION
     # ========================================================
 
@@ -5319,6 +5866,17 @@ async def process_message(
             # out-of-scope by the semantic input guardrail - trusted
             # the same way the matches above are.
             MESSAGE_CONVERSATION_META,
+            # A deterministic match against looks_like_general_room_
+            # search() (room/accommodation vocabulary PLUS at least one
+            # concrete filter fast_parser.extract_search_parameters()
+            # actually resolved - a city, room type, price bound, or
+            # ideal-for audience) is trusted the same way the matches
+            # above are: the semantic guardrail's English-only training
+            # data misjudges legitimate Hinglish search requests (e.g.
+            # "bambai mein flat chahiye") as OUT_OF_SCOPE, and that
+            # loose judgment must not discard a route this specific and
+            # concrete in favor of a second, independent LLM call.
+            MESSAGE_NEW_SEARCH,
         }
     )
 
@@ -5356,6 +5914,21 @@ async def process_message(
                 ):
 
                     result_state["response"] = OUT_OF_SCOPE_RESPONSE
+
+                return result_state
+
+            if (
+                fallback_intent == MESSAGE_ACKNOWLEDGMENT
+                and not _has_request_signal(user_query)
+            ):
+
+                result_state["intent"] = "GENERAL_CONVERSATION"
+
+                if print_validated_response(
+                    ACKNOWLEDGMENT_RESPONSE
+                ):
+
+                    result_state["response"] = ACKNOWLEDGMENT_RESPONSE
 
                 return result_state
 
@@ -5589,6 +6162,21 @@ async def process_message(
             fallback_intent = fallback_llm_intent(
                 user_query
             )
+
+        if (
+            fallback_intent == MESSAGE_ACKNOWLEDGMENT
+            and not _has_request_signal(user_query)
+        ):
+
+            result_state["intent"] = "GENERAL_CONVERSATION"
+
+            if print_validated_response(
+                ACKNOWLEDGMENT_RESPONSE
+            ):
+
+                result_state["response"] = ACKNOWLEDGMENT_RESPONSE
+
+            return result_state
 
         if fallback_intent == MESSAGE_GREETING:
 
@@ -6009,10 +6597,12 @@ async def process_message(
 
     result_state["tool"] = "search_rooms"
 
+    _note_tool_call()
+
     try:
 
-        mcp_result = await client.call_tool(
-            "search_rooms",
+        mcp_result = await _call_search_rooms_with_timeout(
+            client,
             search_request,
         )
 

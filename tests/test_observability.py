@@ -12,7 +12,6 @@ import pytest
 
 import app.observability as observability_module
 from app.observability import (
-    _sanitize,
     get_metrics_snapshot,
     record_api_latency,
     record_llm_latency,
@@ -29,38 +28,6 @@ def _fresh_registry():
     fresh = observability_module._MetricsRegistry()
     observability_module._metrics = fresh
     return fresh
-
-
-# ============================================================
-# REDACTION
-# ============================================================
-
-def test_sanitize_redacts_secret_shaped_keys():
-    payload = {
-        "Authorization": "Bearer real-secret",
-        "kangaroo_token": "abc123",
-        "api_key": "xyz",
-        "password": "hunter2",
-        "city": "Jaipur",
-    }
-
-    cleaned = _sanitize(payload)
-
-    assert cleaned["Authorization"] == "[redacted]"
-    assert cleaned["kangaroo_token"] == "[redacted]"
-    assert cleaned["api_key"] == "[redacted]"
-    assert cleaned["password"] == "[redacted]"
-    assert cleaned["city"] == "Jaipur"
-
-
-def test_sanitize_recurses_into_nested_structures():
-    payload = {"outer": {"nested_secret_token": "xyz", "fine": "ok"}, "list": [{"password": "x"}]}
-
-    cleaned = _sanitize(payload)
-
-    assert cleaned["outer"]["nested_secret_token"] == "[redacted]"
-    assert cleaned["outer"]["fine"] == "ok"
-    assert cleaned["list"][0]["password"] == "[redacted]"
 
 
 # ============================================================

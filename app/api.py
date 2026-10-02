@@ -1,5 +1,7 @@
 import asyncio
+import logging
 import os
+import re
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -19,13 +21,18 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
 from mcp import Client
 from app.server import mcp, set_kangaroo_token
-from app.rate_limit import check_rate_limit, client_host_identifier, enforce_rate_limit
+from app.rate_limit import (
+    check_rate_limit,
+    check_session_rate_limit,
+    client_host_identifier,
+    enforce_rate_limit,
+)
 from app.demo_auth import issue_demo_token, redeem_demo_token, server_credential_configured
 from app.guardrails import is_security_blocked
 from app.streaming import chunk_for_streaming, LiveTokenRelay
@@ -46,8 +53,82 @@ from app.session_store import SessionStore
 # FASTAPI APP
 # ============================================================
 
+logger = logging.getLogger(__name__)
+
+# P3-18: only UUID-format session ids may reach logs or the session
+# store. A client-supplied id is otherwise free text (could be an email
+# or name), and record_turn() logs session_id.
+_SESSION_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}"
+    r"-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_session_id(candidate: object) -> str:
+    """
+    Return `candidate` if it is a UUID-format string, else a fresh
+    server-side UUID. The invalid value itself is never logged.
+    """
+    if candidate is None or candidate == "":
+        return str(uuid4())
+
+    if isinstance(candidate, str) and _SESSION_ID_RE.match(candidate):
+        # Case-fold so ABC... and abc... resolve to the same session.
+        return candidate.lower()
+
+    logger.warning(
+        "Invalid session_id format received - generating new session_id"
+    )
+    return str(uuid4())
+
+
+def _enforce_session_rate_limit(session_id: str) -> None:
+    """
+    P2-10: per-session limit, applied after the per-IP dependency.
+    Raises the same 429 shape as app.rate_limit.enforce_rate_limit().
+    """
+    result = check_session_rate_limit(session_id)
+
+    if not result.allowed:
+        retry_after = max(1, int(result.retry_after_seconds) + 1)
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Please slow down and try again shortly.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+def validate_secrets() -> None:
+    """
+    Fail fast at startup (P3-13) if a required secret is missing, rather
+    than crashing mid-request. Only secret NAMES are ever logged or put
+    in an error message - never a value.
+    """
+    required = {"KANGAROO_TOKEN": os.getenv("KANGAROO_TOKEN")}
+    optional = {"GROQ_API_KEY": os.getenv("GROQ_API_KEY")}
+
+    for name, value in required.items():
+        if not value:
+            logger.error("Required secret %s is not set.", name)
+            raise RuntimeError(
+                f"Required secret {name} is not set. "
+                f"Cannot start the application."
+            )
+
+    for name, value in optional.items():
+        if not value:
+            logger.warning(
+                "Optional secret %s is not set — "
+                "dependent features will be unavailable.",
+                name,
+            )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    validate_secrets()
+
     # Load the shared embedding model, plus every module's precomputed
     # embeddings (interpreter's operation anchors, the input guardrail's
     # intent examples, the knowledge base's document index), once at
@@ -78,6 +159,7 @@ app = FastAPI(
     title="Homilivo Room Search API",
     description="FastAPI service for the Homilivo MCP AI agent",
     version="2.0.0",
+    debug=False,
     lifespan=_lifespan,
 )
 
@@ -256,7 +338,121 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "active_sessions": len(SESSIONS)}
+    """
+    P3-15 liveness: the process is up and serving. Deliberately no I/O
+    and no dependency checks (active_sessions lives in /metrics), so a
+    degraded dependency never makes a load balancer restart the
+    instance - that is /ready's job.
+    """
+    return {"status": "ok", "service": "homilivo-chatbot"}
+
+
+READINESS_REDIS_TIMEOUT_SECONDS = 2.0
+
+
+def _check_embedding_model() -> str:
+    try:
+        from app.embeddings import get_shared_model
+
+        # Instant when warm (lru_cache); a broken model raises every time.
+        get_shared_model()
+        return "ok"
+    except Exception:  # noqa: BLE001
+        return "failed"
+
+
+def _check_knowledge_base() -> str:
+    try:
+        from app.knowledge import store
+
+        collection = store._get_collection()
+        if collection is None:
+            return "failed"
+        # Cheap metadata call - no embedding, no search. An empty
+        # index cannot answer platform questions, so it is not ready.
+        return "ok" if collection.count() > 0 else "failed"
+    except Exception:  # noqa: BLE001
+        return "failed"
+
+
+async def _check_mcp_server() -> str:
+    """
+    In-process MCP server: open a client session and confirm the
+    search_rooms tool is registered. Does not call the tool, so no
+    outbound Homilivo request is made. An unexpected failure of the
+    probe itself is "unknown", not "failed".
+    """
+    try:
+        async with Client(mcp) as mcp_client:
+            listing = await mcp_client.list_tools()
+        names = {tool.name for tool in listing.tools}
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+    return "ok" if "search_rooms" in names else "failed"
+
+
+def _check_groq_api_key() -> str:
+    return "ok" if os.getenv("GROQ_API_KEY") else "missing"
+
+
+async def _check_redis() -> str:
+    try:
+        if os.getenv("STATE_BACKEND", "memory").strip().lower() != "redis":
+            return "not_configured"
+
+        client = getattr(SESSIONS, "_redis", None)
+        if client is None:
+            return "failed"
+
+        await asyncio.wait_for(
+            asyncio.to_thread(client.ping),
+            timeout=READINESS_REDIS_TIMEOUT_SECONDS,
+        )
+        return "ok"
+    except Exception:  # noqa: BLE001
+        return "failed"
+
+
+@app.get("/ready")
+async def ready():
+    """
+    P3-15 readiness: 200 only if every REQUIRED dependency is usable,
+    else 503. Optional dependencies (Groq key, Redis) are reported but
+    never change the status code. Never raises.
+    """
+    try:
+        checks = {
+            "embedding_model": await asyncio.to_thread(_check_embedding_model),
+            "knowledge_base": await asyncio.to_thread(_check_knowledge_base),
+            "mcp_server": await _check_mcp_server(),
+        }
+    except Exception:  # noqa: BLE001
+        checks = {
+            "embedding_model": "failed",
+            "knowledge_base": "failed",
+            "mcp_server": "failed",
+        }
+
+    try:
+        optional = {
+            "groq_api_key": _check_groq_api_key(),
+            "redis": await _check_redis(),
+        }
+    except Exception:  # noqa: BLE001
+        optional = {"groq_api_key": "unknown", "redis": "unknown"}
+
+    # "unknown" (MCP probe itself broke) is not evidence of an outage.
+    is_ready = all(value != "failed" for value in checks.values())
+
+    return JSONResponse(
+        status_code=200 if is_ready else 503,
+        content={
+            "status": "ready" if is_ready else "not_ready",
+            "checks": checks,
+            "optional": optional,
+        },
+    )
 
 
 @app.get("/knowledge/health")
@@ -316,6 +512,13 @@ def chat_ui_demo_token():
     return {"token": token}
 
 
+MAX_USER_MESSAGE_LENGTH = 2000
+MESSAGE_TOO_LONG_RESPONSE = (
+    "Your message is too long. Please keep your search query "
+    "under 2000 characters."
+)
+
+
 async def _run_chat_turn(
     session_id: str,
     mode: str,
@@ -346,6 +549,37 @@ async def _run_chat_turn(
     """
     request_id = str(uuid4())
     started_at = time.monotonic()
+
+    # Cost control (P2-11), defence in depth: ChatRequest and the
+    # WebSocket handler already cap messages at 500 characters, so this
+    # only triggers if a caller reaches _run_chat_turn() some other way.
+    # Runs before any guardrail/LLM work so an oversized message never
+    # reaches either.
+    if len(message) > MAX_USER_MESSAGE_LENGTH:
+        record_turn(
+            request_id=request_id,
+            session_id=session_id,
+            intent="OUT_OF_SCOPE",
+            operation=None,
+            tool=None,
+            mode=mode,
+            status="blocked",
+            error_category="message_too_long",
+            latency_ms=(time.monotonic() - started_at) * 1000,
+        )
+        return {
+            "success": False,
+            "session_id": session_id,
+            "request_id": request_id,
+            "mode": mode,
+            "message": MESSAGE_TOO_LONG_RESPONSE,
+            "room_count": 0,
+            "rooms": [],
+            "selected_room": None,
+            "pending_clarification": False,
+            "sources": [],
+            "search_performed": False,
+        }
 
     # Security hard-block: reject clearly malicious input before
     # entering the graph. Context-aware guardrail logic remains
@@ -473,7 +707,11 @@ async def chat_endpoint(
     # through here. Never logged, never written to a process-global.
     set_kangaroo_token(_resolve_homilivo_token(credentials.credentials))
 
-    session_id = request.session_id or str(uuid4())
+    session_id = _normalize_session_id(request.session_id)
+    # Only a client-supplied session_id is limited; a server-generated
+    # one is brand new every time, so the per-IP limit is the backstop.
+    if request.session_id:
+        _enforce_session_rate_limit(session_id)
     # request.mode is already validated to be one of ChatMode by Pydantic.
     turn = await _run_chat_turn(session_id, request.mode, request.message)
 
@@ -580,7 +818,11 @@ async def chat_websocket(websocket: WebSocket) -> None:
 
             message = payload.get("message")
             mode = payload.get("mode", "fast")
-            session_id = payload.get("session_id") or session_id or str(uuid4())
+            supplied_session_id = payload.get("session_id")
+            if supplied_session_id:
+                session_id = _normalize_session_id(supplied_session_id)
+            else:
+                session_id = session_id or str(uuid4())
 
             if (
                 not isinstance(message, str)
@@ -603,6 +845,15 @@ async def chat_websocket(websocket: WebSocket) -> None:
 
             turn_rate_limit = check_rate_limit(client_key)
             if not turn_rate_limit.allowed:
+                await websocket.send_json(
+                    {"event": "error", "detail": "Too many requests. Please slow down."}
+                )
+                continue
+
+            # P2-10: per-session limit, after the per-IP one above.
+            # session_id is always set by this point.
+            turn_session_limit = check_session_rate_limit(session_id)
+            if not turn_session_limit.allowed:
                 await websocket.send_json(
                     {"event": "error", "detail": "Too many requests. Please slow down."}
                 )

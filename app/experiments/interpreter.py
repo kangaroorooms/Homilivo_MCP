@@ -72,6 +72,28 @@ ANCHORS: dict[str, list[str]] = {
         "which one is easiest on my budget",
         "which will cost me the least",
         "lightest on my pocket",
+        # Idiom-aware phrasings mirroring HIGHEST_PRICE's idiom anchors below,
+        # so financial idioms don't skew toward the wrong price direction.
+        "which one would set me back the least",
+        "which costs the least amount",
+        "which one is the least expensive",
+        "what is the most affordable option",
+        "which would cost me the least",
+        "show me the most budget friendly option",
+        # Hindi/Hinglish phrasings (additional anchors only - none of
+        # the English anchors above are removed).
+        #
+        # "sabse sasta kaun sa hai", "sabse kam kimat wala",
+        # "sasta wala dikhao" and "sabse affordable kaun sa" were
+        # removed: their "kaun sa hai"/"wala" determiner cadence turned
+        # out to generically match ANY Hindi reference query (e.g.
+        # "pehle wale ke baare mein batao" - an ordinal/detail
+        # question with no price meaning at all), not just price
+        # questions, so they were false-pulling unrelated follow-ups
+        # into LOWEST_PRICE. "kam se kam kitna hai" carries the same
+        # meaning without that generic cadence and is kept as the
+        # slot's Hindi anchor.
+        "kam se kam kitna hai",
     ],
     HIGHEST_PRICE: [
         "which one is the most expensive",
@@ -80,7 +102,17 @@ ANCHORS: dict[str, list[str]] = {
         "which will cost me the most",
         "which is the biggest expense",
         "which will burn the biggest hole in my pocket",
-        "which one hits my wallet the hardest"
+        "which one hits my wallet the hardest",
+        # Hindi/Hinglish phrasings (additional anchors only - none of
+        # the English anchors above are removed).
+        #
+        # "sabse zyada kimat wala", "mehanga wala dikhao",
+        # "sabse upar wala" and "sabse expensive kaun sa" were removed
+        # for the same reason as LOWEST_PRICE above - same generic
+        # "kaun sa hai"/"wala" cadence false-pulling unrelated Hindi
+        # reference queries. "jo sabse mehanga hai" is kept as the
+        # slot's Hindi anchor.
+        "jo sabse mehanga hai",
     ],
     ROOM_PRICE: [
         "what is its price",
@@ -137,14 +169,28 @@ ANCHORS: dict[str, list[str]] = {
 # TUNABLES  (tune against the golden conversation, then freeze)
 # ============================================================
 
-MODEL_NAME = "all-MiniLM-L6-v2"
+MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 # Minimum cosine similarity to the best-matching anchor to accept a slot.
 ACCEPT_THRESHOLD = 0.45
 
 # The winning slot must beat the runner-up slot by at least this much,
 # otherwise the query is treated as ambiguous and we return None.
-SLOT_MARGIN = 0.04
+# Raised from 0.04 to 0.06 as defense-in-depth alongside the LOWEST_PRICE/
+# HIGHEST_PRICE anchor cleanup above: no single anchor was solely
+# responsible for the false-pull regression, so a stronger required
+# margin adds a second layer of protection against similarly ambiguous
+# short Hindi/Hinglish anchors in the future.
+SLOT_MARGIN = 0.06
+
+# Stricter floor for the two price-direction slots. Off-topic or meta
+# phrasing ("kuch aur dikhao", "i dont understand", "ye wala nahi chahiye")
+# scores 0.46-0.59 against the price anchors and used to win HIGHEST_PRICE
+# with a wide margin (the margin only measures distance from the runner-up,
+# not absolute confidence). Genuine Tier-B price phrasings score >= ~0.67;
+# Hinglish "sabse sasta/kam" are resolved by Tier A and never rely on this.
+PRICE_SLOT_THRESHOLD = 0.65
+_PRICE_SLOTS = frozenset({LOWEST_PRICE, HIGHEST_PRICE})
 
 
 # ============================================================
@@ -282,7 +328,10 @@ def classify_operation(text: str) -> Optional[str]:
     top_slot, top_score = ranked[0]
     second_score = ranked[1][1] if len(ranked) > 1 else -1.0
 
-    if top_score < ACCEPT_THRESHOLD:
+    threshold = (
+        PRICE_SLOT_THRESHOLD if top_slot in _PRICE_SLOTS else ACCEPT_THRESHOLD
+    )
+    if top_score < threshold:
         return None
     if (top_score - second_score) < SLOT_MARGIN:
         return None

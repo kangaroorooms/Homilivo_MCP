@@ -64,14 +64,25 @@ You must classify the request into exactly one of these intents:
    "Can you help me find accommodation?"
    must be classified as ROOM_SEARCH.
 
-4. UNKNOWN
-   Use this when the request is unrelated to greetings, chatbot
-   information, or room/accommodation search.
+4. ACKNOWLEDGMENT
+   A short conversational reply that needs no search or answer.
+   Examples:
+   - ok
+   - okey
+   - thanks
+   - got it
+   - achha
+   - theek hai
+   - hmm
+
+5. UNKNOWN
+   Use this when the request is unrelated to greetings, acknowledgments,
+   chatbot information, or room/accommodation search.
 
 Return ONLY valid JSON using exactly this structure:
 
 {
-  "intent": "GREETING | CHATBOT_INFO | ROOM_SEARCH | UNKNOWN",
+  "intent": "GREETING | CHATBOT_INFO | ROOM_SEARCH | ACKNOWLEDGMENT | UNKNOWN",
   "confidence": 0.0,
   "reason": "short explanation",
   "search_query": "interpreted search request or null"
@@ -100,7 +111,7 @@ For ROOM_SEARCH:
   students, professionals, or family.
 - Do not add constraints that the user did not mention.
 
-For GREETING, CHATBOT_INFO, and UNKNOWN:
+For GREETING, CHATBOT_INFO, ACKNOWLEDGMENT, and UNKNOWN:
 
 - search_query must be null.
 """
@@ -114,6 +125,7 @@ VALID_INTENTS = {
     "GREETING",
     "CHATBOT_INFO",
     "ROOM_SEARCH",
+    "ACKNOWLEDGMENT",
     "UNKNOWN",
 }
 

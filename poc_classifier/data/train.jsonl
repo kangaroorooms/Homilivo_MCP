@@ -1,0 +1,712 @@
+{"text": "i am looking for a flat in pune", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "need pg in hyderabad near hitech city", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "anyone know a good place to rent in chennai", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "room for rent in noida sector 62", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "looking for 1bhk under 12k in gurgaon", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "can you find me a studio apartment in mumbai", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "need accommodation near my college in jaipur", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "single room in delhi for 8000", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "want to rent a 3bhk in kolkata", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "mujhe pune mein flat chahiye", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "mumbai me pg dhundh raha hu", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "delhi mein sasta kamra batao", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "hyderabad mein 2bhk rent pe chahiye", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "mujhe ek room chahiye indore me", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "koi pg hai kya andheri ke paas", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "plz fnd me a rom in chenai", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "lookin for flatt in pne under 15k", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "need rum in hydrabad asap", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "rooms avilable in bangalore??", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "i i need a a flat in delhi", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "um so like i want a room in mumbai you know", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "flat flat in pune 2 bhk", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "looking for room... in noida... cheap", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "need place stay lucknow budget 6000", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "i want to move to bangalore next month need a pg", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "show me rooms in whitefield", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "find pg for girls in koramangala", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "room chahiye jaipur me student ke liye", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "suggest some flats in thane under 25000", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "accommodation in goa for 3 months", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "hey i wanna rent a room in kochi", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "fresh search: 1rk in ahmedabad", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "actually forget those, find me flats in surat", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "कमरा चाहिए पुणे में", "label": "NEW_SEARCH", "has_room_context": false}
+{"text": "नोएडा में पीजी बताओ", "label": "NEW_SEARCH", "has_room_context": true}
+{"text": "make it under 9000", "label": "REFINEMENT", "has_room_context": true}
+{"text": "only 2bhk ones please", "label": "REFINEMENT", "has_room_context": true}
+{"text": "i want it furnished", "label": "REFINEMENT", "has_room_context": true}
+{"text": "budget max 18k", "label": "REFINEMENT", "has_room_context": false}
+{"text": "restrict to girls pg", "label": "REFINEMENT", "has_room_context": true}
+{"text": "only near the metro", "label": "REFINEMENT", "has_room_context": true}
+{"text": "within 5 km of the airport", "label": "REFINEMENT", "has_room_context": true}
+{"text": "below 12000 rupees", "label": "REFINEMENT", "has_room_context": true}
+{"text": "add the filter for parking", "label": "REFINEMENT", "has_room_context": true}
+{"text": "ac rooms only", "label": "REFINEMENT", "has_room_context": true}
+{"text": "increase the budget to 25k", "label": "REFINEMENT", "has_room_context": false}
+{"text": "narrow it to single rooms", "label": "REFINEMENT", "has_room_context": true}
+{"text": "bas 1bhk dikhao", "label": "REFINEMENT", "has_room_context": true}
+{"text": "budget 10 hazaar tak", "label": "REFINEMENT", "has_room_context": true}
+{"text": "furnished wale hi chahiye", "label": "REFINEMENT", "has_room_context": true}
+{"text": "sirf ladkiyon ke liye wale", "label": "REFINEMENT", "has_room_context": true}
+{"text": "metro ke paas wale", "label": "REFINEMENT", "has_room_context": true}
+{"text": "15k se kam wale dikhao", "label": "REFINEMENT", "has_room_context": false}
+{"text": "under 8k only", "label": "REFINEMENT", "has_room_context": true}
+{"text": "cheaper ones plz", "label": "REFINEMENT", "has_room_context": true}
+{"text": "only those with balcony", "label": "REFINEMENT", "has_room_context": true}
+{"text": "less than 20000 and fully furnished", "label": "REFINEMENT", "has_room_context": true}
+{"text": "change it to 3bhk", "label": "REFINEMENT", "has_room_context": true}
+{"text": "umm only the furnished ones", "label": "REFINEMENT", "has_room_context": true}
+{"text": "udr 11k only", "label": "REFINEMENT", "has_room_context": false}
+{"text": "can you filter by pet friendly", "label": "REFINEMENT", "has_room_context": true}
+{"text": "ground floor wale hi", "label": "REFINEMENT", "has_room_context": true}
+{"text": "anything near indiranagar instead", "label": "REFINEMENT", "has_room_context": true}
+{"text": "only unfurnished", "label": "REFINEMENT", "has_room_context": true}
+{"text": "do the same search but for 2bhk", "label": "REFINEMENT", "has_room_context": true}
+{"text": "रेंट 12000 से कम वाले", "label": "REFINEMENT", "has_room_context": true}
+{"text": "सिर्फ फर्निश्ड वाले", "label": "REFINEMENT", "has_room_context": false}
+{"text": "show me some more", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "any other rooms", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "got more listings", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "let me see other options", "label": "SHOW_MORE_OPTIONS", "has_room_context": false}
+{"text": "more please", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "next ones", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "show remaining rooms", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "do you have others", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "anything more to show", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "i want to see further options", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "aur dikhao", "label": "SHOW_MORE_OPTIONS", "has_room_context": false}
+{"text": "aur options hai kya", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "kuch aur batao", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "or koi room hai", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "or dikhao na", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "agle wale dikhao", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "baaki ke rooms bhi dikhao", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "more rooms plz", "label": "SHOW_MORE_OPTIONS", "has_room_context": false}
+{"text": "sho me mor", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "ane other optons", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "what other places are there", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "can you list more", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "another set of rooms please", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "any alternatives", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "keep going show others", "label": "SHOW_MORE_OPTIONS", "has_room_context": false}
+{"text": "um more more", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "और दिखाओ", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "और कमरे हैं क्या", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "other listings pls", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "dikhao aur kuch", "label": "SHOW_MORE_OPTIONS", "has_room_context": true}
+{"text": "i dont like any of these", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "these are not what i wanted", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "nothing here works for me", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "not interested in these rooms", "label": "REJECT_CURRENT", "has_room_context": false}
+{"text": "all of them are bad", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "none suits me", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "these are useless", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "no i dont want any of them", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "not happy with these options", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "skip all of these", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "inme se koi nahi chahiye", "label": "REJECT_CURRENT", "has_room_context": false}
+{"text": "ye sab pasand nahi aaye", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "koi bhi theek nahi hai", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "ye rooms mujhe nahi chahiye", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "sab bekaar hai", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "mujhe inme se kuch nahi jamta", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "nahi nahi ye nahi", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "non of them good", "label": "REJECT_CURRENT", "has_room_context": false}
+{"text": "non of thes r fine", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "dont like them", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "no no not these", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "these dont match what i need", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "nope none of it", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "disappointing options sorry not for me", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "ye koi kaam ke nahi", "label": "REJECT_CURRENT", "has_room_context": false}
+{"text": "कोई भी पसंद नहीं आया", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "ये सब नहीं चाहिए", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "reject these all", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "not these not these", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "nothing here is right", "label": "REJECT_CURRENT", "has_room_context": true}
+{"text": "which one is the cheapest", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "lowest rent among these", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "the least expensive room please", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "tell me the most affordable one", "label": "LOWEST_PRICE", "has_room_context": false}
+{"text": "which has minimum rent", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "cheapest of all of them", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "give me the lowest priced option", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "which room costs the least", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "sabse sasta kaunsa hai", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "sabse kam rent kiska hai", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "inme sabse sasta batao", "label": "LOWEST_PRICE", "has_room_context": false}
+{"text": "kam price wala kaunsa", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "cheepest one", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "whch is the cheapst", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "cheapest cheapest which", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "cheapest one pls fast", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "the budget friendliest of these", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "minimum price wala", "label": "LOWEST_PRICE", "has_room_context": false}
+{"text": "सबसे सस्ता कौन सा है", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "सबसे कम किराया", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "which is least costly", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "lowest priced one of them", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "pick the cheapest for me", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "sabse sasta wala dikhao", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "tell me which is cheapest um one", "label": "LOWEST_PRICE", "has_room_context": false}
+{"text": "the one with lowest price", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "lowest rental please", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "sasta wala kon sa h", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "which of these is most economical", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "cheapest room from the list", "label": "LOWEST_PRICE", "has_room_context": true}
+{"text": "which one is the most expensive", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "highest rent among these", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "the costliest room please", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "tell me the priciest one", "label": "HIGHEST_PRICE", "has_room_context": false}
+{"text": "which has maximum rent", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "most expensive of all of them", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "give me the highest priced option", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "which room costs the most", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "sabse mehnga kaunsa hai", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "sabse zyada rent kiska hai", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "inme sabse mehnga batao", "label": "HIGHEST_PRICE", "has_room_context": false}
+{"text": "zyada price wala kaunsa", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "priciest one", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "whch is the most expnsive", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "costliest costliest which", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "highest price one pls", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "the most premium of these", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "maximum price wala", "label": "HIGHEST_PRICE", "has_room_context": false}
+{"text": "सबसे महंगा कौन सा है", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "सबसे ज्यादा किराया", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "which is most costly", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "highest priced one of them", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "pick the most expensive for me", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "sabse mehnga wala dikhao", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "tell me which is priciest um one", "label": "HIGHEST_PRICE", "has_room_context": false}
+{"text": "the one with highest price", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "highest rental please", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "mehnga wala kon sa h", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "which of these is the most luxurious in price", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "most expensive room from the list", "label": "HIGHEST_PRICE", "has_room_context": true}
+{"text": "how much is the rent", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "what is the price of this room", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "what does the first one cost", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "rent for the second room", "label": "ROOM_PRICE", "has_room_context": false}
+{"text": "how much per month is it", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "price of the pg please", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "tell me the monthly rent", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "what's the deposit and rent", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "how much do they charge for this one", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "cost of the 2bhk", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "iska kiraya kitna hai", "label": "ROOM_PRICE", "has_room_context": false}
+{"text": "ye kitne ka hai", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "is room ka rent batao", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "first wale ka price kya hai", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "mahine ka kitna padega", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "dusre room ka kiraya", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "price btao", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "hw much is rnt", "label": "ROOM_PRICE", "has_room_context": false}
+{"text": "wat is the pricing", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "rent kya hai iska", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "how much for third one", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "monthly charges for this", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "what will i pay each month", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "isme kitna lagega", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "इसका किराया कितना है", "label": "ROOM_PRICE", "has_room_context": false}
+{"text": "किराया बताओ", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "cost per month of that room um", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "the price pls", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "how much does it cost to stay there", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "rent amount of the pg", "label": "ROOM_PRICE", "has_room_context": true}
+{"text": "what type of room is it", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "is this a 1bhk or 2bhk", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "is it a pg or a flat", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "tell me the room type", "label": "ROOM_TYPE", "has_room_context": false}
+{"text": "what kind of accommodation is the second one", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "is that a single room or shared", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "how many bedrooms does it have", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "bhk of this one", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "is it a studio", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "kya ye 2bhk hai", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "ye pg hai ya flat", "label": "ROOM_TYPE", "has_room_context": false}
+{"text": "room ka type kya hai", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "kitne bedroom hai isme", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "single hai ya sharing", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "kis type ka room hai ye", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "wat type of room", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "is it sharing or private", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "is this 1rk", "label": "ROOM_TYPE", "has_room_context": false}
+{"text": "type btao", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "which bhk is the third", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "number of bedrooms in the first one", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "is it shared with others", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "kya ye ek kamre ka hai", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "ye flat hai ya pg", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "is this a studio apartment or normal", "label": "ROOM_TYPE", "has_room_context": false}
+{"text": "room type of that one pls um", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "bhk kitne hai", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "बेडरूम कितने हैं", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "ये कौन सा टाइप है", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "sharing wala hai kya", "label": "ROOM_TYPE", "has_room_context": true}
+{"text": "where is this room located", "label": "LOCATION", "has_room_context": true}
+{"text": "what is the address", "label": "LOCATION", "has_room_context": true}
+{"text": "which area is the second one in", "label": "LOCATION", "has_room_context": true}
+{"text": "how far is it from the metro", "label": "LOCATION", "has_room_context": false}
+{"text": "location of the first one", "label": "LOCATION", "has_room_context": true}
+{"text": "is it near the railway station", "label": "LOCATION", "has_room_context": true}
+{"text": "which locality is this", "label": "LOCATION", "has_room_context": true}
+{"text": "is any of these close to the airport", "label": "LOCATION", "has_room_context": true}
+{"text": "tell me the area of the pg", "label": "LOCATION", "has_room_context": true}
+{"text": "kaha pe hai ye room", "label": "LOCATION", "has_room_context": true}
+{"text": "iska address kya hai", "label": "LOCATION", "has_room_context": false}
+{"text": "ye kis area me hai", "label": "LOCATION", "has_room_context": true}
+{"text": "metro se kitna door hai", "label": "LOCATION", "has_room_context": true}
+{"text": "station ke paas hai kya", "label": "LOCATION", "has_room_context": true}
+{"text": "location batao", "label": "LOCATION", "has_room_context": true}
+{"text": "wher is it", "label": "LOCATION", "has_room_context": true}
+{"text": "how far from my office in whitefield", "label": "LOCATION", "has_room_context": true}
+{"text": "is this near a market", "label": "LOCATION", "has_room_context": false}
+{"text": "what neighbourhood is it", "label": "LOCATION", "has_room_context": true}
+{"text": "which room is closest to the college", "label": "LOCATION", "has_room_context": true}
+{"text": "nearest one to the bus stand", "label": "LOCATION", "has_room_context": true}
+{"text": "kaun sa room mall ke paas hai", "label": "LOCATION", "has_room_context": true}
+{"text": "area ka naam batao", "label": "LOCATION", "has_room_context": true}
+{"text": "ye jagah kaha hai", "label": "LOCATION", "has_room_context": true}
+{"text": "is it in a safe locality", "label": "LOCATION", "has_room_context": false}
+{"text": "यह कहाँ है", "label": "LOCATION", "has_room_context": true}
+{"text": "पता बताओ", "label": "LOCATION", "has_room_context": true}
+{"text": "locaton of the thrid", "label": "LOCATION", "has_room_context": true}
+{"text": "address pls um", "label": "LOCATION", "has_room_context": true}
+{"text": "how far is the first one from the beach", "label": "LOCATION", "has_room_context": true}
+{"text": "does it have air conditioning", "label": "AMENITY", "has_room_context": true}
+{"text": "is there parking", "label": "AMENITY", "has_room_context": true}
+{"text": "do they provide meals", "label": "AMENITY", "has_room_context": true}
+{"text": "any gym in the building", "label": "AMENITY", "has_room_context": false}
+{"text": "is laundry included", "label": "AMENITY", "has_room_context": true}
+{"text": "does the room have attached bathroom", "label": "AMENITY", "has_room_context": true}
+{"text": "is there a lift", "label": "AMENITY", "has_room_context": true}
+{"text": "what facilities are available", "label": "AMENITY", "has_room_context": true}
+{"text": "is power backup there", "label": "AMENITY", "has_room_context": true}
+{"text": "does this one allow cooking", "label": "AMENITY", "has_room_context": true}
+{"text": "kya isme ac hai", "label": "AMENITY", "has_room_context": false}
+{"text": "parking milti hai kya", "label": "AMENITY", "has_room_context": true}
+{"text": "khana milta hai isme", "label": "AMENITY", "has_room_context": true}
+{"text": "geyser hai kya", "label": "AMENITY", "has_room_context": true}
+{"text": "isme kya kya facilities hai", "label": "AMENITY", "has_room_context": true}
+{"text": "lift hai ya nahi", "label": "AMENITY", "has_room_context": true}
+{"text": "wifi included hai kya", "label": "AMENITY", "has_room_context": true}
+{"text": "is thre wifi", "label": "AMENITY", "has_room_context": false}
+{"text": "do it have fridge", "label": "AMENITY", "has_room_context": true}
+{"text": "has it got a washing machine", "label": "AMENITY", "has_room_context": true}
+{"text": "tv available", "label": "AMENITY", "has_room_context": true}
+{"text": "does the second room have a balcony", "label": "AMENITY", "has_room_context": true}
+{"text": "water supply 24 hours", "label": "AMENITY", "has_room_context": true}
+{"text": "cctv or security guard", "label": "AMENITY", "has_room_context": true}
+{"text": "kya furniture diya hai", "label": "AMENITY", "has_room_context": false}
+{"text": "क्या इसमें एसी है", "label": "AMENITY", "has_room_context": true}
+{"text": "पार्किंग है क्या", "label": "AMENITY", "has_room_context": true}
+{"text": "is it furnished with bed and wardrobe", "label": "AMENITY", "has_room_context": true}
+{"text": "amenities list pls", "label": "AMENITY", "has_room_context": true}
+{"text": "any housekeeping service um", "label": "AMENITY", "has_room_context": true}
+{"text": "is this good for students", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "which of these is best for a college student", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "can students stay here", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "suitable for a student", "label": "STUDENT_SUITABILITY", "has_room_context": false}
+{"text": "any room here that suits students", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "is it student friendly", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "which one would a student prefer", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "can i stay here as a student", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "is it ok for college going boys", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "ye students ke liye theek hai kya", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "student ke liye kaunsa best hai", "label": "STUDENT_SUITABILITY", "has_room_context": false}
+{"text": "kya ye college students ke liye hai", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "inme se kaunsa student friendly hai", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "students allowed hai kya", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "college wale rah sakte hai kya", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "is it fine for stdents", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "good for studnt", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "student fit room which", "label": "STUDENT_SUITABILITY", "has_room_context": false}
+{"text": "suit a freshers batch", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "does this suit a student budget", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "is it near enough for students to walk to college", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "a student like me can live here", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "ye wala student ke layak hai kya", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "which is ideal for students", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "छात्रों के लिए ठीक है क्या", "label": "STUDENT_SUITABILITY", "has_room_context": false}
+{"text": "स्टूडेंट्स के लिए कौन सा सही है", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "is the second one meant for students", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "students okay um in this", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "hostel type for students", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "any of these for college kids", "label": "STUDENT_SUITABILITY", "has_room_context": true}
+{"text": "is this good for a family", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "which of these is best for a family of four", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "can a family stay here", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "suitable for me my wife and kids", "label": "FAMILY_SUITABILITY", "has_room_context": false}
+{"text": "any room here that suits families", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "is it family friendly", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "which one would a family prefer", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "can i stay here with my parents", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "is it ok for a married couple", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "ye family ke liye theek hai kya", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "family ke liye kaunsa best hai", "label": "FAMILY_SUITABILITY", "has_room_context": false}
+{"text": "kya ye parivar ke liye hai", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "inme se kaunsa family friendly hai", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "families allowed hai kya", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "bacchon ke saath rah sakte hai kya", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "is it fine for famly", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "good for famly stay", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "family fit room which", "label": "FAMILY_SUITABILITY", "has_room_context": false}
+{"text": "suit a couple with a baby", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "does this suit a family budget", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "is it safe for kids", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "a family like ours can live here", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "ye wala family ke layak hai kya", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "which is ideal for families", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "परिवार के लिए ठीक है क्या", "label": "FAMILY_SUITABILITY", "has_room_context": false}
+{"text": "फैमिली के लिए कौन सा सही है", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "is the second one meant for families", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "family okay um in this", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "spacious enough for four people", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "any of these for joint family", "label": "FAMILY_SUITABILITY", "has_room_context": true}
+{"text": "is this good for working professionals", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "which of these is best for an office goer", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "can professionals stay here", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "suitable for a working person", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": false}
+{"text": "any room here that suits IT employees", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "is it professional friendly", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "which one would a working bachelor prefer", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "can i stay here as a working man", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "is it ok for job holders", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "ye job wale logo ke liye theek hai kya", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "office jane walo ke liye kaunsa best hai", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": false}
+{"text": "kya ye working professionals ke liye hai", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "inme se kaunsa professional friendly hai", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "working log allowed hai kya", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "naukri wale rah sakte hai kya", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "is it fine for profesionals", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "good for workin people", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "professional fit room which", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": false}
+{"text": "suit a software engineer", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "does this suit an employee budget", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "is it quiet enough for work from home", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "a professional like me can live here", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "ye wala working ke layak hai kya", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "which is ideal for professionals", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "नौकरी करने वालों के लिए ठीक है क्या", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": false}
+{"text": "वर्किंग प्रोफेशनल्स के लिए कौन सा सही है", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "is the second one meant for professionals", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "professionals okay um in this", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "good for someone who works night shifts", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "any of these for corporate people", "label": "PROFESSIONAL_SUITABILITY", "has_room_context": true}
+{"text": "tell me more about the first one", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "give me full details of this room", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "describe the second room", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "i want to know about the third listing", "label": "ROOM_DETAILS", "has_room_context": false}
+{"text": "more info on that pg", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "what's special about the first room", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "details please", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "explain the 2bhk option", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "is the first one available right now", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "can you elaborate on this room", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "pehle wale ke bare me batao", "label": "ROOM_DETAILS", "has_room_context": false}
+{"text": "is room ki puri jankari do", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "dusre wale ka detail do", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "teesra wala kaisa hai", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "ye wala dikhao thoda detail me", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "isme kya khaas hai", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "i like the first one tell me more", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "lets go with the second one", "label": "ROOM_DETAILS", "has_room_context": false}
+{"text": "i pick the third room", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "the last one how is it", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "tell me abt the 1st", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "detials of room 2", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "is it vacant", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "availability of the second", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "ye available hai kya abhi", "label": "ROOM_DETAILS", "has_room_context": false}
+{"text": "पहले वाले के बारे में बताओ", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "इसकी पूरी जानकारी दो", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "describe it um properly", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "give me everything on this property", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "the one in koramangala tell me about it", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "which one is ready to move in", "label": "ROOM_DETAILS", "has_room_context": true}
+{"text": "put them in a table", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "show a comparison table", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "list everything in rows and columns", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "can i get a tabular view", "label": "ROOM_TABLE", "has_room_context": false}
+{"text": "table format please", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "give me a summary table of these rooms", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "display the rooms as a grid", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "overview of all rooms side by side in a table", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "make a chart of the rooms with rent and area", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "tabular summary pls", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "sabko table me dikhao", "label": "ROOM_TABLE", "has_room_context": false}
+{"text": "table banao inka", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "table format me batao", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "sab rooms ki list table me do", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "ek table me sab dikhao", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "tabel of all rooms", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "show in tabel", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "rooms in a sheet format", "label": "ROOM_TABLE", "has_room_context": false}
+{"text": "list all of them with price and location in a table", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "can you tabulate them", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "give me a table pls um", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "सब कुछ टेबल में दिखाओ", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "टेबल बनाओ", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "all rooms with details in table form", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "spreadsheet style view of these", "label": "ROOM_TABLE", "has_room_context": false}
+{"text": "one table with all the options", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "table of the three rooms", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "table with rent type and area", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "please show it as a table not text", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "quick table of everything", "label": "ROOM_TABLE", "has_room_context": true}
+{"text": "compare room 1 and room 2", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "how does the first differ from the second", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "which is better the pg or the 2bhk", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "compare all three rooms", "label": "COMPARE_ROOMS", "has_room_context": false}
+{"text": "difference between the first two", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "first vs second which one wins", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "compare them on price and location", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "what is the difference between these rooms", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "is the second better than the third", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "pros and cons of each room", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "pehle aur dusre ki tulna karo", "label": "COMPARE_ROOMS", "has_room_context": false}
+{"text": "inme kya fark hai", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "dono me se kaunsa behtar hai", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "first aur third ko compare karo", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "sabka comparison do", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "compar the 2 rooms", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "compare thes plz", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "which one is more worth it", "label": "COMPARE_ROOMS", "has_room_context": false}
+{"text": "rank these rooms for me", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "help me choose between the first and second", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "which of the two should i pick", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "um compare them both", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "side by side comparison please", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "how are these rooms different", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "क्या फर्क है इन दोनों में", "label": "COMPARE_ROOMS", "has_room_context": false}
+{"text": "दोनों की तुलना करो", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "2bhk versus pg compare", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "compare koramangala one with hsr one", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "better value for money which of these", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "weigh the first against the last", "label": "COMPARE_ROOMS", "has_room_context": true}
+{"text": "ok", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "okay got it", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "alright", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "cool", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "thank you", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "thanks a lot", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "fine", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "understood", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "i see", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "sure", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "great", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "nice", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "perfect", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "good to know", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "noted", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "okay thanks", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "achha", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "theek hai", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "ok ji", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "accha samajh gaya", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "thik hai", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "shukriya", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "dhanyavad", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "badhiya", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "bohot badiya", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "thx", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "tnx", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "k", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "okayyy", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "ओके", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "ठीक है", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "धन्यवाद", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "alright cool thanks", "label": "ACKNOWLEDGMENT", "has_room_context": true}
+{"text": "ohh i see okay", "label": "ACKNOWLEDGMENT", "has_room_context": false}
+{"text": "hello", "label": "GREETING", "has_room_context": true}
+{"text": "hey", "label": "GREETING", "has_room_context": false}
+{"text": "hey there", "label": "GREETING", "has_room_context": true}
+{"text": "good morning", "label": "GREETING", "has_room_context": false}
+{"text": "good evening", "label": "GREETING", "has_room_context": true}
+{"text": "good afternoon", "label": "GREETING", "has_room_context": false}
+{"text": "hello there", "label": "GREETING", "has_room_context": true}
+{"text": "hiya", "label": "GREETING", "has_room_context": false}
+{"text": "yo", "label": "GREETING", "has_room_context": true}
+{"text": "hi bot", "label": "GREETING", "has_room_context": false}
+{"text": "hello assistant", "label": "GREETING", "has_room_context": true}
+{"text": "greetings", "label": "GREETING", "has_room_context": false}
+{"text": "namaste", "label": "GREETING", "has_room_context": true}
+{"text": "namaskar", "label": "GREETING", "has_room_context": false}
+{"text": "hello ji", "label": "GREETING", "has_room_context": true}
+{"text": "hii", "label": "GREETING", "has_room_context": false}
+{"text": "heyy", "label": "GREETING", "has_room_context": true}
+{"text": "helo", "label": "GREETING", "has_room_context": false}
+{"text": "hellooo", "label": "GREETING", "has_room_context": true}
+{"text": "hi hi", "label": "GREETING", "has_room_context": false}
+{"text": "hey whats up", "label": "GREETING", "has_room_context": true}
+{"text": "howdy", "label": "GREETING", "has_room_context": false}
+{"text": "sup", "label": "GREETING", "has_room_context": true}
+{"text": "good day", "label": "GREETING", "has_room_context": false}
+{"text": "salaam", "label": "GREETING", "has_room_context": true}
+{"text": "नमस्ते", "label": "GREETING", "has_room_context": false}
+{"text": "हेलो", "label": "GREETING", "has_room_context": true}
+{"text": "हाय", "label": "GREETING", "has_room_context": false}
+{"text": "suprabhat", "label": "GREETING", "has_room_context": true}
+{"text": "hello hello anyone there", "label": "GREETING", "has_room_context": false}
+{"text": "hey hi", "label": "GREETING", "has_room_context": true}
+{"text": "hi there friend", "label": "GREETING", "has_room_context": false}
+{"text": "bye", "label": "CLOSING", "has_room_context": true}
+{"text": "goodbye", "label": "CLOSING", "has_room_context": false}
+{"text": "see you later", "label": "CLOSING", "has_room_context": true}
+{"text": "that's all for now", "label": "CLOSING", "has_room_context": false}
+{"text": "i'm done", "label": "CLOSING", "has_room_context": true}
+{"text": "talk to you later", "label": "CLOSING", "has_room_context": false}
+{"text": "bye bye", "label": "CLOSING", "has_room_context": true}
+{"text": "thats it thanks bye", "label": "CLOSING", "has_room_context": false}
+{"text": "i am leaving now", "label": "CLOSING", "has_room_context": true}
+{"text": "end chat", "label": "CLOSING", "has_room_context": false}
+{"text": "exit", "label": "CLOSING", "has_room_context": true}
+{"text": "quit", "label": "CLOSING", "has_room_context": false}
+{"text": "close the chat", "label": "CLOSING", "has_room_context": true}
+{"text": "we are done here", "label": "CLOSING", "has_room_context": false}
+{"text": "see ya", "label": "CLOSING", "has_room_context": true}
+{"text": "take care bye", "label": "CLOSING", "has_room_context": false}
+{"text": "good night", "label": "CLOSING", "has_room_context": true}
+{"text": "chalo bye", "label": "CLOSING", "has_room_context": false}
+{"text": "alvida", "label": "CLOSING", "has_room_context": true}
+{"text": "ok bye", "label": "CLOSING", "has_room_context": false}
+{"text": "phir milte hai", "label": "CLOSING", "has_room_context": true}
+{"text": "chalta hu bye", "label": "CLOSING", "has_room_context": false}
+{"text": "bas itna hi tha bye", "label": "CLOSING", "has_room_context": true}
+{"text": "chat band karo", "label": "CLOSING", "has_room_context": false}
+{"text": "ab main chalta hu", "label": "CLOSING", "has_room_context": true}
+{"text": "tata", "label": "CLOSING", "has_room_context": false}
+{"text": "byee", "label": "CLOSING", "has_room_context": true}
+{"text": "cya", "label": "CLOSING", "has_room_context": false}
+{"text": "gtg bye", "label": "CLOSING", "has_room_context": true}
+{"text": "ठीक है अलविदा", "label": "CLOSING", "has_room_context": false}
+{"text": "बाय", "label": "CLOSING", "has_room_context": true}
+{"text": "bas ho gaya dhanyavad bye", "label": "CLOSING", "has_room_context": false}
+{"text": "what is homilivo", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "who are you", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "what can you do", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "how does this platform work", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "how do i list my property", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "is there a fee for tenants", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "what is the refund policy", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "how do you verify listings", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "are the owners verified", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "is my data safe with you", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "what cities do you cover", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "how can i contact support", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "do you charge brokerage", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "is homilivo free to use", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "who built this chatbot", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "tell me about your service", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "how are listings approved", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "what is the cancellation policy", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "homilivo kya hai", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "tum kaun ho", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "tum kya kar sakte ho", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "yaha brokerage lagti hai kya", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "listing kaise verify hoti hai", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "kya ye app free hai", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "apni property kaise add karu", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "what is homilivo exactly um", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "wat does homlivo do", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "how do payments work on this site", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "what are your terms and conditions", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "होमिलिवो क्या है", "label": "PLATFORM_INFO", "has_room_context": false}
+{"text": "आप क्या कर सकते हैं", "label": "PLATFORM_INFO", "has_room_context": true}
+{"text": "book this room for me", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "reserve the second one", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "i want to pay the deposit now", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "schedule a visit for tomorrow", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "call the owner for me", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "send my phone number to the landlord", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "cancel my booking", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "confirm my reservation", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "arrange a viewing this weekend", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "message the owner that i am interested", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "sign the rental agreement for me", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "transfer the advance payment", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "book a site visit at 5pm", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "email the broker my details", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "mera booking cancel kar do", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "is room ko book karo", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "owner ko call lagao", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "advance payment kar do", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "visit schedule karo kal ke liye", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "agreement sign kardo", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "owner ko message bhejo", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "pay rent online for me", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "boook it now", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "resrve this room", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "shedule a visit", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "get me a callback from the owner", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "add this room to my wishlist and book it", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "hold this room for me till friday", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "रूम बुक कर दो", "label": "UNSUPPORTED_ACTION", "has_room_context": true}
+{"text": "मालिक को फोन करो", "label": "UNSUPPORTED_ACTION", "has_room_context": false}
+{"text": "what is the weather today", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "tell me a joke", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "who won the cricket match yesterday", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "write me a python function to sort a list", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "what is the capital of france", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "solve 45 times 12", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "recommend a good movie", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "how do i cook biryani", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "translate good morning into french", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "what is the stock price of tcs", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "tell me about the history of rome", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "give me a poem about the sea", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "who is the prime minister of india", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "how to lose weight fast", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "best phone under 20000", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "aaj ka mausam kaisa hai", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "ek joke sunao", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "cricket ka score batao", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "biryani kaise banate hai", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "mujhe gaana sunao", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "what is wether tomorow", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "tel me a jok", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "explain quantum physics", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "how to learn guitar", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "bitcoin price now", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "what time is it in tokyo", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "help me write an email to my boss", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "flight tickets to dubai", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "आज का मौसम कैसा है", "label": "OUT_OF_SCOPE", "has_room_context": true}
+{"text": "कोई अच्छी फिल्म बताओ", "label": "OUT_OF_SCOPE", "has_room_context": false}
+{"text": "hmm", "label": "UNCLEAR", "has_room_context": true}
+{"text": "umm", "label": "UNCLEAR", "has_room_context": false}
+{"text": "uh", "label": "UNCLEAR", "has_room_context": true}
+{"text": "idk", "label": "UNCLEAR", "has_room_context": false}
+{"text": "what", "label": "UNCLEAR", "has_room_context": true}
+{"text": "huh", "label": "UNCLEAR", "has_room_context": false}
+{"text": "asdf", "label": "UNCLEAR", "has_room_context": true}
+{"text": "qwerty", "label": "UNCLEAR", "has_room_context": false}
+{"text": "blah blah", "label": "UNCLEAR", "has_room_context": true}
+{"text": "...", "label": "UNCLEAR", "has_room_context": false}
+{"text": "?", "label": "UNCLEAR", "has_room_context": true}
+{"text": "!!", "label": "UNCLEAR", "has_room_context": false}
+{"text": "so", "label": "UNCLEAR", "has_room_context": true}
+{"text": "the", "label": "UNCLEAR", "has_room_context": false}
+{"text": "hmmmm maybe", "label": "UNCLEAR", "has_room_context": true}
+{"text": "jkjkjk", "label": "UNCLEAR", "has_room_context": false}
+{"text": "aaaaa", "label": "UNCLEAR", "has_room_context": true}
+{"text": "xyz", "label": "UNCLEAR", "has_room_context": false}
+{"text": "mm", "label": "UNCLEAR", "has_room_context": true}
+{"text": "ok but", "label": "UNCLEAR", "has_room_context": false}
+{"text": "and then", "label": "UNCLEAR", "has_room_context": true}
+{"text": "um uh well", "label": "UNCLEAR", "has_room_context": false}
+{"text": "dunno", "label": "UNCLEAR", "has_room_context": true}
+{"text": "pata nahi", "label": "UNCLEAR", "has_room_context": false}
+{"text": "kuch bhi", "label": "UNCLEAR", "has_room_context": true}
+{"text": "hmm kya bolu", "label": "UNCLEAR", "has_room_context": false}
+{"text": "kjhgf", "label": "UNCLEAR", "has_room_context": true}
+{"text": "lol", "label": "UNCLEAR", "has_room_context": false}
+{"text": "zzz", "label": "UNCLEAR", "has_room_context": true}
+{"text": "yeah no", "label": "UNCLEAR", "has_room_context": false}
+{"text": "well", "label": "UNCLEAR", "has_room_context": true}
+{"text": "या", "label": "UNCLEAR", "has_room_context": false}
+{"text": "ह्म्म", "label": "UNCLEAR", "has_room_context": true}
+{"text": "as per the", "label": "UNCLEAR", "has_room_context": false}
+{"text": ",,,", "label": "UNCLEAR", "has_room_context": true}

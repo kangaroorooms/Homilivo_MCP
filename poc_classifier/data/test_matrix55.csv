@@ -1,0 +1,56 @@
+﻿text,label,has_room_context,acceptable,score
+find me a room,NEW_SEARCH,false,,true
+i need a place to stay in bangalore,NEW_SEARCH,false,,true
+looking for a 2bhk under 20000,NEW_SEARCH,false,,true
+rooms near koramangala,NEW_SEARCH,false,,true
+anything available for students,NEW_SEARCH,false,,true
+show me family rooms,NEW_SEARCH,false,,true
+pg for working professionals,NEW_SEARCH,false,,true
+budget rooms in bangalore,NEW_SEARCH,false,,true
+bangalore mein ghar chahiye,NEW_SEARCH,false,,true
+koi acha room hai kya bangalore mein,NEW_SEARCH,false,,true
+which one has wifi,AMENITY,true,,true
+tell me about the second one,ROOM_DETAILS,true,,true
+what's the rent for the 3bhk,ROOM_PRICE,true,,true
+is the cozy 2bhk available,ROOM_DETAILS,true,,true
+give me details on all of them,ROOM_DETAILS,true,ROOM_TABLE,true
+which is closest to koramangala,LOCATION,true,,true
+any family friendly options,FAMILY_SUITABILITY,true,REFINEMENT,true
+what about students,STUDENT_SUITABILITY,true,REFINEMENT,true
+compare the first and third,COMPARE_ROOMS,true,,true
+show me a table of all rooms,ROOM_TABLE,true,,true
+hmm not sure,UNCLEAR,true,ACKNOWLEDGMENT,true
+maybe something else,SHOW_MORE_OPTIONS,true,UNCLEAR,true
+can i see more,SHOW_MORE_OPTIONS,true,,true
+none of these are good,REJECT_CURRENT,true,,true
+what else do you have,SHOW_MORE_OPTIONS,true,,true
+is there a better option,SHOW_MORE_OPTIONS,true,REJECT_CURRENT|REFINEMENT,true
+show me cheap ones,REFINEMENT,true,LOWEST_PRICE|NEW_SEARCH,true
+anything under 10000,REFINEMENT,true,,true
+something in a different area,REFINEMENT,true,SHOW_MORE_OPTIONS,true
+what about near HSR,REFINEMENT,true,NEW_SEARCH|LOCATION,true
+bangalore mein sasta room chahiye,NEW_SEARCH,true,REFINEMENT,true
+ye wala theek hai,ACKNOWLEDGMENT,true,ROOM_DETAILS,true
+dusra option batao,SHOW_MORE_OPTIONS,true,ROOM_DETAILS,true
+kitna rent hai,ROOM_PRICE,true,,true
+koi aur dikhao,SHOW_MORE_OPTIONS,true,,true
+wat rooms u got,NEW_SEARCH,false,,true
+need sumthing cheap,NEW_SEARCH,false,,true
+ne rooms avbl,NEW_SEARCH,false,,true
+gimme the cheapest,LOWEST_PRICE,true,,true
+k thanks bye,CLOSING,true,ACKNOWLEDGMENT,true
+asdkfj roooms pls,UNCLEAR,false,NEW_SEARCH,true
+rroom in bangalr under,NEW_SEARCH,false,UNCLEAR,true
+bangalore 2bhk 15k pls pls pls,NEW_SEARCH,false,,true
+   ,UNCLEAR,false,,false
+???,UNCLEAR,false,,true
+room room room room,UNCLEAR,false,NEW_SEARCH,true
+i want i want a room room in bangalor pls under under 15000,NEW_SEARCH,false,,true
+bnglor rum 2bhk undr 15k pls fast neded urgent,NEW_SEARCH,false,,true
+🏠🏠🏠 bangalore,NEW_SEARCH,false,UNCLEAR,true
+the the the cheapest one one,LOWEST_PRICE,true,,true
+idk maybe a room somewhere cheap ig,NEW_SEARCH,false,,true
+WHAT IS WRONG WITH THIS APP SHOW ME ROOMS,NEW_SEARCH,false,,true
+bangalore...room...2bhk...urgent,NEW_SEARCH,false,,true
+u got anythin??,UNCLEAR,false,NEW_SEARCH,true
+2bhk bangalore 15k 2bhk bangalore 15k,NEW_SEARCH,false,,true

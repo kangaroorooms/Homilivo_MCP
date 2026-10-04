@@ -1,0 +1,33 @@
+{"id": "m1-ctxY", "text": "find me a room", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "?: no city given - a search intent, but one could argue UNCLEAR/needs clarification", "acceptable": [], "score": true}
+{"id": "m2-ctxY", "text": "i need a place to stay in bangalore", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m3-ctxY", "text": "looking for a 2bhk under 20000", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m4-ctxY", "text": "rooms near koramangala", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m5-ctxY", "text": "anything available for students", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "?: 'for students' could be read as STUDENT_SUITABILITY, but no rooms shown yet", "acceptable": [], "score": true}
+{"id": "m6-ctxY", "text": "show me family rooms", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m7-ctxY", "text": "pg for working professionals", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m8-ctxY", "text": "budget rooms in bangalore", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m9-ctxY", "text": "bangalore mein ghar chahiye", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m10-ctxY", "text": "koi acha room hai kya bangalore mein", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m36-ctxY", "text": "wat rooms u got", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m37-ctxY", "text": "need sumthing cheap", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m38-ctxY", "text": "ne rooms avbl", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "?: heavily garbled ('ne' = any) but still a room search", "acceptable": [], "score": true}
+{"id": "m42-ctxY", "text": "rroom in bangalr under", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "?: truncated ('under' with no number) but intent is clear", "acceptable": ["UNCLEAR"], "score": true}
+{"id": "m43-ctxY", "text": "bangalore 2bhk 15k pls pls pls", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m47-ctxY", "text": "i want i want a room room in bangalor pls under under 15000", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m48-ctxY", "text": "bnglor rum 2bhk undr 15k pls fast neded urgent", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m49-ctxY", "text": "🏠🏠🏠 bangalore", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "?: emoji + city only; could be UNCLEAR", "acceptable": ["UNCLEAR"], "score": true}
+{"id": "m51-ctxY", "text": "idk maybe a room somewhere cheap ig", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m52-ctxY", "text": "WHAT IS WRONG WITH THIS APP SHOW ME ROOMS", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "?: angry complaint + room request; could be UNCLEAR/out of scope", "acceptable": [], "score": true}
+{"id": "m53-ctxY", "text": "bangalore...room...2bhk...urgent", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "m55-ctxY", "text": "2bhk bangalore 15k 2bhk bangalore 15k", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "f1-ctxY", "text": "any flats going in vadodara", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "f2-ctxY", "text": "i need a pg near manipal university", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "f3-ctxY", "text": "bhopal me 1bhk kiraye pe chahiye", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "f4-ctxY", "text": "looking to rent something close to cyber city gurgaon for 2 people", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "f5-ctxY", "text": "शिमला में कमरा चाहिए", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "f7-ctxY", "text": "rum plz hydrbd 12k", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "?: heavy typos, still a room search", "acceptable": [], "score": true}
+{"id": "f8-ctxY", "text": "fla in pne udr 20 k", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "?: garbled; 'fla' = flat", "acceptable": [], "score": true}
+{"id": "f9-ctxY", "text": "i i i want want pg pg bangalore bangalore", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "f10-ctxY", "text": "roomm roomm cheap cheap near near metroo", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "?: no city, stutter; could be UNCLEAR", "acceptable": ["UNCLEAR"], "score": true}
+{"id": "f11-ctxY", "text": "uhh so um like place to stay in chandigarh maybe", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}
+{"id": "f12-ctxY", "text": "mumbai.. pg.. girls.. budget.. 9000..", "label": "NEW_SEARCH", "has_room_context": true, "debatable": "", "acceptable": [], "score": true}

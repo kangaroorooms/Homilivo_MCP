@@ -1,0 +1,713 @@
+﻿text,label,has_room_context
+i am looking for a flat in pune,NEW_SEARCH,true
+need pg in hyderabad near hitech city,NEW_SEARCH,false
+anyone know a good place to rent in chennai,NEW_SEARCH,true
+room for rent in noida sector 62,NEW_SEARCH,false
+looking for 1bhk under 12k in gurgaon,NEW_SEARCH,true
+can you find me a studio apartment in mumbai,NEW_SEARCH,false
+need accommodation near my college in jaipur,NEW_SEARCH,true
+single room in delhi for 8000,NEW_SEARCH,false
+want to rent a 3bhk in kolkata,NEW_SEARCH,true
+mujhe pune mein flat chahiye,NEW_SEARCH,false
+mumbai me pg dhundh raha hu,NEW_SEARCH,true
+delhi mein sasta kamra batao,NEW_SEARCH,false
+hyderabad mein 2bhk rent pe chahiye,NEW_SEARCH,true
+mujhe ek room chahiye indore me,NEW_SEARCH,false
+koi pg hai kya andheri ke paas,NEW_SEARCH,true
+plz fnd me a rom in chenai,NEW_SEARCH,false
+lookin for flatt in pne under 15k,NEW_SEARCH,true
+need rum in hydrabad asap,NEW_SEARCH,false
+rooms avilable in bangalore??,NEW_SEARCH,true
+i i need a a flat in delhi,NEW_SEARCH,false
+um so like i want a room in mumbai you know,NEW_SEARCH,true
+flat flat in pune 2 bhk,NEW_SEARCH,false
+looking for room... in noida... cheap,NEW_SEARCH,true
+need place stay lucknow budget 6000,NEW_SEARCH,false
+i want to move to bangalore next month need a pg,NEW_SEARCH,true
+show me rooms in whitefield,NEW_SEARCH,false
+find pg for girls in koramangala,NEW_SEARCH,true
+room chahiye jaipur me student ke liye,NEW_SEARCH,false
+suggest some flats in thane under 25000,NEW_SEARCH,true
+accommodation in goa for 3 months,NEW_SEARCH,false
+hey i wanna rent a room in kochi,NEW_SEARCH,true
+fresh search: 1rk in ahmedabad,NEW_SEARCH,false
+"actually forget those, find me flats in surat",NEW_SEARCH,true
+कमरा चाहिए पुणे में,NEW_SEARCH,false
+नोएडा में पीजी बताओ,NEW_SEARCH,true
+make it under 9000,REFINEMENT,true
+only 2bhk ones please,REFINEMENT,true
+i want it furnished,REFINEMENT,true
+budget max 18k,REFINEMENT,false
+restrict to girls pg,REFINEMENT,true
+only near the metro,REFINEMENT,true
+within 5 km of the airport,REFINEMENT,true
+below 12000 rupees,REFINEMENT,true
+add the filter for parking,REFINEMENT,true
+ac rooms only,REFINEMENT,true
+increase the budget to 25k,REFINEMENT,false
+narrow it to single rooms,REFINEMENT,true
+bas 1bhk dikhao,REFINEMENT,true
+budget 10 hazaar tak,REFINEMENT,true
+furnished wale hi chahiye,REFINEMENT,true
+sirf ladkiyon ke liye wale,REFINEMENT,true
+metro ke paas wale,REFINEMENT,true
+15k se kam wale dikhao,REFINEMENT,false
+under 8k only,REFINEMENT,true
+cheaper ones plz,REFINEMENT,true
+only those with balcony,REFINEMENT,true
+less than 20000 and fully furnished,REFINEMENT,true
+change it to 3bhk,REFINEMENT,true
+umm only the furnished ones,REFINEMENT,true
+udr 11k only,REFINEMENT,false
+can you filter by pet friendly,REFINEMENT,true
+ground floor wale hi,REFINEMENT,true
+anything near indiranagar instead,REFINEMENT,true
+only unfurnished,REFINEMENT,true
+do the same search but for 2bhk,REFINEMENT,true
+रेंट 12000 से कम वाले,REFINEMENT,true
+सिर्फ फर्निश्ड वाले,REFINEMENT,false
+show me some more,SHOW_MORE_OPTIONS,true
+any other rooms,SHOW_MORE_OPTIONS,true
+got more listings,SHOW_MORE_OPTIONS,true
+let me see other options,SHOW_MORE_OPTIONS,false
+more please,SHOW_MORE_OPTIONS,true
+next ones,SHOW_MORE_OPTIONS,true
+show remaining rooms,SHOW_MORE_OPTIONS,true
+do you have others,SHOW_MORE_OPTIONS,true
+anything more to show,SHOW_MORE_OPTIONS,true
+i want to see further options,SHOW_MORE_OPTIONS,true
+aur dikhao,SHOW_MORE_OPTIONS,false
+aur options hai kya,SHOW_MORE_OPTIONS,true
+kuch aur batao,SHOW_MORE_OPTIONS,true
+or koi room hai,SHOW_MORE_OPTIONS,true
+or dikhao na,SHOW_MORE_OPTIONS,true
+agle wale dikhao,SHOW_MORE_OPTIONS,true
+baaki ke rooms bhi dikhao,SHOW_MORE_OPTIONS,true
+more rooms plz,SHOW_MORE_OPTIONS,false
+sho me mor,SHOW_MORE_OPTIONS,true
+ane other optons,SHOW_MORE_OPTIONS,true
+what other places are there,SHOW_MORE_OPTIONS,true
+can you list more,SHOW_MORE_OPTIONS,true
+another set of rooms please,SHOW_MORE_OPTIONS,true
+any alternatives,SHOW_MORE_OPTIONS,true
+keep going show others,SHOW_MORE_OPTIONS,false
+um more more,SHOW_MORE_OPTIONS,true
+और दिखाओ,SHOW_MORE_OPTIONS,true
+और कमरे हैं क्या,SHOW_MORE_OPTIONS,true
+other listings pls,SHOW_MORE_OPTIONS,true
+dikhao aur kuch,SHOW_MORE_OPTIONS,true
+i dont like any of these,REJECT_CURRENT,true
+these are not what i wanted,REJECT_CURRENT,true
+nothing here works for me,REJECT_CURRENT,true
+not interested in these rooms,REJECT_CURRENT,false
+all of them are bad,REJECT_CURRENT,true
+none suits me,REJECT_CURRENT,true
+these are useless,REJECT_CURRENT,true
+no i dont want any of them,REJECT_CURRENT,true
+not happy with these options,REJECT_CURRENT,true
+skip all of these,REJECT_CURRENT,true
+inme se koi nahi chahiye,REJECT_CURRENT,false
+ye sab pasand nahi aaye,REJECT_CURRENT,true
+koi bhi theek nahi hai,REJECT_CURRENT,true
+ye rooms mujhe nahi chahiye,REJECT_CURRENT,true
+sab bekaar hai,REJECT_CURRENT,true
+mujhe inme se kuch nahi jamta,REJECT_CURRENT,true
+nahi nahi ye nahi,REJECT_CURRENT,true
+non of them good,REJECT_CURRENT,false
+non of thes r fine,REJECT_CURRENT,true
+dont like them,REJECT_CURRENT,true
+no no not these,REJECT_CURRENT,true
+these dont match what i need,REJECT_CURRENT,true
+nope none of it,REJECT_CURRENT,true
+disappointing options sorry not for me,REJECT_CURRENT,true
+ye koi kaam ke nahi,REJECT_CURRENT,false
+कोई भी पसंद नहीं आया,REJECT_CURRENT,true
+ये सब नहीं चाहिए,REJECT_CURRENT,true
+reject these all,REJECT_CURRENT,true
+not these not these,REJECT_CURRENT,true
+nothing here is right,REJECT_CURRENT,true
+which one is the cheapest,LOWEST_PRICE,true
+lowest rent among these,LOWEST_PRICE,true
+the least expensive room please,LOWEST_PRICE,true
+tell me the most affordable one,LOWEST_PRICE,false
+which has minimum rent,LOWEST_PRICE,true
+cheapest of all of them,LOWEST_PRICE,true
+give me the lowest priced option,LOWEST_PRICE,true
+which room costs the least,LOWEST_PRICE,true
+sabse sasta kaunsa hai,LOWEST_PRICE,true
+sabse kam rent kiska hai,LOWEST_PRICE,true
+inme sabse sasta batao,LOWEST_PRICE,false
+kam price wala kaunsa,LOWEST_PRICE,true
+cheepest one,LOWEST_PRICE,true
+whch is the cheapst,LOWEST_PRICE,true
+cheapest cheapest which,LOWEST_PRICE,true
+cheapest one pls fast,LOWEST_PRICE,true
+the budget friendliest of these,LOWEST_PRICE,true
+minimum price wala,LOWEST_PRICE,false
+सबसे सस्ता कौन सा है,LOWEST_PRICE,true
+सबसे कम किराया,LOWEST_PRICE,true
+which is least costly,LOWEST_PRICE,true
+lowest priced one of them,LOWEST_PRICE,true
+pick the cheapest for me,LOWEST_PRICE,true
+sabse sasta wala dikhao,LOWEST_PRICE,true
+tell me which is cheapest um one,LOWEST_PRICE,false
+the one with lowest price,LOWEST_PRICE,true
+lowest rental please,LOWEST_PRICE,true
+sasta wala kon sa h,LOWEST_PRICE,true
+which of these is most economical,LOWEST_PRICE,true
+cheapest room from the list,LOWEST_PRICE,true
+which one is the most expensive,HIGHEST_PRICE,true
+highest rent among these,HIGHEST_PRICE,true
+the costliest room please,HIGHEST_PRICE,true
+tell me the priciest one,HIGHEST_PRICE,false
+which has maximum rent,HIGHEST_PRICE,true
+most expensive of all of them,HIGHEST_PRICE,true
+give me the highest priced option,HIGHEST_PRICE,true
+which room costs the most,HIGHEST_PRICE,true
+sabse mehnga kaunsa hai,HIGHEST_PRICE,true
+sabse zyada rent kiska hai,HIGHEST_PRICE,true
+inme sabse mehnga batao,HIGHEST_PRICE,false
+zyada price wala kaunsa,HIGHEST_PRICE,true
+priciest one,HIGHEST_PRICE,true
+whch is the most expnsive,HIGHEST_PRICE,true
+costliest costliest which,HIGHEST_PRICE,true
+highest price one pls,HIGHEST_PRICE,true
+the most premium of these,HIGHEST_PRICE,true
+maximum price wala,HIGHEST_PRICE,false
+सबसे महंगा कौन सा है,HIGHEST_PRICE,true
+सबसे ज्यादा किराया,HIGHEST_PRICE,true
+which is most costly,HIGHEST_PRICE,true
+highest priced one of them,HIGHEST_PRICE,true
+pick the most expensive for me,HIGHEST_PRICE,true
+sabse mehnga wala dikhao,HIGHEST_PRICE,true
+tell me which is priciest um one,HIGHEST_PRICE,false
+the one with highest price,HIGHEST_PRICE,true
+highest rental please,HIGHEST_PRICE,true
+mehnga wala kon sa h,HIGHEST_PRICE,true
+which of these is the most luxurious in price,HIGHEST_PRICE,true
+most expensive room from the list,HIGHEST_PRICE,true
+how much is the rent,ROOM_PRICE,true
+what is the price of this room,ROOM_PRICE,true
+what does the first one cost,ROOM_PRICE,true
+rent for the second room,ROOM_PRICE,false
+how much per month is it,ROOM_PRICE,true
+price of the pg please,ROOM_PRICE,true
+tell me the monthly rent,ROOM_PRICE,true
+what's the deposit and rent,ROOM_PRICE,true
+how much do they charge for this one,ROOM_PRICE,true
+cost of the 2bhk,ROOM_PRICE,true
+iska kiraya kitna hai,ROOM_PRICE,false
+ye kitne ka hai,ROOM_PRICE,true
+is room ka rent batao,ROOM_PRICE,true
+first wale ka price kya hai,ROOM_PRICE,true
+mahine ka kitna padega,ROOM_PRICE,true
+dusre room ka kiraya,ROOM_PRICE,true
+price btao,ROOM_PRICE,true
+hw much is rnt,ROOM_PRICE,false
+wat is the pricing,ROOM_PRICE,true
+rent kya hai iska,ROOM_PRICE,true
+how much for third one,ROOM_PRICE,true
+monthly charges for this,ROOM_PRICE,true
+what will i pay each month,ROOM_PRICE,true
+isme kitna lagega,ROOM_PRICE,true
+इसका किराया कितना है,ROOM_PRICE,false
+किराया बताओ,ROOM_PRICE,true
+cost per month of that room um,ROOM_PRICE,true
+the price pls,ROOM_PRICE,true
+how much does it cost to stay there,ROOM_PRICE,true
+rent amount of the pg,ROOM_PRICE,true
+what type of room is it,ROOM_TYPE,true
+is this a 1bhk or 2bhk,ROOM_TYPE,true
+is it a pg or a flat,ROOM_TYPE,true
+tell me the room type,ROOM_TYPE,false
+what kind of accommodation is the second one,ROOM_TYPE,true
+is that a single room or shared,ROOM_TYPE,true
+how many bedrooms does it have,ROOM_TYPE,true
+bhk of this one,ROOM_TYPE,true
+is it a studio,ROOM_TYPE,true
+kya ye 2bhk hai,ROOM_TYPE,true
+ye pg hai ya flat,ROOM_TYPE,false
+room ka type kya hai,ROOM_TYPE,true
+kitne bedroom hai isme,ROOM_TYPE,true
+single hai ya sharing,ROOM_TYPE,true
+kis type ka room hai ye,ROOM_TYPE,true
+wat type of room,ROOM_TYPE,true
+is it sharing or private,ROOM_TYPE,true
+is this 1rk,ROOM_TYPE,false
+type btao,ROOM_TYPE,true
+which bhk is the third,ROOM_TYPE,true
+number of bedrooms in the first one,ROOM_TYPE,true
+is it shared with others,ROOM_TYPE,true
+kya ye ek kamre ka hai,ROOM_TYPE,true
+ye flat hai ya pg,ROOM_TYPE,true
+is this a studio apartment or normal,ROOM_TYPE,false
+room type of that one pls um,ROOM_TYPE,true
+bhk kitne hai,ROOM_TYPE,true
+बेडरूम कितने हैं,ROOM_TYPE,true
+ये कौन सा टाइप है,ROOM_TYPE,true
+sharing wala hai kya,ROOM_TYPE,true
+where is this room located,LOCATION,true
+what is the address,LOCATION,true
+which area is the second one in,LOCATION,true
+how far is it from the metro,LOCATION,false
+location of the first one,LOCATION,true
+is it near the railway station,LOCATION,true
+which locality is this,LOCATION,true
+is any of these close to the airport,LOCATION,true
+tell me the area of the pg,LOCATION,true
+kaha pe hai ye room,LOCATION,true
+iska address kya hai,LOCATION,false
+ye kis area me hai,LOCATION,true
+metro se kitna door hai,LOCATION,true
+station ke paas hai kya,LOCATION,true
+location batao,LOCATION,true
+wher is it,LOCATION,true
+how far from my office in whitefield,LOCATION,true
+is this near a market,LOCATION,false
+what neighbourhood is it,LOCATION,true
+which room is closest to the college,LOCATION,true
+nearest one to the bus stand,LOCATION,true
+kaun sa room mall ke paas hai,LOCATION,true
+area ka naam batao,LOCATION,true
+ye jagah kaha hai,LOCATION,true
+is it in a safe locality,LOCATION,false
+यह कहाँ है,LOCATION,true
+पता बताओ,LOCATION,true
+locaton of the thrid,LOCATION,true
+address pls um,LOCATION,true
+how far is the first one from the beach,LOCATION,true
+does it have air conditioning,AMENITY,true
+is there parking,AMENITY,true
+do they provide meals,AMENITY,true
+any gym in the building,AMENITY,false
+is laundry included,AMENITY,true
+does the room have attached bathroom,AMENITY,true
+is there a lift,AMENITY,true
+what facilities are available,AMENITY,true
+is power backup there,AMENITY,true
+does this one allow cooking,AMENITY,true
+kya isme ac hai,AMENITY,false
+parking milti hai kya,AMENITY,true
+khana milta hai isme,AMENITY,true
+geyser hai kya,AMENITY,true
+isme kya kya facilities hai,AMENITY,true
+lift hai ya nahi,AMENITY,true
+wifi included hai kya,AMENITY,true
+is thre wifi,AMENITY,false
+do it have fridge,AMENITY,true
+has it got a washing machine,AMENITY,true
+tv available,AMENITY,true
+does the second room have a balcony,AMENITY,true
+water supply 24 hours,AMENITY,true
+cctv or security guard,AMENITY,true
+kya furniture diya hai,AMENITY,false
+क्या इसमें एसी है,AMENITY,true
+पार्किंग है क्या,AMENITY,true
+is it furnished with bed and wardrobe,AMENITY,true
+amenities list pls,AMENITY,true
+any housekeeping service um,AMENITY,true
+is this good for students,STUDENT_SUITABILITY,true
+which of these is best for a college student,STUDENT_SUITABILITY,true
+can students stay here,STUDENT_SUITABILITY,true
+suitable for a student,STUDENT_SUITABILITY,false
+any room here that suits students,STUDENT_SUITABILITY,true
+is it student friendly,STUDENT_SUITABILITY,true
+which one would a student prefer,STUDENT_SUITABILITY,true
+can i stay here as a student,STUDENT_SUITABILITY,true
+is it ok for college going boys,STUDENT_SUITABILITY,true
+ye students ke liye theek hai kya,STUDENT_SUITABILITY,true
+student ke liye kaunsa best hai,STUDENT_SUITABILITY,false
+kya ye college students ke liye hai,STUDENT_SUITABILITY,true
+inme se kaunsa student friendly hai,STUDENT_SUITABILITY,true
+students allowed hai kya,STUDENT_SUITABILITY,true
+college wale rah sakte hai kya,STUDENT_SUITABILITY,true
+is it fine for stdents,STUDENT_SUITABILITY,true
+good for studnt,STUDENT_SUITABILITY,true
+student fit room which,STUDENT_SUITABILITY,false
+suit a freshers batch,STUDENT_SUITABILITY,true
+does this suit a student budget,STUDENT_SUITABILITY,true
+is it near enough for students to walk to college,STUDENT_SUITABILITY,true
+a student like me can live here,STUDENT_SUITABILITY,true
+ye wala student ke layak hai kya,STUDENT_SUITABILITY,true
+which is ideal for students,STUDENT_SUITABILITY,true
+छात्रों के लिए ठीक है क्या,STUDENT_SUITABILITY,false
+स्टूडेंट्स के लिए कौन सा सही है,STUDENT_SUITABILITY,true
+is the second one meant for students,STUDENT_SUITABILITY,true
+students okay um in this,STUDENT_SUITABILITY,true
+hostel type for students,STUDENT_SUITABILITY,true
+any of these for college kids,STUDENT_SUITABILITY,true
+is this good for a family,FAMILY_SUITABILITY,true
+which of these is best for a family of four,FAMILY_SUITABILITY,true
+can a family stay here,FAMILY_SUITABILITY,true
+suitable for me my wife and kids,FAMILY_SUITABILITY,false
+any room here that suits families,FAMILY_SUITABILITY,true
+is it family friendly,FAMILY_SUITABILITY,true
+which one would a family prefer,FAMILY_SUITABILITY,true
+can i stay here with my parents,FAMILY_SUITABILITY,true
+is it ok for a married couple,FAMILY_SUITABILITY,true
+ye family ke liye theek hai kya,FAMILY_SUITABILITY,true
+family ke liye kaunsa best hai,FAMILY_SUITABILITY,false
+kya ye parivar ke liye hai,FAMILY_SUITABILITY,true
+inme se kaunsa family friendly hai,FAMILY_SUITABILITY,true
+families allowed hai kya,FAMILY_SUITABILITY,true
+bacchon ke saath rah sakte hai kya,FAMILY_SUITABILITY,true
+is it fine for famly,FAMILY_SUITABILITY,true
+good for famly stay,FAMILY_SUITABILITY,true
+family fit room which,FAMILY_SUITABILITY,false
+suit a couple with a baby,FAMILY_SUITABILITY,true
+does this suit a family budget,FAMILY_SUITABILITY,true
+is it safe for kids,FAMILY_SUITABILITY,true
+a family like ours can live here,FAMILY_SUITABILITY,true
+ye wala family ke layak hai kya,FAMILY_SUITABILITY,true
+which is ideal for families,FAMILY_SUITABILITY,true
+परिवार के लिए ठीक है क्या,FAMILY_SUITABILITY,false
+फैमिली के लिए कौन सा सही है,FAMILY_SUITABILITY,true
+is the second one meant for families,FAMILY_SUITABILITY,true
+family okay um in this,FAMILY_SUITABILITY,true
+spacious enough for four people,FAMILY_SUITABILITY,true
+any of these for joint family,FAMILY_SUITABILITY,true
+is this good for working professionals,PROFESSIONAL_SUITABILITY,true
+which of these is best for an office goer,PROFESSIONAL_SUITABILITY,true
+can professionals stay here,PROFESSIONAL_SUITABILITY,true
+suitable for a working person,PROFESSIONAL_SUITABILITY,false
+any room here that suits IT employees,PROFESSIONAL_SUITABILITY,true
+is it professional friendly,PROFESSIONAL_SUITABILITY,true
+which one would a working bachelor prefer,PROFESSIONAL_SUITABILITY,true
+can i stay here as a working man,PROFESSIONAL_SUITABILITY,true
+is it ok for job holders,PROFESSIONAL_SUITABILITY,true
+ye job wale logo ke liye theek hai kya,PROFESSIONAL_SUITABILITY,true
+office jane walo ke liye kaunsa best hai,PROFESSIONAL_SUITABILITY,false
+kya ye working professionals ke liye hai,PROFESSIONAL_SUITABILITY,true
+inme se kaunsa professional friendly hai,PROFESSIONAL_SUITABILITY,true
+working log allowed hai kya,PROFESSIONAL_SUITABILITY,true
+naukri wale rah sakte hai kya,PROFESSIONAL_SUITABILITY,true
+is it fine for profesionals,PROFESSIONAL_SUITABILITY,true
+good for workin people,PROFESSIONAL_SUITABILITY,true
+professional fit room which,PROFESSIONAL_SUITABILITY,false
+suit a software engineer,PROFESSIONAL_SUITABILITY,true
+does this suit an employee budget,PROFESSIONAL_SUITABILITY,true
+is it quiet enough for work from home,PROFESSIONAL_SUITABILITY,true
+a professional like me can live here,PROFESSIONAL_SUITABILITY,true
+ye wala working ke layak hai kya,PROFESSIONAL_SUITABILITY,true
+which is ideal for professionals,PROFESSIONAL_SUITABILITY,true
+नौकरी करने वालों के लिए ठीक है क्या,PROFESSIONAL_SUITABILITY,false
+वर्किंग प्रोफेशनल्स के लिए कौन सा सही है,PROFESSIONAL_SUITABILITY,true
+is the second one meant for professionals,PROFESSIONAL_SUITABILITY,true
+professionals okay um in this,PROFESSIONAL_SUITABILITY,true
+good for someone who works night shifts,PROFESSIONAL_SUITABILITY,true
+any of these for corporate people,PROFESSIONAL_SUITABILITY,true
+tell me more about the first one,ROOM_DETAILS,true
+give me full details of this room,ROOM_DETAILS,true
+describe the second room,ROOM_DETAILS,true
+i want to know about the third listing,ROOM_DETAILS,false
+more info on that pg,ROOM_DETAILS,true
+what's special about the first room,ROOM_DETAILS,true
+details please,ROOM_DETAILS,true
+explain the 2bhk option,ROOM_DETAILS,true
+is the first one available right now,ROOM_DETAILS,true
+can you elaborate on this room,ROOM_DETAILS,true
+pehle wale ke bare me batao,ROOM_DETAILS,false
+is room ki puri jankari do,ROOM_DETAILS,true
+dusre wale ka detail do,ROOM_DETAILS,true
+teesra wala kaisa hai,ROOM_DETAILS,true
+ye wala dikhao thoda detail me,ROOM_DETAILS,true
+isme kya khaas hai,ROOM_DETAILS,true
+i like the first one tell me more,ROOM_DETAILS,true
+lets go with the second one,ROOM_DETAILS,false
+i pick the third room,ROOM_DETAILS,true
+the last one how is it,ROOM_DETAILS,true
+tell me abt the 1st,ROOM_DETAILS,true
+detials of room 2,ROOM_DETAILS,true
+is it vacant,ROOM_DETAILS,true
+availability of the second,ROOM_DETAILS,true
+ye available hai kya abhi,ROOM_DETAILS,false
+पहले वाले के बारे में बताओ,ROOM_DETAILS,true
+इसकी पूरी जानकारी दो,ROOM_DETAILS,true
+describe it um properly,ROOM_DETAILS,true
+give me everything on this property,ROOM_DETAILS,true
+the one in koramangala tell me about it,ROOM_DETAILS,true
+which one is ready to move in,ROOM_DETAILS,true
+put them in a table,ROOM_TABLE,true
+show a comparison table,ROOM_TABLE,true
+list everything in rows and columns,ROOM_TABLE,true
+can i get a tabular view,ROOM_TABLE,false
+table format please,ROOM_TABLE,true
+give me a summary table of these rooms,ROOM_TABLE,true
+display the rooms as a grid,ROOM_TABLE,true
+overview of all rooms side by side in a table,ROOM_TABLE,true
+make a chart of the rooms with rent and area,ROOM_TABLE,true
+tabular summary pls,ROOM_TABLE,true
+sabko table me dikhao,ROOM_TABLE,false
+table banao inka,ROOM_TABLE,true
+table format me batao,ROOM_TABLE,true
+sab rooms ki list table me do,ROOM_TABLE,true
+ek table me sab dikhao,ROOM_TABLE,true
+tabel of all rooms,ROOM_TABLE,true
+show in tabel,ROOM_TABLE,true
+rooms in a sheet format,ROOM_TABLE,false
+list all of them with price and location in a table,ROOM_TABLE,true
+can you tabulate them,ROOM_TABLE,true
+give me a table pls um,ROOM_TABLE,true
+सब कुछ टेबल में दिखाओ,ROOM_TABLE,true
+टेबल बनाओ,ROOM_TABLE,true
+all rooms with details in table form,ROOM_TABLE,true
+spreadsheet style view of these,ROOM_TABLE,false
+one table with all the options,ROOM_TABLE,true
+table of the three rooms,ROOM_TABLE,true
+table with rent type and area,ROOM_TABLE,true
+please show it as a table not text,ROOM_TABLE,true
+quick table of everything,ROOM_TABLE,true
+compare room 1 and room 2,COMPARE_ROOMS,true
+how does the first differ from the second,COMPARE_ROOMS,true
+which is better the pg or the 2bhk,COMPARE_ROOMS,true
+compare all three rooms,COMPARE_ROOMS,false
+difference between the first two,COMPARE_ROOMS,true
+first vs second which one wins,COMPARE_ROOMS,true
+compare them on price and location,COMPARE_ROOMS,true
+what is the difference between these rooms,COMPARE_ROOMS,true
+is the second better than the third,COMPARE_ROOMS,true
+pros and cons of each room,COMPARE_ROOMS,true
+pehle aur dusre ki tulna karo,COMPARE_ROOMS,false
+inme kya fark hai,COMPARE_ROOMS,true
+dono me se kaunsa behtar hai,COMPARE_ROOMS,true
+first aur third ko compare karo,COMPARE_ROOMS,true
+sabka comparison do,COMPARE_ROOMS,true
+compar the 2 rooms,COMPARE_ROOMS,true
+compare thes plz,COMPARE_ROOMS,true
+which one is more worth it,COMPARE_ROOMS,false
+rank these rooms for me,COMPARE_ROOMS,true
+help me choose between the first and second,COMPARE_ROOMS,true
+which of the two should i pick,COMPARE_ROOMS,true
+um compare them both,COMPARE_ROOMS,true
+side by side comparison please,COMPARE_ROOMS,true
+how are these rooms different,COMPARE_ROOMS,true
+क्या फर्क है इन दोनों में,COMPARE_ROOMS,false
+दोनों की तुलना करो,COMPARE_ROOMS,true
+2bhk versus pg compare,COMPARE_ROOMS,true
+compare koramangala one with hsr one,COMPARE_ROOMS,true
+better value for money which of these,COMPARE_ROOMS,true
+weigh the first against the last,COMPARE_ROOMS,true
+ok,ACKNOWLEDGMENT,true
+okay got it,ACKNOWLEDGMENT,false
+alright,ACKNOWLEDGMENT,true
+cool,ACKNOWLEDGMENT,false
+thank you,ACKNOWLEDGMENT,true
+thanks a lot,ACKNOWLEDGMENT,false
+fine,ACKNOWLEDGMENT,true
+understood,ACKNOWLEDGMENT,false
+i see,ACKNOWLEDGMENT,true
+sure,ACKNOWLEDGMENT,false
+great,ACKNOWLEDGMENT,true
+nice,ACKNOWLEDGMENT,false
+perfect,ACKNOWLEDGMENT,true
+good to know,ACKNOWLEDGMENT,false
+noted,ACKNOWLEDGMENT,true
+okay thanks,ACKNOWLEDGMENT,false
+achha,ACKNOWLEDGMENT,true
+theek hai,ACKNOWLEDGMENT,false
+ok ji,ACKNOWLEDGMENT,true
+accha samajh gaya,ACKNOWLEDGMENT,false
+thik hai,ACKNOWLEDGMENT,true
+shukriya,ACKNOWLEDGMENT,false
+dhanyavad,ACKNOWLEDGMENT,true
+badhiya,ACKNOWLEDGMENT,false
+bohot badiya,ACKNOWLEDGMENT,true
+thx,ACKNOWLEDGMENT,false
+tnx,ACKNOWLEDGMENT,true
+k,ACKNOWLEDGMENT,false
+okayyy,ACKNOWLEDGMENT,true
+ओके,ACKNOWLEDGMENT,false
+ठीक है,ACKNOWLEDGMENT,true
+धन्यवाद,ACKNOWLEDGMENT,false
+alright cool thanks,ACKNOWLEDGMENT,true
+ohh i see okay,ACKNOWLEDGMENT,false
+hello,GREETING,true
+hey,GREETING,false
+hey there,GREETING,true
+good morning,GREETING,false
+good evening,GREETING,true
+good afternoon,GREETING,false
+hello there,GREETING,true
+hiya,GREETING,false
+yo,GREETING,true
+hi bot,GREETING,false
+hello assistant,GREETING,true
+greetings,GREETING,false
+namaste,GREETING,true
+namaskar,GREETING,false
+hello ji,GREETING,true
+hii,GREETING,false
+heyy,GREETING,true
+helo,GREETING,false
+hellooo,GREETING,true
+hi hi,GREETING,false
+hey whats up,GREETING,true
+howdy,GREETING,false
+sup,GREETING,true
+good day,GREETING,false
+salaam,GREETING,true
+नमस्ते,GREETING,false
+हेलो,GREETING,true
+हाय,GREETING,false
+suprabhat,GREETING,true
+hello hello anyone there,GREETING,false
+hey hi,GREETING,true
+hi there friend,GREETING,false
+bye,CLOSING,true
+goodbye,CLOSING,false
+see you later,CLOSING,true
+that's all for now,CLOSING,false
+i'm done,CLOSING,true
+talk to you later,CLOSING,false
+bye bye,CLOSING,true
+thats it thanks bye,CLOSING,false
+i am leaving now,CLOSING,true
+end chat,CLOSING,false
+exit,CLOSING,true
+quit,CLOSING,false
+close the chat,CLOSING,true
+we are done here,CLOSING,false
+see ya,CLOSING,true
+take care bye,CLOSING,false
+good night,CLOSING,true
+chalo bye,CLOSING,false
+alvida,CLOSING,true
+ok bye,CLOSING,false
+phir milte hai,CLOSING,true
+chalta hu bye,CLOSING,false
+bas itna hi tha bye,CLOSING,true
+chat band karo,CLOSING,false
+ab main chalta hu,CLOSING,true
+tata,CLOSING,false
+byee,CLOSING,true
+cya,CLOSING,false
+gtg bye,CLOSING,true
+ठीक है अलविदा,CLOSING,false
+बाय,CLOSING,true
+bas ho gaya dhanyavad bye,CLOSING,false
+what is homilivo,PLATFORM_INFO,true
+who are you,PLATFORM_INFO,false
+what can you do,PLATFORM_INFO,true
+how does this platform work,PLATFORM_INFO,false
+how do i list my property,PLATFORM_INFO,true
+is there a fee for tenants,PLATFORM_INFO,false
+what is the refund policy,PLATFORM_INFO,true
+how do you verify listings,PLATFORM_INFO,false
+are the owners verified,PLATFORM_INFO,true
+is my data safe with you,PLATFORM_INFO,false
+what cities do you cover,PLATFORM_INFO,true
+how can i contact support,PLATFORM_INFO,false
+do you charge brokerage,PLATFORM_INFO,true
+is homilivo free to use,PLATFORM_INFO,false
+who built this chatbot,PLATFORM_INFO,true
+tell me about your service,PLATFORM_INFO,false
+how are listings approved,PLATFORM_INFO,true
+what is the cancellation policy,PLATFORM_INFO,false
+homilivo kya hai,PLATFORM_INFO,true
+tum kaun ho,PLATFORM_INFO,false
+tum kya kar sakte ho,PLATFORM_INFO,true
+yaha brokerage lagti hai kya,PLATFORM_INFO,false
+listing kaise verify hoti hai,PLATFORM_INFO,true
+kya ye app free hai,PLATFORM_INFO,false
+apni property kaise add karu,PLATFORM_INFO,true
+what is homilivo exactly um,PLATFORM_INFO,false
+wat does homlivo do,PLATFORM_INFO,true
+how do payments work on this site,PLATFORM_INFO,false
+what are your terms and conditions,PLATFORM_INFO,true
+होमिलिवो क्या है,PLATFORM_INFO,false
+आप क्या कर सकते हैं,PLATFORM_INFO,true
+book this room for me,UNSUPPORTED_ACTION,true
+reserve the second one,UNSUPPORTED_ACTION,false
+i want to pay the deposit now,UNSUPPORTED_ACTION,true
+schedule a visit for tomorrow,UNSUPPORTED_ACTION,false
+call the owner for me,UNSUPPORTED_ACTION,true
+send my phone number to the landlord,UNSUPPORTED_ACTION,false
+cancel my booking,UNSUPPORTED_ACTION,true
+confirm my reservation,UNSUPPORTED_ACTION,false
+arrange a viewing this weekend,UNSUPPORTED_ACTION,true
+message the owner that i am interested,UNSUPPORTED_ACTION,false
+sign the rental agreement for me,UNSUPPORTED_ACTION,true
+transfer the advance payment,UNSUPPORTED_ACTION,false
+book a site visit at 5pm,UNSUPPORTED_ACTION,true
+email the broker my details,UNSUPPORTED_ACTION,false
+mera booking cancel kar do,UNSUPPORTED_ACTION,true
+is room ko book karo,UNSUPPORTED_ACTION,false
+owner ko call lagao,UNSUPPORTED_ACTION,true
+advance payment kar do,UNSUPPORTED_ACTION,false
+visit schedule karo kal ke liye,UNSUPPORTED_ACTION,true
+agreement sign kardo,UNSUPPORTED_ACTION,false
+owner ko message bhejo,UNSUPPORTED_ACTION,true
+pay rent online for me,UNSUPPORTED_ACTION,false
+boook it now,UNSUPPORTED_ACTION,true
+resrve this room,UNSUPPORTED_ACTION,false
+shedule a visit,UNSUPPORTED_ACTION,true
+get me a callback from the owner,UNSUPPORTED_ACTION,false
+add this room to my wishlist and book it,UNSUPPORTED_ACTION,true
+hold this room for me till friday,UNSUPPORTED_ACTION,false
+रूम बुक कर दो,UNSUPPORTED_ACTION,true
+मालिक को फोन करो,UNSUPPORTED_ACTION,false
+what is the weather today,OUT_OF_SCOPE,true
+tell me a joke,OUT_OF_SCOPE,false
+who won the cricket match yesterday,OUT_OF_SCOPE,true
+write me a python function to sort a list,OUT_OF_SCOPE,false
+what is the capital of france,OUT_OF_SCOPE,true
+solve 45 times 12,OUT_OF_SCOPE,false
+recommend a good movie,OUT_OF_SCOPE,true
+how do i cook biryani,OUT_OF_SCOPE,false
+translate good morning into french,OUT_OF_SCOPE,true
+what is the stock price of tcs,OUT_OF_SCOPE,false
+tell me about the history of rome,OUT_OF_SCOPE,true
+give me a poem about the sea,OUT_OF_SCOPE,false
+who is the prime minister of india,OUT_OF_SCOPE,true
+how to lose weight fast,OUT_OF_SCOPE,false
+best phone under 20000,OUT_OF_SCOPE,true
+aaj ka mausam kaisa hai,OUT_OF_SCOPE,false
+ek joke sunao,OUT_OF_SCOPE,true
+cricket ka score batao,OUT_OF_SCOPE,false
+biryani kaise banate hai,OUT_OF_SCOPE,true
+mujhe gaana sunao,OUT_OF_SCOPE,false
+what is wether tomorow,OUT_OF_SCOPE,true
+tel me a jok,OUT_OF_SCOPE,false
+explain quantum physics,OUT_OF_SCOPE,true
+how to learn guitar,OUT_OF_SCOPE,false
+bitcoin price now,OUT_OF_SCOPE,true
+what time is it in tokyo,OUT_OF_SCOPE,false
+help me write an email to my boss,OUT_OF_SCOPE,true
+flight tickets to dubai,OUT_OF_SCOPE,false
+आज का मौसम कैसा है,OUT_OF_SCOPE,true
+कोई अच्छी फिल्म बताओ,OUT_OF_SCOPE,false
+hmm,UNCLEAR,true
+umm,UNCLEAR,false
+uh,UNCLEAR,true
+idk,UNCLEAR,false
+what,UNCLEAR,true
+huh,UNCLEAR,false
+asdf,UNCLEAR,true
+qwerty,UNCLEAR,false
+blah blah,UNCLEAR,true
+...,UNCLEAR,false
+?,UNCLEAR,true
+!!,UNCLEAR,false
+so,UNCLEAR,true
+the,UNCLEAR,false
+hmmmm maybe,UNCLEAR,true
+jkjkjk,UNCLEAR,false
+aaaaa,UNCLEAR,true
+xyz,UNCLEAR,false
+mm,UNCLEAR,true
+ok but,UNCLEAR,false
+and then,UNCLEAR,true
+um uh well,UNCLEAR,false
+dunno,UNCLEAR,true
+pata nahi,UNCLEAR,false
+kuch bhi,UNCLEAR,true
+hmm kya bolu,UNCLEAR,false
+kjhgf,UNCLEAR,true
+lol,UNCLEAR,false
+zzz,UNCLEAR,true
+yeah no,UNCLEAR,false
+well,UNCLEAR,true
+या,UNCLEAR,false
+ह्म्म,UNCLEAR,true
+as per the,UNCLEAR,false
+",,,",UNCLEAR,true

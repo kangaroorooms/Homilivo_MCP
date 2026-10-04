@@ -1,0 +1,50 @@
+"""One-off: apply post-review label revisions (acceptable lists, score flag, ctx twins). Run once."""
+import json, os, collections
+D = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+rd = lambda f: [json.loads(l) for l in open(os.path.join(D, f), encoding="utf-8") if l.strip()]
+def wr(f, rows):
+    with open(os.path.join(D, f), "w", encoding="utf-8", newline="\n") as h:
+        for r in rows: h.write(json.dumps(r, ensure_ascii=False) + "\n")
+# id -> (new primary or None, acceptable list)
+M = {33:("SHOW_MORE_OPTIONS",["ROOM_DETAILS"]),41:("UNCLEAR",["NEW_SEARCH"]),46:("UNCLEAR",["NEW_SEARCH"]),54:("UNCLEAR",["NEW_SEARCH"]),
+ 15:(None,["ROOM_TABLE"]),17:(None,["REFINEMENT"]),18:(None,["REFINEMENT"]),21:(None,["ACKNOWLEDGMENT"]),22:(None,["UNCLEAR"]),
+ 26:(None,["REJECT_CURRENT","REFINEMENT"]),27:(None,["LOWEST_PRICE","NEW_SEARCH"]),29:(None,["SHOW_MORE_OPTIONS"]),
+ 30:(None,["NEW_SEARCH","LOCATION"]),31:(None,["REFINEMENT"]),32:(None,["ROOM_DETAILS"]),40:(None,["ACKNOWLEDGMENT"]),
+ 42:(None,["UNCLEAR"]),49:(None,["UNCLEAR"])}
+F = {36:("UNSUPPORTED_ACTION",["ROOM_DETAILS"]),6:(None,["REFINEMENT"]),10:(None,["UNCLEAR"]),16:(None,["NEW_SEARCH"]),
+ 19:(None,["NEW_SEARCH"]),20:(None,["ACKNOWLEDGMENT","CLOSING"]),37:(None,["CLOSING"]),42:(None,["ACKNOWLEDGMENT"]),
+ 49:(None,["UNCLEAR"]),50:(None,["NEW_SEARCH"]),59:(None,["ROOM_DETAILS"])}
+changed = []
+def apply(rows, spec, name):
+    for r in rows:
+        r["acceptable"] = []; r["score"] = True
+        if r["id"] in spec:
+            new, acc = spec[r["id"]]; old = r["label"]
+            if new: r["label"] = new
+            r["acceptable"] = acc
+            changed.append((name, r["id"], r["text"], old, r["label"], acc))
+    return rows
+mx = apply(rd("test_matrix55.jsonl"), M, "matrix")
+for r in mx:
+    if r["id"] == 44:
+        r["score"] = False; changed.append(("matrix", 44, "<whitespace>", r["label"], r["label"], "score=false"))
+fr = apply(rd("test_fresh.jsonl"), F, "fresh")
+wr("test_matrix55.jsonl", mx); wr("test_fresh.jsonl", fr)
+tw = []
+for src, rows in (("m", mx), ("f", fr)):
+    for r in rows:
+        if r["label"] == "NEW_SEARCH" and not r["has_room_context"] and r["score"]:
+            t = dict(r); t["id"] = f"{src}{r['id']}-ctxY"; t["has_room_context"] = True; tw.append(t)
+wr("test_newsearch_ctxY.jsonl", tw)
+for c in changed: print(c)
+print("twins:", len(tw))
+print("\nTRAIN ctx split")
+tr = rd("train.jsonl"); c = collections.defaultdict(lambda:[0,0])
+for r in tr: c[r["label"]][0 if r["has_room_context"] else 1] += 1
+focus = {"NEW_SEARCH","GREETING","CLOSING","ACKNOWLEDGMENT","OUT_OF_SCOPE","PLATFORM_INFO","UNCLEAR"}
+print(f"{'label':26}{'ctxY':>5}{'ctxN':>5}  flag")
+for l in sorted(c):
+    y, n = c[l]; t = y+n; fl = []
+    if min(y,n)/t < 0.15: fl.append("NEARLY ALL " + ("Y" if y>n else "N"))
+    if l in focus: fl.append("both present" if y and n else "ONE VALUE ONLY")
+    print(f"{l:26}{y:5}{n:5}  {'; '.join(fl)}")

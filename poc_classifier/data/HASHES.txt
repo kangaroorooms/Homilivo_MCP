@@ -1,0 +1,13 @@
+17988cdd2c167c69251ca572851e09c72916265d44ef1307c60e857a685e4ac5  train.jsonl  frozen 2026-10-04T12:49:27
+6f9eb09f30d3f422b415601e8066a18808cddc48db779bb42b5bfed5ac4f0727  test_matrix55.jsonl  frozen 2026-10-04T12:49:27  [SUPERSEDED 2026-10-04 by post-review revision below]
+400cc827de7fbc9b716c9eb2ca3d0a25c98858183f1e1b7ccefd27dfb5a8636b  test_golden.jsonl  frozen 2026-10-04T12:49:27
+0f0994b4280f484e012b442da40ae2b276e87f589519dee42c9b8c321ec15554  test_fresh.jsonl  frozen 2026-10-04T12:49:54  [SUPERSEDED 2026-10-04 by post-review revision below]
+# test_fresh.jsonl re-written before any scoring: 2 rows duplicated train.jsonl; previous hash above is SUPERSEDED
+66e01c8de05e2f4b4f9af2df13f5b0fe7bd98451cf99a87f0a35d185753cf62b  test_fresh.jsonl  frozen 2026-10-04T12:50:05  [SUPERSEDED 2026-10-04 by post-review revision below]
+# test_matrix55.jsonl and test_fresh.jsonl revised after label review (acceptable lists, score flag, label changes); test_newsearch_ctxY.jsonl added. All before any training or scoring. Earlier hashes for these two files are SUPERSEDED. train.jsonl and test_golden.jsonl unchanged.
+48da849543957146672a6c5a8b0f9f7f29da09f6834f4d3f15dbc840a2a56528  test_matrix55.jsonl  frozen 2026-10-04T12:55:59
+9c6173f539fe5da53823a5de1ce671ab8d0bbcfb69754a963eaa7408529e993d  test_fresh.jsonl  frozen 2026-10-04T12:55:59
+5bfefccd3a0656f6a43930ed627efbab16b957221c9d4df4d0e5dd73f1bf3059  test_newsearch_ctxY.jsonl  frozen 2026-10-04T12:55:59
+# classifier artifacts trained on train.jsonl only (CV-selected C); frozen before any test scoring
+67ebd93ceac9dfbcfbee51e1b3ff69eb282ee57018509a4fe63a8ca59090db9a  artifacts/clf_with_ctx.joblib  frozen 2026-10-04T12:59:48
+0cc27aeefdff7d6d180e5b9c2df8c4a5c41f5f7d3ef657cd9cd73d6fc7f58b67  artifacts/clf_no_ctx.joblib  frozen 2026-10-04T12:59:49

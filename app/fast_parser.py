@@ -1,3 +1,4 @@
+import difflib
 import re
 
 
@@ -71,6 +72,97 @@ CITY_STOP_WORDS = (
 )
 
 _CITY_STOP_PATTERN = "|".join(CITY_STOP_WORDS)
+
+
+# Tokens that can ride along inside an "in/from/at ..." capture or a
+# trailing capitalized word without being part of a city name. They are
+# dropped before the capture is trusted as a city.
+CITY_FILLER_TOKENS = frozenset({
+    "a", "an", "the", "some", "any", "something", "somewhere",
+    "anywhere", "nearby", "pls", "plz", "please", "under", "below",
+    "above", "urgent", "urgently", "fast", "asap", "needed", "need",
+    "area", "areas", "different", "another", "other", "only", "just",
+    "good", "nice", "cheap", "best", "me", "my", "i", "want", "also",
+    "now", "today", "soon", "thanks", "thx", "ok", "okay",
+})
+
+_MAX_CITY_TOKENS = 3
+_CITY_FUZZY_CUTOFF = 0.85
+_MIN_UNLISTED_CITY_LEN = 3
+
+
+def _exact_known_city(text: str):
+    """The alias/canonical key for text, or None."""
+
+    key = text.strip().lower()
+
+    if key in CITY_ALIASES or key in KNOWN_CANONICAL_CITIES:
+
+        return key
+
+    return None
+
+
+def _validate_city(candidate: str):
+    """
+    Validate a city captured by a loose pattern. Returns the string to
+    hand to _resolve_city_name, or None when the capture is not a
+    usable city (so the caller leaves the city unset and the bot asks).
+    """
+
+    if not candidate or not candidate.strip():
+
+        return None
+
+    # 1. Already an exact alias / canonical city.
+    if _exact_known_city(candidate) is not None:
+
+        return candidate.strip()
+
+    # 2-3. Drop filler; reject over-long or empty captures.
+    raw_tokens = candidate.lower().split()
+
+    if len(raw_tokens) > _MAX_CITY_TOKENS:
+
+        return None
+
+    tokens = [t for t in raw_tokens if t not in CITY_FILLER_TOKENS]
+
+    if not tokens:
+
+        return None
+
+    joined = " ".join(tokens)
+
+    # 4. Exact match. A single leftover token is tried on its own; a
+    # multi-word remainder is matched only as a whole, so "navi
+    # mumbai" is never collapsed to its "mumbai" token.
+    if _exact_known_city(joined) is not None:
+
+        return joined
+
+    # 5. Strict fuzzy correction of a near-miss to a known city.
+    known_keys = list(CITY_ALIASES) + sorted(KNOWN_CANONICAL_CITIES)
+
+    close = [
+        match
+        for match in difflib.get_close_matches(
+            joined, known_keys, n=3, cutoff=_CITY_FUZZY_CUTOFF
+        )
+        if match[0] == joined[0]
+    ]
+
+    if close:
+
+        return close[0]
+
+    # 6. Keep as typed - real cities we do not list. Refuse anything
+    # too short to be a place name (never emit garbage).
+    if len(joined.replace(" ", "")) < _MIN_UNLISTED_CITY_LEN:
+
+        return None
+
+    return joined
 
 
 def _resolve_city_name(candidate: str) -> str:
@@ -209,7 +301,11 @@ def extract_search_parameters(
 
         if city.lower() not in ignored_words:
 
-            result["city"] = _resolve_city_name(city)
+            validated = _validate_city(city)
+
+            if validated is not None:
+
+                result["city"] = _resolve_city_name(validated)
 
     # Fallback for phrasing that omits a preposition entirely
     # ("any rooms Bangalore?", "room in Bangalore" already matched
@@ -239,7 +335,11 @@ def extract_search_parameters(
                 "pg", "apartment", "apartments",
             }:
 
-                result["city"] = _resolve_city_name(candidate)
+                validated = _validate_city(candidate)
+
+                if validated is not None:
+
+                    result["city"] = _resolve_city_name(validated)
 
         # Hinglish queries are typically typed all-lowercase ("...room
         # chahiye bangalore"), so the capitalized-word heuristic above

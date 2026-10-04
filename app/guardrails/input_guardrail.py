@@ -199,7 +199,7 @@ BLOCKED_PATTERNS = [
     r"\bbearer[\s_-]*token\b",
     r"\baccess[\s_-]*token\b",
     r"\bpassword\b",
-    r"\bsecret\b",
+    r"\bsecrets?\b",
     r"\bcredential[s]?\b",
     r"\bkangaroo[\s_-]*token\b",
     r"\bhack(?:ing)?\b",
@@ -211,6 +211,13 @@ BLOCKED_PATTERNS = [
     r"\btoken\s+(batao|do|bhi|dena|dijiye)",
     r"prompt\s+inject",
     r"jailbreak",
+    # Instruction-override phrasing ("ignore all previous instructions")
+    r"\b(?:ignore|disregard|forget|override)\s+"
+    r"(?:all\s+|any\s+|your\s+|the\s+|my\s+)*"
+    r"(?:previous|prior|above|earlier|preceding)\s+"
+    r"(?:instructions?|prompts?|rules?|directions?|messages?)\b",
+    # Prompt-structure tag spoofing (narrow: only our own tag names)
+    r"</?\s*(?:verified_data|user_message|system|assistant)\s*>",
 ]
 
 

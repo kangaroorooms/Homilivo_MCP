@@ -151,8 +151,12 @@ CHATBOT_INFO_RESPONSE = (
 
 
 UNKNOWN_RESPONSE = (
-    "I can help you search for rooms and accommodation. "
-    "Please tell me what kind of place you're looking for."
+    "Which city and budget are you looking for?"
+)
+
+
+UNKNOWN_RESPONSE_WITH_ROOMS = (
+    "Would you like to search for new rooms, or ask about the ones shown?"
 )
 
 
@@ -6217,7 +6221,11 @@ async def process_message(
 
         else:
 
-            final_text = UNKNOWN_RESPONSE
+            final_text = (
+                UNKNOWN_RESPONSE_WITH_ROOMS
+                if state.previous_rooms or state.selected_room
+                else UNKNOWN_RESPONSE
+            )
 
             if print_validated_response(
                 final_text

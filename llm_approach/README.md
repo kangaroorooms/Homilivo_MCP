@@ -604,3 +604,37 @@ Problem seen on the website: the bot asked "Which area would you like?", the use
 - **The real API's maximum `limit` is unverified.** If it caps below 30 (for example at 10 or 20), area searches only see that many of the newest rooms in the city, so an area can show "no rooms" or fewer rooms than exist. Check by hand with a request using `limit=30` and compare the returned count. The no-match message does not say how many rooms were checked.
 - Area matching is a substring-by-word on `location` and `landmark`, so "6 block" matches "6 block Koramangala" but not "6th block Koramangala".
 - The rule-based fallback (Groq down) has no area extraction; an area reply during an outage is not searched.
+
+---
+
+# Phase 5c: rooms API pagination (2026-10-17)
+
+## Verified facts (by hand against the real API)
+
+- `GET /api/rooms` returns `{success, data[], meta}` with `meta = {"total": <int>, "hasNextPage": <bool>}`.
+- The `page` query parameter works (`limit=5&page=1` and `page=2` returned different rooms).
+- A `limit` above the total returns all rooms. Bangalore has `total=10`.
+
+## What changed
+
+- `rooms_client.py`: `RoomsResult` has `total`, `has_next` and `page`. `parse_meta` reads `meta.total` (non-negative int, not bool) and `meta.hasNextPage` (bool); each is `None` when missing or the wrong type. `page` is sent only when > 1. Still one tool call per turn, one retry on timeout or connection error, none on 5xx.
+- Offline fixture mode simulates the same meta (`total` = matching rooms before paging, `has_next = page * limit < total`) and slices the filtered list by `page`. Scenarios can name a larger list with `"rooms_fixture"` (a file in `fixtures/`; stub mode only, handled in `eval/run_scenarios.py`). New `fixtures/rooms_synthetic_25.json` (25 synthetic rooms).
+- `state.py`: `search_page` (default 1), `has_next`, `total_rooms`; `apply_search_result` takes `page`, `has_next`, `total`, so a new search resets the page to 1. `set_paging` updates only the paging info.
+- `actions/search.py`:
+  - SHOW_MORE with `has_next` True fetches `search_page + 1` for the same search (one call) and replaces `rooms_on_screen`; the reply starts "Here are more rooms (page N)" and numbering restarts at 1 to match the screen. API failure keeps the previous rooms and the previous page. A page with no matching rooms (area search) keeps the rooms on screen and says so.
+  - "These are all the matching rooms" only when `has_next` is False and no matches were cut for display; with no meta, the old rule (fewer rooms than the fetch limit, nothing cut) still applies.
+  - Area search with `has_next` True and no match: "I searched the first N rooms of {city} and none matched {area}...", offering "show more", a budget or a room type, instead of "I couldn't find rooms". With matches, a note says only the first N rooms were searched. No extra API calls.
+- `responder.py`: when `has_next` is True and `total` is known, the header says "(showing 10 of 24)" (not for area searches, where the total is the city's) and the tail offers "show more".
+
+## Edits to earlier files (all inside `llm_approach/`)
+
+`rooms_client.py`, `state.py`, `actions/search.py`, `responder.py`, `eval/run_scenarios.py`, `tests/test_actions.py` (one test sets `has_next = None` to keep testing the no-meta rule), `tests/test_pipeline.py` (23 scenarios), `scenarios/S17.json` (the 10-room fixture now reports `hasNextPage` False, so "kuch aur dikhao" is correctly answered `show_more_all` instead of `show_more_limit`).
+
+## Tests
+
+New `tests/test_paging.py`; scenario S23 (stub): 25-room list, pages 1 to 3, then "all matching" only after the last page.
+
+## Still unverified
+
+- The API's maximum page size (`limit`) for large cities. If it caps below 30, an area search sees fewer rooms per page; the new honest wording and SHOW_MORE cover this, but the cap itself is unknown.
+- Behaviour of `page` beyond the last page, and with filters other than city (assumed to page the filtered list, as the offline simulation does).

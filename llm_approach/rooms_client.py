@@ -44,6 +44,9 @@ class RoomsResult:
     truncated: bool = False  # more matching rooms than the display limit
     area_matches: int | None = None  # rooms that matched the area (None: no area asked)
     areas: list[str] = field(default_factory=list)  # real locations of the fetched rooms (area searches)
+    total: int | None = None  # meta.total: matching rooms before paging (None: meta missing or malformed)
+    has_next: bool | None = None  # meta.hasNextPage (None: meta missing or malformed)
+    page: int = 1  # the page this result is for
 
 
 @dataclass
@@ -77,9 +80,11 @@ def _room_types_param(search: dict[str, Any]) -> str | None:
     return f"{bhk}BHK" if bhk else None
 
 
-def build_params(search: dict[str, Any], *, limit: int | None = None) -> dict[str, Any]:
+def build_params(
+    search: dict[str, Any], *, limit: int | None = None, page: int = 1
+) -> dict[str, Any]:
     """Same names as server.py: city, roomTypes, minPrice, maxPrice, idealFor, sort, limit.
-    No amenity: the API has no such parameter."""
+    ``page`` is sent only for page > 1. No amenity: the API has no such parameter."""
     params: dict[str, Any] = {
         "city": search.get("city"),
         "minPrice": search.get("min_price"),
@@ -88,6 +93,7 @@ def build_params(search: dict[str, Any], *, limit: int | None = None) -> dict[st
         "idealFor": search.get("ideal_for"),
         "sort": config.ROOMS_SORT,
         "limit": limit or config.ROOMS_LIMIT,
+        "page": page if page > 1 else None,
     }
     return {k: v for k, v in params.items() if v is not None}
 
@@ -161,6 +167,9 @@ def _finish(
     fetch_limit: int,
     display_limit: int,
     status: int | None = None,
+    total: int | None = None,
+    has_next: bool | None = None,
+    page: int = 1,
 ) -> RoomsResult:
     """The one place where area and amenity filters and the display cut happen,
     for the live API and the offline fixture alike."""
@@ -177,6 +186,9 @@ def _finish(
         truncated=len(found) > len(shown),
         area_matches=len(matched) if area else None,
         areas=distinct_locations(fetched) if area else [],
+        total=total,
+        has_next=has_next,
+        page=page,
     )
 
 
@@ -210,13 +222,23 @@ def offline_path() -> Path | None:
 
 
 def _offline_search(
-    path: Path, search: dict[str, Any], limit: int, display_limit: int
+    path: Path, search: dict[str, Any], limit: int, display_limit: int, page: int = 1
 ) -> RoomsResult:
     data = json.loads(path.read_text(encoding="utf-8"))
     rooms = data["rooms"] if isinstance(data, dict) else data
-    # Like the live API: API filters and limit first; area and amenity afterwards on the page.
-    page = _filter_fixture([r for r in rooms if isinstance(r, dict)], search)[:limit]
-    return _finish(page, search, fetch_limit=limit, display_limit=display_limit)
+    # Like the live API: API filters, then paging (with the same meta); area and
+    # amenity afterwards on the page.
+    matching = _filter_fixture([r for r in rooms if isinstance(r, dict)], search)
+    start = (page - 1) * limit
+    return _finish(
+        matching[start : start + limit],
+        search,
+        fetch_limit=limit,
+        display_limit=display_limit,
+        total=len(matching),
+        has_next=page * limit < len(matching),
+        page=page,
+    )
 
 
 # ---- HTTP -----------------------------------------------------------------
@@ -259,6 +281,19 @@ def extract_rooms(body: Any) -> list[dict[str, Any]] | None:
     return None
 
 
+def parse_meta(body: Any) -> tuple[int | None, bool | None]:
+    """``(meta.total, meta.hasNextPage)``; each None when missing or the wrong type."""
+    meta = body.get("meta") if isinstance(body, dict) else None
+    if not isinstance(meta, dict):
+        return None, None
+    total, has_next = meta.get("total"), meta.get("hasNextPage")
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        total = None
+    if not isinstance(has_next, bool):
+        has_next = None
+    return total, has_next
+
+
 def _fail(error_class: str, status: int | None = None, message: str | None = None) -> RoomsResult:
     # Status, class and the API's own `message` only. Never headers or token.
     logger.error("rooms api failure status=%s class=%s message=%s", status, error_class, message)
@@ -270,6 +305,7 @@ def search_rooms(
     budget: TurnBudget,
     *,
     limit: int | None = None,
+    page: int = 1,
     http_get: HttpGet | None = None,
     sleep: Callable[[float], None] = time.sleep,
     jitter: Callable[[float, float], float] = random.uniform,
@@ -282,6 +318,7 @@ def search_rooms(
     if not search.get("city"):
         raise ValueError("rooms_client.search_rooms needs a validated city")
     budget.use_tool_call()
+    page = page if isinstance(page, int) and not isinstance(page, bool) and page > 1 else 1
     # Area is filtered after the fetch, so fetch more and still show the normal page.
     area_mode = bool(search.get("area"))
     limit = limit or (config.ROOMS_AREA_FETCH_LIMIT if area_mode else config.ROOMS_LIMIT)
@@ -289,13 +326,13 @@ def search_rooms(
 
     path = offline_path()
     if path is not None:
-        return _offline_search(path, search, limit, display_limit)
+        return _offline_search(path, search, limit, display_limit, page)
 
     token = os.getenv("KANGAROO_TOKEN")
     if not token:
         return _fail("no_token")
 
-    params = build_params(search, limit=limit)
+    params = build_params(search, limit=limit, page=page)
     raw: RawResponse | None = None
     for attempt in (1, 2):
         try:
@@ -315,6 +352,14 @@ def search_rooms(
     rooms = extract_rooms(raw.body)
     if rooms is None:
         return _fail("bad_payload", raw.status_code, _error_message(raw.body))
+    total, has_next = parse_meta(raw.body)
     return _finish(
-        rooms, search, fetch_limit=limit, display_limit=display_limit, status=raw.status_code
+        rooms,
+        search,
+        fetch_limit=limit,
+        display_limit=display_limit,
+        status=raw.status_code,
+        total=total,
+        has_next=has_next,
+        page=page,
     )

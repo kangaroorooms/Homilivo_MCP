@@ -1,0 +1,402 @@
+[
+  {
+    "id": "synthetic-1",
+    "title": "Synthetic Room 1",
+    "pricePerMonth": 6500,
+    "roomType": "Single",
+    "location": "Indiranagar",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-2",
+    "title": "Synthetic Room 2",
+    "pricePerMonth": 7000,
+    "roomType": "Single",
+    "location": "HSR Layout",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-3",
+    "title": "Synthetic Room 3",
+    "pricePerMonth": 7500,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-4",
+    "title": "Synthetic Room 4",
+    "pricePerMonth": 8000,
+    "roomType": "Single",
+    "location": "Indiranagar",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-5",
+    "title": "Synthetic Room 5",
+    "pricePerMonth": 8500,
+    "roomType": "Single",
+    "location": "HSR Layout",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-6",
+    "title": "Synthetic Room 6",
+    "pricePerMonth": 9000,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-7",
+    "title": "Synthetic Room 7",
+    "pricePerMonth": 9500,
+    "roomType": "Single",
+    "location": "Indiranagar",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-8",
+    "title": "Synthetic Room 8",
+    "pricePerMonth": 10000,
+    "roomType": "Single",
+    "location": "HSR Layout",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-9",
+    "title": "Synthetic Room 9",
+    "pricePerMonth": 10500,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-10",
+    "title": "Synthetic Room 10",
+    "pricePerMonth": 11000,
+    "roomType": "Single",
+    "location": "Indiranagar",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-11",
+    "title": "Synthetic Room 11",
+    "pricePerMonth": 11500,
+    "roomType": "Single",
+    "location": "HSR Layout",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-12",
+    "title": "Synthetic Room 12",
+    "pricePerMonth": 12000,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-13",
+    "title": "Synthetic Room 13",
+    "pricePerMonth": 12500,
+    "roomType": "Single",
+    "location": "Indiranagar",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-14",
+    "title": "Synthetic Room 14",
+    "pricePerMonth": 13000,
+    "roomType": "Single",
+    "location": "HSR Layout",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-15",
+    "title": "Synthetic Room 15",
+    "pricePerMonth": 13500,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-16",
+    "title": "Synthetic Room 16",
+    "pricePerMonth": 14000,
+    "roomType": "Single",
+    "location": "Indiranagar",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-17",
+    "title": "Synthetic Room 17",
+    "pricePerMonth": 14500,
+    "roomType": "Single",
+    "location": "HSR Layout",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-18",
+    "title": "Synthetic Room 18",
+    "pricePerMonth": 15000,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-19",
+    "title": "Synthetic Room 19",
+    "pricePerMonth": 15500,
+    "roomType": "Single",
+    "location": "Indiranagar",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-20",
+    "title": "Synthetic Room 20",
+    "pricePerMonth": 16000,
+    "roomType": "Single",
+    "location": "HSR Layout",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-21",
+    "title": "Synthetic Room 21",
+    "pricePerMonth": 16500,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-22",
+    "title": "Synthetic Room 22",
+    "pricePerMonth": 17000,
+    "roomType": "Single",
+    "location": "Indiranagar",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-23",
+    "title": "Synthetic Room 23",
+    "pricePerMonth": 17500,
+    "roomType": "Single",
+    "location": "HSR Layout",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-24",
+    "title": "Synthetic Room 24",
+    "pricePerMonth": 18000,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "synthetic-25",
+    "title": "Synthetic Room 25",
+    "pricePerMonth": 18500,
+    "roomType": "Single",
+    "location": "Indiranagar",
+    "landmark": "",
+    "city": "bangalore",
+    "amenities": [
+      "wifi"
+    ],
+    "idealFor": [
+      "Students"
+    ],
+    "availabilityStatus": "AVAILABLE"
+  }
+]

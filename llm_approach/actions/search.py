@@ -67,28 +67,69 @@ def no_area_reply(search: dict[str, Any], areas: list[str]) -> str:
     return text
 
 
+def area_partial_reply(search: dict[str, Any], searched: int | None) -> str:
+    """The area was not found in the rooms fetched, but the city has more rooms."""
+    count = f"the first {searched} rooms" if searched else "only the first page of rooms"
+    return (
+        f"I searched {count} of {_city(search)} and none matched {search.get('area')}, "
+        "but there are more rooms I did not check. You can say \"show more\" to keep "
+        "looking, or try a budget or a room type."
+    )
+
+
+def _city(search: dict[str, Any]) -> str:
+    return str(search.get("city") or "the city").strip().title()
+
+
 def _run_search(
     search: dict[str, Any],
     state: LLMConversationState,
     budget: TurnBudget,
     action: str,
+    page: int = 1,
 ) -> ActionResult:
-    """Call the rooms API once with validated values (amenity included) and update state."""
-    result = rooms_client.search_rooms(search, budget)
+    """Call the rooms API once with validated values (amenity included) and update state.
+    ``page`` > 1 is SHOW_MORE: the page's rooms replace the ones on screen."""
+    more = page > 1
+    result = rooms_client.search_rooms(search, budget, page=page)
     if not result.ok:
         state.apply_search_result(search, None)  # keeps previous state
         return ActionResult(
             rooms_client.UNAVAILABLE_MESSAGE, None, action, True, result.error_class
         )
-    state.apply_search_result(search, result.rooms, result.api_count, result.truncated)
+    area = search.get("area")
+    partial = bool(area) and result.has_next is True
+    if more and not result.rooms:
+        # Nothing on this page matched: keep the rooms on screen, remember the paging.
+        state.set_paging(page, result.has_next, result.total)
+        reply = (
+            area_partial_reply(search, result.api_count)
+            if partial
+            else "There are no more matching rooms. " + ALL_SHOWN.split(". ", 1)[1]
+        )
+        return ActionResult(reply, None, action, True)
+    state.apply_search_result(
+        search, result.rooms, result.api_count, result.truncated,
+        page=page, has_next=result.has_next, total=result.total,
+    )
     rooms = state.rooms_on_screen
     if not rooms:
-        if search.get("area") and result.area_matches == 0:
+        if partial:
+            return ActionResult(area_partial_reply(search, result.api_count), [], action, True)
+        if area and result.area_matches == 0:
             return ActionResult(no_area_reply(search, result.areas), [], action, True)
         return ActionResult(responder.format_no_rooms_reply(search), [], action, True)
-    return ActionResult(
-        responder.format_search_reply(rooms, search), responder.room_cards(rooms), action, True
+    note = None
+    if partial:
+        note = (
+            f"I only searched the first {result.api_count} rooms of {_city(search)}; "
+            "try a budget or room type to narrow it down."
+        )
+    reply = responder.format_search_reply(
+        rooms, search, total=result.total, has_next=result.has_next,
+        page=page, more=more, note=note,
     )
+    return ActionResult(reply, responder.room_cards(rooms), action, True)
 
 
 def handle_new_search(
@@ -149,19 +190,27 @@ def handle_show_more(
     state: LLMConversationState,
     budget: TurnBudget,
 ) -> ActionResult:
-    """No pagination is known for the API, so no tool call. Honest answer only:
-    fewer rooms than the page limit means these are all of them."""
+    """When the last result said there is a next page, fetch it (one tool call) and
+    show it as the new rooms on screen. Otherwise no call and an honest answer."""
+    city = state.current_search.get("city")
+    if state.has_next is True and city:
+        search = {key: state.current_search.get(key) for key in SEARCH_KEYS}
+        return _run_search(search, state, budget, "show_more", page=state.search_page + 1)
     if not state.rooms_on_screen:
-        if state.current_search.get("city"):
+        if city:
             return ActionResult(
                 "I have no rooms to show right now. Try a higher budget or another area.",
                 None,
                 "show_more_none",
             )
         return _ask_city(state)
-    # Count what the API returned, not what survived the client-side amenity
-    # filter: a full page filtered down may still have more rooms behind it.
-    # An area search fetches more rooms than it shows, so compare with that limit.
+    if state.has_next is False:
+        # Complete unless matches were cut for display (area searches show at most 10).
+        if state.rooms_truncated:
+            return ActionResult(reuse.get_show_alternatives_response(), None, "show_more_limit")
+        return ActionResult(ALL_SHOWN, None, "show_more_all")
+    # No paging info (meta missing): count what the API returned, not what survived
+    # the client-side filters. An area search fetches more than it shows.
     shown = state.api_room_count if state.api_room_count is not None else len(state.rooms_on_screen)
     fetch_limit = config.ROOMS_AREA_FETCH_LIMIT if state.current_search.get("area") else config.ROOMS_LIMIT
     if shown < fetch_limit and not state.rooms_truncated:

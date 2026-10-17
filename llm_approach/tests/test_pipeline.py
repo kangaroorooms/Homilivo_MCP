@@ -18,11 +18,11 @@ from llm_approach.tests.conftest import ROOT, dec
 SCENARIOS = run_scenarios.load_scenarios()
 
 
-# ---- S1 to S22 in stub mode ----------------------------------------------------
+# ---- S1 to S23 in stub mode ----------------------------------------------------
 
 
 def test_all_scenarios_exist():
-    assert [s["id"] for s in SCENARIOS] == [f"S{n}" for n in range(1, 23)]
+    assert [s["id"] for s in SCENARIOS] == [f"S{n}" for n in range(1, 24)]
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=[s["id"] for s in SCENARIOS])

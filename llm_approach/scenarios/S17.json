@@ -1,6 +1,6 @@
 {
   "id": "S17",
-  "title": "'kuch aur dikhao' is answered honestly without a new API call",
+  "title": "'kuch aur dikhao' is answered honestly without a new API call (the fixture says it has no next page)",
   "turns": [
     {
       "user": "find me a room in bangalore",
@@ -32,7 +32,7 @@
       },
       "expect": {
         "intent": "SHOW_MORE",
-        "action": "show_more_limit",
+        "action": "show_more_all",
         "tool_called": false,
         "rooms_on_screen": 10
       }

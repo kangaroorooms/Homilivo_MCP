@@ -146,6 +146,9 @@ def runtime(scenario: dict[str, Any], mode: str, script: list[Any], spy: _Spy) -
                 status = int(scenario["rooms_http_status"])
                 stack.enter_context(_patched(rooms_client, "_httpx_get", lambda *a, **k: _FakeResponse(status)))
                 stack.enter_context(_env(**{config.OFFLINE_ROOMS_ENV: None, "KANGAROO_TOKEN": "stub-token-not-real"}))
+            elif scenario.get("rooms_fixture"):  # a file under fixtures/, e.g. a larger synthetic list
+                fixture = Path(__file__).resolve().parents[1] / "fixtures" / scenario["rooms_fixture"]
+                stack.enter_context(_env(**{config.OFFLINE_ROOMS_ENV: str(fixture)}))
             else:
                 stack.enter_context(_env(**{config.OFFLINE_ROOMS_ENV: "1"}))
             stack.enter_context(_env(LLM_APPROACH_METRICS=None))

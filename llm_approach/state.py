@@ -94,6 +94,9 @@ class LLMConversationState:
     rejected_room_ids: list[Any] = field(default_factory=list)
     api_room_count: int | None = None  # rooms the API returned, before client-side filtering
     rooms_truncated: bool = False  # matching rooms were cut to the display limit
+    search_page: int = 1  # page of the last search (1-based)
+    has_next: bool | None = None  # meta.hasNextPage of the last result (None: unknown)
+    total_rooms: int | None = None  # meta.total of the last result (None: unknown)
     turn_count: int = 0
     updated_at: float = 0.0
 
@@ -105,6 +108,9 @@ class LLMConversationState:
         rooms: list[dict[str, Any]] | None,
         api_count: int | None = None,
         truncated: bool = False,
+        page: int = 1,
+        has_next: bool | None = None,
+        total: int | None = None,
     ) -> bool:
         """Store a finished search. ``rooms=None`` means the rooms API failed:
         nothing changes (previous rooms, selection, search and pending stay).
@@ -112,6 +118,8 @@ class LLMConversationState:
         ``api_count`` is how many rooms the API returned before client-side
         filtering (amenity, area); SHOW_MORE uses it. Defaults to ``len(rooms)``.
         ``truncated``: more matching rooms exist than were kept for display.
+        ``page``, ``has_next`` and ``total`` come from the API paging info; a new
+        search passes the defaults, which resets the page to 1.
         Returns True when the state was updated."""
         if rooms is None:
             return False
@@ -119,10 +127,16 @@ class LLMConversationState:
         self.rooms_on_screen = [clean_room(r) for r in rooms if isinstance(r, dict)]
         self.api_room_count = len(self.rooms_on_screen) if api_count is None else api_count
         self.rooms_truncated = truncated
+        self.set_paging(page, has_next, total)
         self.selected_room_index = None
         self.pending_question = None
         self.rejected_room_ids = []
         return True
+
+    def set_paging(self, page: int, has_next: bool | None, total: int | None) -> None:
+        self.search_page = page if isinstance(page, int) and page >= 1 else 1
+        self.has_next = has_next
+        self.total_rooms = total
 
     def select_room(self, index: int) -> None:
         """Focus the room at 1-based ``index``."""

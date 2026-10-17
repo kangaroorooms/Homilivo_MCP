@@ -71,12 +71,34 @@ def place_label(search: dict[str, Any]) -> str:
     return ", ".join(part for part in (area, _city_label(search)) if part)
 
 
-def format_search_reply(rooms: list[dict[str, Any]], search: dict[str, Any]) -> str:
+def format_search_reply(
+    rooms: list[dict[str, Any]],
+    search: dict[str, Any],
+    *,
+    total: int | None = None,
+    has_next: bool | None = None,
+    page: int = 1,
+    more: bool = False,
+    note: str | None = None,
+) -> str:
+    """``more``: these rooms are a further page ("Here are more rooms (page N)").
+    ``total`` is mentioned only when more rooms exist ("showing 10 of 24"); with an
+    area it counts the whole city, so the caller passes ``note`` instead."""
     place = place_label(search)
     noun = "room" if len(rooms) == 1 else "rooms"
-    head = f"I found {len(rooms)} {noun}" + (f" in {place}" if place else "") + ":"
+    if more:
+        head = f"Here are more rooms (page {page})" + (f" in {place}" if place else "")
+    else:
+        head = f"I found {len(rooms)} {noun}" + (f" in {place}" if place else "")
+    if has_next and total is not None and not search.get("area"):
+        head += f" (showing {len(rooms)} of {total})"
+    head += ":"
     lines = [room_line(i, r) for i, r in enumerate(rooms, 1)]
     tail = "Ask me about any of them, for example the cheapest one, or tell me what to change."
+    if has_next:
+        tail += " There are more rooms, say \"show more\" to see the next ones."
+    if note:
+        tail += " " + note
     return "\n".join([head, *lines, tail])
 
 

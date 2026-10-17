@@ -413,6 +413,7 @@ def test_show_more_uses_api_count_before_amenity_filter():
     r = run(search.handle_new_search, make("NEW_SEARCH", city="Bangalore", amenity="WiFi"), s)
     assert r.tool_called and len(s.rooms_on_screen) == 1  # only fixture-10 lists WiFi
     assert s.api_room_count == 10
+    s.has_next = None  # the API gave no meta: the older rule applies (Phase 5c)
     more = run(search.handle_show_more, make("SHOW_MORE"), s)
     assert more.reply == reuse.get_show_alternatives_response()
     assert not more.reply.startswith("These are all")

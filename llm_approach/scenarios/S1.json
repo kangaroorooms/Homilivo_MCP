@@ -1,0 +1,53 @@
+{
+  "id": "S1",
+  "title": "Search Bangalore, then 'in udupi' refines the city; no rooms there is reported honestly",
+  "turns": [
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "in udupi",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Udupi"
+        }
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "refinement",
+        "tool_called": true,
+        "search": {
+          "city": "Udupi"
+        },
+        "rooms_shown": false,
+        "rooms_on_screen": 0,
+        "reply_contains": [
+          "couldn't find any rooms in Udupi"
+        ],
+        "reply_not_contains": [
+          "welcome"
+        ]
+      }
+    }
+  ]
+}

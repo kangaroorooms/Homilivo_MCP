@@ -1,0 +1,69 @@
+{
+  "id": "S8",
+  "title": "Cheapest room becomes the selected room; 'does it have wifi' is about that same room",
+  "turns": [
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "which one is cheapest",
+      "llm": {
+        "intent": "ROOM_FOLLOWUP",
+        "confidence": 0.95,
+        "operation": "LOWEST_PRICE"
+      },
+      "expect": {
+        "intent": "ROOM_FOLLOWUP",
+        "operation": "LOWEST_PRICE",
+        "action": "followup_price",
+        "tool_called": false,
+        "selected": 6,
+        "reply_contains": [
+          "Room 6",
+          "₹7,000"
+        ]
+      }
+    },
+    {
+      "user": "does it have wifi",
+      "llm": {
+        "intent": "ROOM_FOLLOWUP",
+        "confidence": 0.95,
+        "operation": "AMENITY",
+        "slots": {
+          "amenity": "WiFi"
+        },
+        "room_reference": "selected"
+      },
+      "expect": {
+        "intent": "ROOM_FOLLOWUP",
+        "operation": "AMENITY",
+        "action": "followup_amenity",
+        "tool_called": false,
+        "selected": 6,
+        "reply_contains": [
+          "Room 6",
+          "does not list WiFi"
+        ]
+      }
+    }
+  ]
+}

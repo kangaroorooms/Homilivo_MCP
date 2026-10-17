@@ -1,0 +1,25 @@
+{
+  "id": "S15",
+  "title": "'rooms in pls urgent' rejects the city and asks for it",
+  "turns": [
+    {
+      "user": "rooms in pls urgent",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.7,
+        "slots": {
+          "city": "pls urgent"
+        }
+      },
+      "expect": {
+        "action": "ask_city",
+        "tool_called": false,
+        "pending": "city",
+        "rooms_on_screen": 0,
+        "reply_contains": [
+          "Which city"
+        ]
+      }
+    }
+  ]
+}

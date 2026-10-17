@@ -1,0 +1,43 @@
+{
+  "id": "S11",
+  "title": "Hinglish search, then 'sabse sasta' is LOWEST_PRICE",
+  "turns": [
+    {
+      "user": "mujhe bangalore mein room chahiye",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "sabse sasta kaun sa hai",
+      "llm": {
+        "intent": "ROOM_FOLLOWUP",
+        "confidence": 0.95,
+        "operation": "LOWEST_PRICE"
+      },
+      "expect": {
+        "intent": "ROOM_FOLLOWUP",
+        "operation": "LOWEST_PRICE",
+        "action": "followup_price",
+        "selected": 6,
+        "reply_contains": [
+          "Room 6"
+        ]
+      }
+    }
+  ]
+}

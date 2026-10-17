@@ -1,0 +1,51 @@
+{
+  "id": "S12",
+  "title": "Hi, thanks, bye are chat replies and never search",
+  "turns": [
+    {
+      "user": "hi",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi! I can help you find a room."
+      },
+      "expect": {
+        "intent": "GENERAL_CHAT",
+        "action": "general_chat",
+        "tool_called": false,
+        "rooms_on_screen": 0,
+        "reply_contains": [
+          "Hi!"
+        ]
+      }
+    },
+    {
+      "user": "thanks",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "intent": "GENERAL_CHAT",
+        "action": "general_chat",
+        "tool_called": false,
+        "rooms_on_screen": 0
+      }
+    },
+    {
+      "user": "bye",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Bye! Come back anytime."
+      },
+      "expect": {
+        "intent": "GENERAL_CHAT",
+        "action": "general_chat",
+        "tool_called": false,
+        "rooms_on_screen": 0
+      }
+    }
+  ]
+}

@@ -6,6 +6,10 @@ import json
 from typing import Any
 
 from llm_approach import config, reuse
+from llm_approach.sanitize import neutralize as _neutralize_text
+
+# Tag names that fence the prompt (build_messages, the examples and the system prompt use them).
+FENCE_NAMES = ("verified_data", "user_message")
 
 _INTENT_LINES = """\
 NEW_SEARCH - start a new room search ("find me a room in pune"). City missing: set needs_clarification and ask for the city.
@@ -260,7 +264,7 @@ def build_state_summary(state: dict[str, Any] | None) -> dict[str, Any]:
     """
     state = state or {}
     sanitize = reuse.get_sanitize_room()
-    neutralize = reuse.get_neutralize()
+    neutralize = _neutralize_text
 
     raw_rooms = state.get("rooms_on_screen") or []
     rooms = [
@@ -306,7 +310,7 @@ def build_state_summary(state: dict[str, Any] | None) -> dict[str, Any]:
 
 def build_messages(user_message: str, state_summary: dict[str, Any]) -> list[dict[str, str]]:
     """Chat messages for one decision call."""
-    neutralize = reuse.get_neutralize()
+    neutralize = _neutralize_text
     text = neutralize(str(user_message or ""))[: config.MAX_USER_MESSAGE_CHARS]
     # Summaries from build_state_summary are already neutralised; do it again
     # for dicts built elsewhere (cheap and idempotent).

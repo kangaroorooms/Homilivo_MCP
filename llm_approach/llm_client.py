@@ -32,6 +32,7 @@ class LLMBudget:
     calls: int = 0
     tokens_in: int = 0
     tokens_out: int = 0
+    cached_tokens: int | None = None  # None: the usage object never reported cached tokens
     latency_ms: float = 0.0
     error_class: str | None = None  # "RateLimitError" when Groq answered 429, else the last error class
 
@@ -62,7 +63,7 @@ def _get_client() -> Any:
     return _client
 
 
-async def _call_groq(messages: list[dict[str, str]]) -> tuple[str, int, int]:
+async def _call_groq(messages: list[dict[str, str]]) -> tuple[str, int, int, int | None]:
     kwargs: dict[str, Any] = dict(
         model=config.groq_model(),
         messages=messages,
@@ -76,10 +77,14 @@ async def _call_groq(messages: list[dict[str, str]]) -> tuple[str, int, int]:
         _get_client().chat.completions.create(**kwargs), timeout=config.LLM_TIMEOUT_S
     )
     usage = getattr(response, "usage", None)
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", None)
+    cached = cached if isinstance(cached, int) and not isinstance(cached, bool) else None
     return (
         response.choices[0].message.content or "",
         int(getattr(usage, "prompt_tokens", 0) or 0),
         int(getattr(usage, "completion_tokens", 0) or 0),
+        cached,
     )
 
 
@@ -98,7 +103,7 @@ async def decide(
             return None
         started = time.perf_counter()
         try:
-            raw, tokens_in, tokens_out = await _call_groq(messages)
+            raw, tokens_in, tokens_out, cached = await _call_groq(messages)
         except asyncio.TimeoutError:
             budget.latency_ms += (time.perf_counter() - started) * 1000
             budget.error_class = "TimeoutError"
@@ -114,6 +119,8 @@ async def decide(
         budget.latency_ms += latency_ms
         budget.tokens_in += tokens_in
         budget.tokens_out += tokens_out
+        if cached is not None:
+            budget.cached_tokens = (budget.cached_tokens or 0) + cached
 
         decision = parse_decision(raw)
         if decision is not None:

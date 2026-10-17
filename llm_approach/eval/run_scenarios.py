@@ -11,6 +11,9 @@ Two modes:
     python -m llm_approach.eval.run_scenarios --stub
     python -m llm_approach.eval.run_scenarios --live --only S1,S4 --spacing 30
 
+``--live`` appends one line per turn to ``eval/results/scenarios_live.jsonl`` and skips scenarios
+already fully recorded, so it can be resumed on the next day (``--daily-token-budget``).
+
 Output is a pass/fail line per turn. No keys, tokens or ``.env`` values are printed.
 """
 
@@ -19,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import datetime as dt
 import json
 import os
 import sys
@@ -35,8 +39,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from llm_approach import config, llm_client, pipeline, reuse, rooms_client  # noqa: E402
+from llm_approach.eval import run_eval  # noqa: E402
 from llm_approach.schema import parse_decision  # noqa: E402
 from llm_approach.state import SessionStore  # noqa: E402
+
+LIVE_RESULTS = Path(__file__).resolve().parent / "results" / "scenarios_live.jsonl"
+EST_TOKENS_PER_TURN = 4_500  # one decision call is about 4,000 tokens plus the reply
 
 STUB_KB_ANSWER = {
     "grounded": True,
@@ -61,6 +69,8 @@ class TurnReport:
     skipped: str | None = None
     intent: str | None = None
     action: str | None = None
+    tokens: int = 0
+    latency_ms: float = 0.0
 
     @property
     def passed(self) -> bool:
@@ -243,6 +253,8 @@ async def run_scenario(
             report = TurnReport(
                 scenario["id"], i, turn["user"],
                 intent=result.metrics.get("intent"), action=result.metrics.get("action"),
+                tokens=int(result.metrics.get("tokens_in", 0) or 0) + int(result.metrics.get("tokens_out", 0) or 0),
+                latency_ms=float(result.metrics.get("total_ms", 0.0) or 0.0),
             )
             report.checks = _check_turn(
                 turn.get("expect", {}), result, store.peek(session_id), spy, searches_before, mode
@@ -258,6 +270,17 @@ async def run_scenario(
 
 
 # ---- CLI -------------------------------------------------------------------
+
+
+def live_record(report: TurnReport) -> dict[str, Any]:
+    """One line of scenarios_live.jsonl: ids, verdicts and check names only. No message text, no reply."""
+    return {
+        "scenario": report.scenario, "turn": report.index,
+        "status": "skipped" if report.skipped else ("pass" if report.passed else "fail"),
+        "intent": report.intent, "action": report.action,
+        "failed_checks": [c.name for c in report.checks if not c.ok],
+        "tokens": report.tokens, "latency_ms": round(report.latency_ms, 1),
+    }
 
 
 def format_report(report: TurnReport) -> str:
@@ -278,6 +301,8 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--live", action="store_true", help="real Groq; offline rooms; real guardrails")
     parser.add_argument("--only", default="", help="comma-separated ids, e.g. S1,S4")
     parser.add_argument("--spacing", type=float, default=30.0, help="seconds between LLM calls in --live (default 30)")
+    parser.add_argument("--daily-token-budget", type=int, default=150_000,
+                        help="--live: stop between scenarios when today's tokens would pass this (default 150000)")
     args = parser.parse_args(argv)
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -289,6 +314,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     run_mode = "live" if args.live else "stub"
+    today = dt.date.today().isoformat()
+    finished: set[str] = set()
+    used = [run_eval.tokens_used_today(LIVE_RESULTS.parent, today)] if run_mode == "live" else [0]
+    stopped: list[str] = []
+    if run_mode == "live":
+        wanted = {s["id"]: len(s["turns"]) for s in scenarios}
+        seen: dict[str, set[int]] = {}
+        for rec in run_eval.read_records(LIVE_RESULTS):
+            seen.setdefault(rec["scenario"], set()).add(int(rec["turn"]))
+        finished = {sid for sid, turns in seen.items() if sid in wanted and len(turns) >= wanted[sid]}
     if run_mode == "live":
         from dotenv import load_dotenv
 
@@ -302,16 +337,36 @@ def main(argv: list[str] | None = None) -> int:
     async def run_all() -> list[TurnReport]:
         every: list[TurnReport] = []
         for scenario in scenarios:
+            if run_mode == "live":
+                if scenario["id"] in finished:
+                    print(f"\n{scenario['id']}: already recorded in {LIVE_RESULTS.name}, skipped")
+                    continue
+                need = EST_TOKENS_PER_TURN * sum(1 for t in scenario["turns"] if t["llm"] != "never")
+                if used[0] + need > args.daily_token_budget:
+                    stopped.append(scenario["id"])
+                    break
             print(f"\n{scenario['id']}: {scenario['title']}")
-            every += await run_scenario(
+            reports = await run_scenario(
                 scenario, run_mode, spacing=args.spacing, log=lambda r: print(format_report(r), flush=True)
             )
+            if run_mode == "live":
+                for r in reports:
+                    run_eval.append_record(LIVE_RESULTS, live_record(r))
+                spent = sum(r.tokens for r in reports)
+                used[0] += spent
+                run_eval.add_usage(LIVE_RESULTS.parent, today, spent)
+            every += reports
         return every
 
     reports = asyncio.run(run_all())
     ran = [r for r in reports if not r.skipped]
     failed = [r for r in ran if not r.passed]
     print(f"\n{len(ran) - len(failed)}/{len(ran)} turns passed, {len(reports) - len(ran)} skipped ({run_mode} mode)")
+    if stopped:
+        only_arg = f" --only {args.only}" if args.only else ""
+        print(f"Daily token budget reached before {stopped[0]}. Resume tomorrow with exactly:\n  "
+              f"python -m llm_approach.eval.run_scenarios --live{only_arg} --spacing {args.spacing:g} "
+              f"--daily-token-budget {args.daily_token_budget}")
     return 1 if failed else 0
 
 

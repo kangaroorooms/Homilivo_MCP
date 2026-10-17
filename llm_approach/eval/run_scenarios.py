@@ -146,12 +146,16 @@ def runtime(scenario: dict[str, Any], mode: str, script: list[Any], spy: _Spy) -
             async def fake_decide(user_message, state_summary, budget):
                 spy.llm_calls += 1
                 item = script.pop(0)
+                if item == "rate_limit":  # Groq answered 429: the client reports it on the budget
+                    budget.error_class = "RateLimitError"
+                    return None
                 return None if item in (None, "timeout") else parse_decision(item)
 
             stack.enter_context(_patched(llm_client, "decide", fake_decide))
             stack.enter_context(_patched(reuse, "get_is_security_blocked", lambda: (lambda m: (False, ""))))
             stack.enter_context(_patched(reuse, "get_output_guardrail", lambda: (lambda t: (True, t))))
-            stack.enter_context(_patched(reuse, "get_answer_platform_question", lambda: (lambda q: dict(STUB_KB_ANSWER))))
+            kb_answer = {**STUB_KB_ANSWER, **scenario.get("kb_answer", {})}  # a scenario may stub a different answer
+            stack.enter_context(_patched(reuse, "get_answer_platform_question", lambda: (lambda q: dict(kb_answer))))
             if scenario.get("rooms_http_status"):
                 status = int(scenario["rooms_http_status"])
                 stack.enter_context(_patched(rooms_client, "_httpx_get", lambda *a, **k: _FakeResponse(status)))

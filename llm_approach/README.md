@@ -780,3 +780,30 @@ New `tests/test_sanitize.py` (109 tests): 17 tag variants (spaces, case, full-wi
 
 - The text stays inside the data block as data: instruction-like words in a title ("ignore previous instructions") are not removed, only the ability to close the fence or fake a role line. The system prompt tells the model the block is data.
 - Fence names are fixed at `verified_data` and `user_message`; a new fence tag needs an entry in `prompts.FENCE_NAMES`.
+
+
+---
+
+# Phase 7 (offline part) and Phase 8 (2026-10-17)
+
+Live evaluation deferred, see PLAN.md section 15, [PENDING.md](PENDING.md) and [RESULTS.md](RESULTS.md). Only files inside `llm_approach/` changed. The system prompt, few-shot examples, `schema.py`, `validators.py` and `prompts.py` are unchanged.
+
+## Added
+
+| File | What |
+|---|---|
+| `tests/test_log_audit.py` | No user text, room text, token or env value in logs, metrics or error replies |
+| `tests/test_concurrency_restart.py` | Two sessions interleaved through the per-session lock; clean start after a simulated restart |
+| `tests/test_startup_config.py` | CLI and server with a missing or empty `GROQ_API_KEY` |
+| `scenarios/S24.json` to `S28.json` | Regressions: rate limit, placeholder platform text, closing-tag variants (blocked and neutralised), area loop |
+| `PENDING.md`, `RESULTS.md` | Open items; honest results report (no Option B accuracy number) |
+
+## Fixes found by the audit
+
+- `rooms_client.py`: the rooms API's error `message` was logged verbatim and can echo query values or a token. `scrub_message` now removes the search values, the token and token-shaped text first.
+- `llm_client.py`: a blank `GROQ_API_KEY` is treated like a missing one (`KeyError`, no request is sent).
+- `eval/run_scenarios.py`: a scripted turn may be `"rate_limit"`, and a scenario may set `"kb_answer"` (stub knowledge-base answer). `tests/test_pipeline.py` now expects S1 to S28.
+
+## Test results
+
+`python -m pytest llm_approach/tests -q`: **817 passed**. `run_scenarios --stub`: 67/67 turns (28 scenarios).

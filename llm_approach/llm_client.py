@@ -59,7 +59,10 @@ def _get_client() -> Any:
     if _client is None:
         from groq import AsyncGroq
 
-        _client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"], max_retries=0)  # fail fast; we retry once ourselves
+        key = os.environ.get("GROQ_API_KEY", "").strip()
+        if not key:  # missing or blank: fail here, before any request is made
+            raise KeyError("GROQ_API_KEY")  # same error as before for a missing key
+        _client = AsyncGroq(api_key=key, max_retries=0)  # fail fast; we retry once ourselves
     return _client
 
 

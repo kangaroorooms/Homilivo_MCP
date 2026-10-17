@@ -683,3 +683,76 @@ Start Phase 0 of the LLM approach.
 Rules: only llm_approach/ may change. No commit. Never print secrets.
 Finish with git status --short.
 ```
+
+
+---
+
+## 15. Status update (live evaluation deferred), 2026-10-17
+
+### Complete and pending
+
+| Part | Status |
+|---|---|
+| Phases 0 to 6b: setup and baseline, decision layer, state, actions, pipeline and CLI, server and website integration, area support, rooms-API pagination, evaluation tooling, prompt-delimiter hardening | **Complete**, all verified offline |
+| Phase 7, offline part: log audit, regression scenarios S24 to S28, concurrency and restart tests, startup-config tests | **Complete** (see README and RESULTS.md) |
+| Phase 8: `RESULTS.md` | **Written, provisional**: offline results only, no accuracy number for Option B |
+| Live evaluation: `run_eval` on ctxY, matrix55, fresh, golden, golden_slots; `run_scenarios --live`; the 3-run consistency sample | **Pending** (deferred, see below) |
+| Phase 7, live-dependent part: prompt tuning for failing categories, prompt trimming | **Pending** (needs the live results) |
+| `eval/results/comparison.md` with live numbers | **Pending** (`python -m llm_approach.eval.report` after the runs) |
+
+Everything else still open is listed in [PENDING.md](PENDING.md).
+
+### Why the live evaluation is deferred
+
+The dry run (`python -m llm_approach.eval.run_eval --dry-run --dataset all`) gives, for one run of every dataset:
+
+| Dataset | Calls | Estimated tokens | Time at 30 s spacing |
+|---|---|---|---|
+| ctxY | 33 | about 126K | 16.5 min |
+| matrix55 | 54 | about 200K | 27 min |
+| fresh | 59 | about 219K | 29.5 min |
+| golden | 20 | about 71K | 10 min |
+| golden_slots | 20 | about 71K | 10 min |
+| **Total** | **186** | **about 688K** | **about 93 min** |
+
+The free Groq tier allows about 200K tokens a day (the runner stops at 150K a day to keep a margin). Schedule:
+
+| Option | Main sets (688K) | Scenarios and consistency sample (about 360K more) | Total |
+|---|---|---|---|
+| Free tier, 150K a day | about 5 days (4.6 by the estimate) | about 2 to 3 days more | about 8 to 9 days |
+| Paid plan or a separate key with a higher quota | about 93 minutes of runtime, one session | a few hours more | 1 to 2 days |
+
+The estimate is from prompt size; real usage is recorded per call in `eval/results/usage.jsonl`. A retry after invalid JSON costs another call.
+
+### Options to ask the team lead about
+
+1. **Groq Developer (paid) plan** for this key or a project key. Fastest: the whole evaluation fits in one or two sessions.
+2. **A separate key or account approved by him.** Same speed gain if its quota is higher. Needs his approval because user-style test messages go to a hosted provider.
+3. **Accept the free tier**: about 8 to 9 days, one dataset per day, no cost, results arrive late.
+
+If a higher quota is arranged, raise `--daily-token-budget` (default 150000) to match it.
+
+### Resume commands, in order
+
+PowerShell, venv active, from the repo root. Each command stops at the daily budget and prints how to continue; finished items are skipped on the next start.
+
+```powershell
+cd "C:\Faizal\AI intern\Homilivo chatbot"
+.\venv\Scripts\Activate.ps1
+
+python -m llm_approach.eval.run_eval --dataset ctxY
+python -m llm_approach.eval.run_eval --dataset matrix55
+python -m llm_approach.eval.run_eval --dataset fresh
+python -m llm_approach.eval.run_eval --dataset golden
+python -m llm_approach.eval.run_eval --dataset golden_slots
+
+python -m llm_approach.eval.run_scenarios --live --spacing 30
+
+python -m llm_approach.eval.run_eval --dataset all --sample 30 --runs 3
+
+python -m llm_approach.eval.report
+```
+
+### Freeze until the runs are done
+
+The system prompt, the few-shot examples, `schema.py`, `validators.py` and `prompts.py` stay unchanged until all of the runs above are finished, so the system that is evaluated is the system that ships. Prompt tuning and trimming (Phase 7, live part) start only after the report is regenerated, and every change after that needs a re-run of the affected sets.

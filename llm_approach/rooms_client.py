@@ -244,9 +244,23 @@ def _offline_search(
 # ---- HTTP -----------------------------------------------------------------
 
 
-def _error_message(body: Any) -> str | None:
+_SECRET_LIKE = re.compile(r"(?:Bearer\s+\S+|eyJ[\w-]{6,}\S*|gsk_\w+|(?:token|key|password|secret)\s*[=:]\s*\S+)", re.IGNORECASE)
+
+
+def scrub_message(text: str, search: dict[str, Any] | None = None, token: str | None = None) -> str:
+    """Remove what an API error message may echo back: the user's search values, the token and
+    anything token-shaped. The message is logged and kept in ``RoomsResult.message``."""
+    for value in (search or {}).values():
+        if isinstance(value, (str, int)) and not isinstance(value, bool) and len(str(value)) >= 2:
+            text = re.sub(re.escape(str(value)), "[value]", text, flags=re.IGNORECASE)
+    if token:
+        text = text.replace(token, "[token]")
+    return _SECRET_LIKE.sub("[redacted]", text)
+
+
+def _error_message(body: Any, search: dict[str, Any] | None = None, token: str | None = None) -> str | None:
     if isinstance(body, dict) and isinstance(body.get("message"), str):
-        return body["message"][:200]
+        return scrub_message(body["message"][:200], search, token)
     return None
 
 
@@ -348,10 +362,10 @@ def search_rooms(
     assert raw is not None
 
     if raw.status_code >= 400:
-        return _fail(f"http_{raw.status_code}", raw.status_code, _error_message(raw.body))
+        return _fail(f"http_{raw.status_code}", raw.status_code, _error_message(raw.body, search, token))
     rooms = extract_rooms(raw.body)
     if rooms is None:
-        return _fail("bad_payload", raw.status_code, _error_message(raw.body))
+        return _fail("bad_payload", raw.status_code, _error_message(raw.body, search, token))
     total, has_next = parse_meta(raw.body)
     return _finish(
         rooms,

@@ -10,7 +10,7 @@ import asyncio
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from llm_approach import config, prompts
@@ -34,7 +34,12 @@ class LLMBudget:
     tokens_out: int = 0
     cached_tokens: int | None = None  # None: the usage object never reported cached tokens
     latency_ms: float = 0.0
+    call_ms: list[float] = field(default_factory=list)  # latency of each Groq call, in order
     error_class: str | None = None  # "RateLimitError" when Groq answered 429, else the last error class
+
+    def record_latency(self, ms: float) -> None:
+        self.latency_ms += ms
+        self.call_ms.append(ms)
 
     def try_consume(self) -> bool:
         if self.calls >= self.max_calls:
@@ -108,18 +113,18 @@ async def decide(
         try:
             raw, tokens_in, tokens_out, cached = await _call_groq(messages)
         except asyncio.TimeoutError:
-            budget.latency_ms += (time.perf_counter() - started) * 1000
+            budget.record_latency((time.perf_counter() - started) * 1000)
             budget.error_class = "TimeoutError"
             logger.warning("llm_decision attempt=%d outcome=timeout", attempt)
             return None
         except Exception as exc:  # network, auth, rate limit: class name only
-            budget.latency_ms += (time.perf_counter() - started) * 1000
+            budget.record_latency((time.perf_counter() - started) * 1000)
             budget.error_class = "RateLimitError" if is_rate_limit_error(exc) else type(exc).__name__
             logger.warning("llm_decision attempt=%d outcome=error class=%s", attempt, type(exc).__name__)
             return None
 
         latency_ms = (time.perf_counter() - started) * 1000
-        budget.latency_ms += latency_ms
+        budget.record_latency(latency_ms)
         budget.tokens_in += tokens_in
         budget.tokens_out += tokens_out
         if cached is not None:

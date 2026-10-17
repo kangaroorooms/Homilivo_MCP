@@ -251,8 +251,9 @@ def scrub_message(text: str, search: dict[str, Any] | None = None, token: str | 
     """Remove what an API error message may echo back: the user's search values, the token and
     anything token-shaped. The message is logged and kept in ``RoomsResult.message``."""
     for value in (search or {}).values():
-        if isinstance(value, (str, int)) and not isinstance(value, bool) and len(str(value)) >= 2:
-            text = re.sub(re.escape(str(value)), "[value]", text, flags=re.IGNORECASE)
+        for item in value if isinstance(value, (list, tuple)) else (value,):
+            if isinstance(item, (str, int)) and not isinstance(item, bool) and len(str(item)) >= 2:
+                text = re.sub(re.escape(str(item)), "[value]", text, flags=re.IGNORECASE)
     if token:
         text = text.replace(token, "[token]")
     return _SECRET_LIKE.sub("[redacted]", text)
@@ -260,7 +261,7 @@ def scrub_message(text: str, search: dict[str, Any] | None = None, token: str | 
 
 def _error_message(body: Any, search: dict[str, Any] | None = None, token: str | None = None) -> str | None:
     if isinstance(body, dict) and isinstance(body.get("message"), str):
-        return scrub_message(body["message"][:200], search, token)
+        return scrub_message(body["message"][:2000], search, token)[:200]  # scrub first: a cut must not split a value
     return None
 
 

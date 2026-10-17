@@ -214,6 +214,7 @@ async def _run_turn(
     summary = prompts.build_state_summary(state.to_prompt_state())
     decision = await llm_client.decide(message, summary, llm_budget)
     m.llm_ms, m.tokens_in, m.tokens_out = llm_budget.latency_ms, llm_budget.tokens_in, llm_budget.tokens_out
+    m.llm_calls, m.llm_call_ms = llm_budget.calls, list(llm_budget.call_ms)
 
     if decision is None and llm_budget.error_class == "RateLimitError":
         # Groq is throttling us: say so, rather than asking the user a misleading question.

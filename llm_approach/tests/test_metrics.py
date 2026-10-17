@@ -9,7 +9,7 @@ from llm_approach.tests.conftest import dec
 
 FIELDS = {
     "intent", "operation", "confidence", "slots_valid", "slots_rejected", "action", "tool_called",
-    "llm_ms", "api_ms", "total_ms", "tokens_in", "tokens_out", "fallback_used", "error_class",
+    "llm_ms", "llm_calls", "llm_call_ms", "api_ms", "total_ms", "tokens_in", "tokens_out", "fallback_used", "error_class",
 }
 
 

@@ -31,7 +31,9 @@ class TurnMetrics:
     slots_rejected: list[str] = field(default_factory=list)  # slot names only
     action: str | None = None
     tool_called: bool = False
-    llm_ms: float = 0.0
+    llm_ms: float = 0.0  # all Groq calls of the turn together
+    llm_calls: int = 0
+    llm_call_ms: list[float] = field(default_factory=list)  # each Groq call, in order
     api_ms: float = 0.0
     total_ms: float = 0.0
     tokens_in: int = 0
@@ -43,6 +45,7 @@ class TurnMetrics:
         data = asdict(self)
         for key in ("llm_ms", "api_ms", "total_ms"):
             data[key] = round(data[key], 1)
+        data["llm_call_ms"] = [round(v, 1) for v in data["llm_call_ms"]]
         if data["confidence"] is not None:
             data["confidence"] = round(data["confidence"], 3)
         return data
@@ -69,3 +72,59 @@ def record(metrics: TurnMetrics) -> None:
             handle.write(json.dumps(line, ensure_ascii=False) + "\n")
     except OSError as exc:
         logger.warning("metrics write failed: %s", type(exc).__name__)
+
+
+# ---- summary (p50 / p95 from the JSONL) ---------------------------------------
+
+
+def percentile(values: list[float], pct: float) -> float | None:
+    """Nearest-rank percentile (pct in 0..100); None for no values."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = max(1, -(-len(ordered) * pct // 100))  # ceil
+    return ordered[int(rank) - 1]
+
+
+def _stats(values: list[float]) -> dict[str, Any]:
+    return {"n": len(values), "p50": percentile(values, 50), "p95": percentile(values, 95)}
+
+
+def summarize(path: Path | None = None) -> dict[str, Any]:
+    """p50 and p95 of the latency fields in the metrics file (numbers only, no text).
+
+    ``per_groq_call_ms``: every individual Groq call. ``llm_ms``: the Groq time of a turn
+    (retries included). ``total_ms``: the whole turn. Unreadable lines are skipped."""
+    path = path or metrics_path()
+    turns: list[dict[str, Any]] = []
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    turns.append(row)
+    except OSError:
+        pass
+
+    def numbers(key: str, rows: list[dict[str, Any]]) -> list[float]:
+        return [float(r[key]) for r in rows if isinstance(r.get(key), (int, float)) and not isinstance(r.get(key), bool)]
+
+    llm_rows = [r for r in turns if numbers("llm_ms", [r]) and r["llm_ms"] > 0]
+    calls = [float(v) for r in turns for v in (r.get("llm_call_ms") or []) if isinstance(v, (int, float))]
+    return {
+        "turns": len(turns),
+        "total_ms": _stats(numbers("total_ms", turns)),
+        "llm_ms": _stats(numbers("llm_ms", llm_rows)),
+        "per_groq_call_ms": _stats(calls),
+        "fallback_turns": sum(1 for r in turns if r.get("fallback_used") is True),
+        "error_turns": sum(1 for r in turns if r.get("error_class")),
+    }
+
+
+if __name__ == "__main__":  # python -m llm_approach.metrics [path]
+    import sys
+
+    print(json.dumps(summarize(Path(sys.argv[1]) if len(sys.argv) > 1 else None), indent=2))

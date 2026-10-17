@@ -167,7 +167,9 @@ def test_rooms_api_message_is_scrubbed_of_search_values(audit, monkeypatch):
     result = rooms_client.search_rooms({"city": "Zorbaville", "area": "UMARKalpha"}, TurnBudget())
     assert result.ok is False
     _assert_clean(audit.caplog.text, what="the rooms failure log")
-    assert result.message is None or "Zorbaville" not in result.message
+    assert result.message is not None and "[value]" in result.message
+    assert "Zorbaville" not in result.message and "UMARKalpha" not in result.message
+    assert ROOMS_TOKEN not in result.message
 
 
 def test_server_error_path_logs_class_only(audit, monkeypatch):

@@ -3,7 +3,7 @@
 **Project:** Homilivo chatbot
 **Approach:** One LLM call per message reads the user message plus conversation memory and returns a structured decision. Code validates the decision and acts on it.
 **LLM:** Groq, `openai/gpt-oss-20b` (the model already configured in `app/experiments/agent_modes.py`)
-**Status:** Plan. Nothing in this document is built or measured yet.
+**Status:** The original plan (written before the build). Phases 0 to 6b, the offline part of Phase 7 and Phase 8 are built and verified offline; the live evaluation is pending. Current status: section 15, [PENDING.md](PENDING.md) and [RESULTS.md](RESULTS.md).
 
 ---
 

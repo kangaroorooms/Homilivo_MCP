@@ -20,7 +20,7 @@ Everything below ran with no Groq call and no rooms-API call (stub LLM, offline 
 
 | Check | Result |
 |---|---|
-| `python -m pytest llm_approach/tests -q` | **817 passed**, about 10 s, no network, no torch |
+| `python -m pytest llm_approach/tests -q` | **843 passed** (817 plus 26 added by the independent audit), about 10 s, no network, no torch |
 | `run_safety` (real guardrail loaded) | **43/43 attacks blocked**; **0/144 false positives** on general messages; **room-text injection 6/6** neutralised |
 | `run_robustness` | **7/7 clean** (Groq timeout, invalid JSON twice, 429, rooms API 500 with a Prisma message, rooms timeout, empty results, failing output guardrail): consistent history, no raw error text, rooms kept where required |
 | `run_scenarios --stub` | **67/67 turns pass** across 28 scenarios (S1 to S28) |
@@ -45,7 +45,7 @@ Not changed in this phase: the system prompt text, the few-shot examples, `schem
 - **Consistency across runs** (same decision in 3 runs of the same input).
 - **Invalid-JSON rate** of the real model on real prompts. One early smoke call worked; three calls are not a measurement.
 - **Token use per call in real traffic.** Only estimates exist (about 3.7K tokens per call).
-- **Latency** (p50, p95 of the model call) on real calls.
+- **Latency** (p50, p95 of the model call) on real calls. The tool exists (`python -m llm_approach.metrics`, reads `eval/results/metrics.jsonl` written when `LLM_APPROACH_METRICS=1`); no real traffic has been measured.
 - **Groq prompt caching** (whether the usage object reports cached tokens).
 - **Real-model behaviour on the scenarios.** The stub runs prove the plumbing (prompt, client, validation, actions, state); only the live run shows whether the model follows the examples.
 - The rooms API through the pipeline for large cities (maximum page size unknown), a real uvicorn run, and website checklist items 11 and 12.

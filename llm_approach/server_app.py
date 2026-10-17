@@ -195,11 +195,18 @@ def chunk_text(text: str) -> list[str]:
     return re.findall(r"\S+\s*", text) or [text]
 
 
-def _float_env(name: str, default: float) -> float:
+def _float_env(name: str, default: float, *, minimum: float = 0.0) -> float:
+    """A finite float >= ``minimum`` from the environment, else the default."""
     try:
-        return float(os.getenv(name, default))
+        value = float(os.getenv(name, default))
     except ValueError:
         return default
+    return value if value >= minimum and value == value and value != float("inf") else default
+
+
+def _short(value: Any, limit: int = 32) -> str:
+    text = repr(value)
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 # ---- app -----------------------------------------------------------------------
@@ -296,12 +303,13 @@ def create_app() -> FastAPI:
             while True:
                 try:
                     payload = await asyncio.wait_for(
-                        websocket.receive_json(), timeout=_float_env("WS_HEARTBEAT_INTERVAL_SECONDS", 20.0)
+                        websocket.receive_json(),
+                        timeout=_float_env("WS_HEARTBEAT_INTERVAL_SECONDS", 20.0, minimum=0.01),
                     )
                 except asyncio.TimeoutError:
                     await websocket.send_json({"event": "ping"})
                     continue
-                except ValueError:
+                except (ValueError, KeyError):  # not JSON, or a binary frame (no "text" key)
                     await send_error("Message must be valid JSON.")
                     continue
 
@@ -320,7 +328,7 @@ def create_app() -> FastAPI:
                     )
                     continue
                 if mode not in VALID_MODES:
-                    await send_error(f"Invalid mode: {mode!r}")
+                    await send_error(f"Invalid mode: {_short(mode)}")
                     continue
                 if not _rl.check_rate_limit(client_key).allowed or not _rl.check_session_rate_limit(session_id).allowed:
                     await send_error("Too many requests. Please slow down.")
@@ -338,6 +346,12 @@ def create_app() -> FastAPI:
                 await websocket.send_json({"event": "done", **done})
         except WebSocketDisconnect:
             pass
+        except Exception as exc:  # noqa: BLE001 - send after a disconnect, a failure building the reply
+            logger.error("websocket closed after an error: %s", type(exc).__name__)
+            try:
+                await websocket.close(code=1011)
+            except Exception:  # noqa: BLE001 - already closed
+                pass
 
     return app
 

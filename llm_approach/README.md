@@ -3,7 +3,7 @@
 LLM-decision pipeline (Option B) built beside the existing chatbot. See [PLAN.md](PLAN.md) for the design and phases.
 Only files inside this folder are created or changed. Existing code is reused by import only.
 
-**Status:** Phases 0 to 5 done (2026-10-17); the live website checklist (PLAN section 10) is still to be run by hand. See the per-phase sections below.
+**Status:** Phases 0 to 6b, the offline part of Phase 7, Phase 8 and an independent audit are done (2026-10-17). The live evaluation and website checklist items 11 and 12 are still open: see [PENDING.md](PENDING.md) and [RESULTS.md](RESULTS.md). Per-phase sections below.
 
 ## Phase 0 contents
 
@@ -509,7 +509,7 @@ One-off check with the real output guardrail (torch loaded, no network): `valida
 | `server_app.py` | FastAPI app: `/`, `/health`, `/ready`, `/chat-ui/demo-token`, `POST /chat`, `POST /chat/reset`, `WS /ws/chat` |
 | `scripts/start-server.ps1` | Starts uvicorn on 8001 with `--no-access-log` |
 | `scripts/start-frontend-llm.ps1.template` | Template (never run from here) to point the website at 8001 and start it |
-| `tests/test_server.py` | 54 tests: server plus the four carry-over fixes |
+| `tests/test_server.py` | Server plus the four carry-over fixes (54 tests when written, 59 now) |
 
 ## Run (PowerShell, venv active)
 
@@ -807,3 +807,35 @@ Live evaluation deferred, see PLAN.md section 15, [PENDING.md](PENDING.md) and [
 ## Test results
 
 `python -m pytest llm_approach/tests -q`: **817 passed**. `run_scenarios --stub`: 67/67 turns (28 scenarios).
+
+
+---
+
+# Independent audit (2026-10-17)
+
+Read-only audit first, then fixes inside `llm_approach/` only. The system prompt text, the few-shot examples, `schema.py` and `validators.py` are unchanged.
+
+## Fixed
+
+| Finding | File | Fix |
+|---|---|---|
+| The LRU eviction could remove the session it had just created when every older session was busy (memory lost, two turns could overlap) | `state.py` | `_evict_to_cap(keep)` never evicts the session in use |
+| `SESSION_*` env values that are not positive integers crashed the import (and the error carried the value) | `config.py` | Bad values fall back to the defaults |
+| WebSocket: a binary frame raised an unhandled `KeyError`; a send after a disconnect or a failure building the reply gave an unhandled traceback; `WS_HEARTBEAT_INTERVAL_SECONDS` of 0 or less made a ping flood; `Invalid mode:` echoed unbounded client text | `server_app.py` | Binary frame gives the normal "valid JSON" error event; other failures log the class only and close with 1011; the heartbeat needs a finite value of at least 0.01 s, else 20 s; the mode echo is cut at 32 characters |
+| No call count or per-call Groq latency; no p50/p95 over real turns | `llm_client.py`, `pipeline.py`, `metrics.py` | `TurnMetrics.llm_calls` and `llm_call_ms` (numbers only); `python -m llm_approach.metrics [file]` prints p50/p95 of `total_ms`, `llm_ms` and each Groq call from `eval/results/metrics.jsonl` |
+| Rooms-API error text: list values (`room_types`) were not scrubbed, and the text was cut to 200 characters before scrubbing | `rooms_client.py` | Lists are scrubbed; scrub first, then cut |
+| Dead config values `DEBUG` and `LIVE` | `config.py` | Removed |
+| `PLAN.md` said nothing was built; README status was stale | docs | Corrected |
+| Tests that passed without checking (`test_cards_are_json_serialisable`, the rooms-message scrub check) | `tests/` | Real assertions |
+
+## Not fixed (and why)
+
+- **No turn-level timeout.** Rooms and Groq calls have their own timeouts; only the knowledge-base and guardrail threads are unbounded. Cancelling a thread-backed turn would let it write to state after the lock is released, which is worse than the rare hang.
+- **`reset` during a running turn** lets a second turn start on a fresh entry (documented in Phase 2).
+- **A client that knows a valid session UUID can use that session.** Same as the current backend; the id is unguessable and rate limited.
+- `reuse.get_out_of_scope_response`, `state.clear_selection` and `state.clear_pending` are unused outside tests; the session-id regex exists in `state.py` and `server_app.py`. Left as they are (no risk, and a shared helper would touch more files than the fix is worth).
+- Runtime p50/p95 now has a tool, but no real traffic has been measured.
+
+## Tests
+
+`python -m pytest llm_approach/tests -q`: **843 passed** (817 + 26 in `tests/test_audit_fixes.py`). The new tests fail on the old code (checked by reverting the source files).

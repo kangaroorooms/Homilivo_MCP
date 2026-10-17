@@ -39,7 +39,7 @@ Legend: `[ ]` open, `[x]` done.
 
 - [ ] Prompt tuning for failing categories (re-run the affected sets after each change)
 - [ ] Prompt trimming (see the findings below)
-- [ ] Review latency from real traffic: p50 and p95 of LLM time, max tokens, history length
+- [ ] Review latency from real traffic: run with `LLM_APPROACH_METRICS=1`, then `python -m llm_approach.metrics` (p50/p95 of turn time, Groq time per turn and per call); also max tokens and history length
 - [ ] Results stable across 3 runs (consistency at least 95%)
 
 ## Prompt-size findings (input for tuning after the live results; nothing was trimmed)

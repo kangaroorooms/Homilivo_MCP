@@ -242,13 +242,14 @@ class SessionStore:
         for sid in [s for s, e in self._entries.items() if self._expired(e, now)]:
             del self._entries[sid]
 
-    def _evict_to_cap(self) -> None:
-        """LRU eviction. Sessions with a running or waiting turn are kept, so
-        the store can briefly exceed the cap when every session is busy."""
+    def _evict_to_cap(self, keep: str) -> None:
+        """LRU eviction. Sessions with a running or waiting turn are kept, and so is
+        ``keep`` (the session being used right now), so the store can briefly exceed
+        the cap when every session is busy."""
         for sid in list(self._entries):
             if len(self._entries) <= self.max_sessions:
                 break
-            if self._entries[sid].active == 0:
+            if sid != keep and self._entries[sid].active == 0:
                 del self._entries[sid]
 
     def _get_entry(self, session_id: Any) -> _Entry:
@@ -261,7 +262,7 @@ class SessionStore:
             self._entries[sid] = entry
         entry.last_access = now
         self._entries.move_to_end(sid)
-        self._evict_to_cap()
+        self._evict_to_cap(sid)
         return entry
 
     # ---- public --------------------------------------------------------

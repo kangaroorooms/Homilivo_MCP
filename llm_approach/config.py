@@ -19,16 +19,22 @@ MAX_USER_MESSAGE_CHARS = 500
 LAST_BOT_MESSAGE_CHARS = 300
 HISTORY_MESSAGE_CHARS = 200
 
+
+def _int_env(name: str, default: int) -> int:
+    """A positive integer from the environment, else the default (a bad value is ignored, never echoed)."""
+    try:
+        value = int(os.getenv(name, "").strip() or default)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 # Mirrors app/session_store.py and app/experiments/agent_modes.py: same env
 # vars, same defaults (not imported, because those modules are heavy).
-SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))
-SESSION_MAX_COUNT = int(os.getenv("SESSION_MAX_COUNT", "1000"))
-SESSION_MAX_HISTORY_MESSAGES = int(os.getenv("SESSION_MAX_HISTORY_MESSAGES", "40"))
+SESSION_TTL_SECONDS = _int_env("SESSION_TTL_SECONDS", 3600)
+SESSION_MAX_COUNT = _int_env("SESSION_MAX_COUNT", 1000)
+SESSION_MAX_HISTORY_MESSAGES = _int_env("SESSION_MAX_HISTORY_MESSAGES", 40)
 MAX_LLM_CONTEXT_CHARS = 8000
-
-
-def _flag(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 # Rooms API (mirrors API_URL in app/server.py, which is heavy to import).
@@ -39,21 +45,10 @@ ROOMS_LIMIT = 10
 ROOMS_SORT = "latest"
 
 
-def _int_env(name: str, default: int) -> int:
-    try:
-        value = int(os.getenv(name, "").strip() or default)
-    except ValueError:
-        return default
-    return value if value > 0 else default
-
-
 # The API has no area filter, so an area search fetches this many rooms and
 # filters them here. ASSUMPTION: the real API accepts this limit (unverified).
 ROOMS_AREA_FETCH_LIMIT = _int_env("LLM_APPROACH_ROOMS_AREA_FETCH_LIMIT", 30)
 OFFLINE_ROOMS_ENV = "LLM_APPROACH_OFFLINE_ROOMS"  # "1" -> fixtures/rooms_bangalore.json, or a path
-
-DEBUG = _flag("LLM_APPROACH_DEBUG")  # may print decision JSON in the CLI
-LIVE = _flag("LLM_APPROACH_LIVE")  # enables live tests
 
 
 def groq_model() -> str:

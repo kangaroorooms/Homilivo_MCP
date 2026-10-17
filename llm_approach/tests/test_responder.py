@@ -60,4 +60,5 @@ def test_unavailable_message():
 
 def test_cards_are_json_serialisable(rooms):
     import json
-    json.dumps(responder.room_cards(rooms))
+    cards = responder.room_cards(rooms)
+    assert cards and json.loads(json.dumps(cards)) == cards

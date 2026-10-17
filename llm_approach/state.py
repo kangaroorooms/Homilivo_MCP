@@ -58,7 +58,7 @@ ROOM_ALLOWED_FIELDS = frozenset(
     }
 )
 
-SEARCH_FIELDS = ("city", "bhk", "min_price", "max_price", "room_types", "ideal_for", "amenity")
+SEARCH_FIELDS = ("city", "area", "bhk", "min_price", "max_price", "room_types", "ideal_for", "amenity")
 PENDING_TYPES = ("city", "clarify", "reject")
 
 _UUID_RE = re.compile(
@@ -93,6 +93,7 @@ class LLMConversationState:
     pending_question: dict[str, Any] | None = None
     rejected_room_ids: list[Any] = field(default_factory=list)
     api_room_count: int | None = None  # rooms the API returned, before client-side filtering
+    rooms_truncated: bool = False  # matching rooms were cut to the display limit
     turn_count: int = 0
     updated_at: float = 0.0
 
@@ -103,18 +104,21 @@ class LLMConversationState:
         search: dict[str, Any] | None,
         rooms: list[dict[str, Any]] | None,
         api_count: int | None = None,
+        truncated: bool = False,
     ) -> bool:
         """Store a finished search. ``rooms=None`` means the rooms API failed:
         nothing changes (previous rooms, selection, search and pending stay).
         An empty list is a real search with no results and does replace state.
         ``api_count`` is how many rooms the API returned before client-side
-        filtering (amenity); SHOW_MORE uses it. Defaults to ``len(rooms)``.
+        filtering (amenity, area); SHOW_MORE uses it. Defaults to ``len(rooms)``.
+        ``truncated``: more matching rooms exist than were kept for display.
         Returns True when the state was updated."""
         if rooms is None:
             return False
         self.current_search = {key: (search or {}).get(key) for key in SEARCH_FIELDS}
         self.rooms_on_screen = [clean_room(r) for r in rooms if isinstance(r, dict)]
         self.api_room_count = len(self.rooms_on_screen) if api_count is None else api_count
+        self.rooms_truncated = truncated
         self.selected_room_index = None
         self.pending_question = None
         self.rejected_room_ids = []

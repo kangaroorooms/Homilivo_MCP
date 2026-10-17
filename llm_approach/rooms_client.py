@@ -3,7 +3,9 @@
 Same URL, auth header and query parameters as ``search_rooms`` in
 ``app/server.py``. The token comes from ``KANGAROO_TOKEN`` only and is never
 logged. Retry once, only on timeout or connection error. Never on 4xx/5xx.
-Amenity is not an API parameter: it is filtered here, on the result.
+Amenity and area are not API parameters: they are filtered here, on the result.
+An area search fetches ``config.ROOMS_AREA_FETCH_LIMIT`` rooms and shows at most
+``config.ROOMS_LIMIT`` of the matches.
 """
 
 from __future__ import annotations
@@ -37,7 +39,11 @@ class RoomsResult:
     error_class: str | None = None
     status: int | None = None
     message: str | None = None
-    api_count: int | None = None  # rooms returned by the API, before the amenity filter
+    api_count: int | None = None  # rooms returned by the API, before the area and amenity filters
+    fetch_limit: int | None = None  # the limit the fetch asked for
+    truncated: bool = False  # more matching rooms than the display limit
+    area_matches: int | None = None  # rooms that matched the area (None: no area asked)
+    areas: list[str] = field(default_factory=list)  # real locations of the fetched rooms (area searches)
 
 
 @dataclass
@@ -117,6 +123,63 @@ def filter_by_amenity(rooms: list[dict[str, Any]], amenity: str | None) -> list[
     return rooms if not amenity else [r for r in rooms if has_amenity(r, amenity)]
 
 
+def normalize_area(value: Any) -> str:
+    """Lowercase, punctuation removed, spaces collapsed."""
+    return " ".join(re.sub(r"[\W_]+", " ", str(value).lower()).split())
+
+
+def room_matches_area(room: dict[str, Any], area: str) -> bool:
+    """Whole-word match of the area inside the room's location or landmark."""
+    wanted = normalize_area(area)
+    if not wanted:
+        return False
+    for key in ("location", "landmark"):
+        value = room.get(key)
+        if isinstance(value, str) and f" {wanted} " in f" {normalize_area(value)} ":
+            return True
+    return False
+
+
+def filter_by_area(rooms: list[dict[str, Any]], area: str | None) -> list[dict[str, Any]]:
+    return rooms if not area else [r for r in rooms if room_matches_area(r, area)]
+
+
+def distinct_locations(rooms: list[dict[str, Any]]) -> list[str]:
+    """Real ``location`` values of the rooms, first seen first, case-insensitive."""
+    seen: dict[str, str] = {}
+    for room in rooms:
+        location = clean_room(room).get("location")
+        if isinstance(location, str) and location.strip():
+            seen.setdefault(location.strip().lower(), location.strip())
+    return list(seen.values())
+
+
+def _finish(
+    fetched: list[dict[str, Any]],
+    search: dict[str, Any],
+    *,
+    fetch_limit: int,
+    display_limit: int,
+    status: int | None = None,
+) -> RoomsResult:
+    """The one place where area and amenity filters and the display cut happen,
+    for the live API and the offline fixture alike."""
+    area = search.get("area")
+    matched = filter_by_area(fetched, area)
+    found = filter_by_amenity(matched, search.get("amenity"))
+    shown = found[:display_limit]
+    return RoomsResult(
+        ok=True,
+        rooms=[clean_room(r) for r in shown],
+        status=status,
+        api_count=len(fetched),
+        fetch_limit=fetch_limit,
+        truncated=len(found) > len(shown),
+        area_matches=len(matched) if area else None,
+        areas=distinct_locations(fetched) if area else [],
+    )
+
+
 def _filter_fixture(rooms: list[dict[str, Any]], search: dict[str, Any]) -> list[dict[str, Any]]:
     city = (search.get("city") or "").strip().lower()
     wanted_types = _room_types_param(search)
@@ -146,13 +209,14 @@ def offline_path() -> Path | None:
     return _DEFAULT_FIXTURE if value == "1" else Path(value)
 
 
-def _offline_search(path: Path, search: dict[str, Any], limit: int) -> RoomsResult:
+def _offline_search(
+    path: Path, search: dict[str, Any], limit: int, display_limit: int
+) -> RoomsResult:
     data = json.loads(path.read_text(encoding="utf-8"))
     rooms = data["rooms"] if isinstance(data, dict) else data
-    # Like the live API: filters and limit first, amenity afterwards on the page.
+    # Like the live API: API filters and limit first; area and amenity afterwards on the page.
     page = _filter_fixture([r for r in rooms if isinstance(r, dict)], search)[:limit]
-    found = filter_by_amenity(page, search.get("amenity"))
-    return RoomsResult(ok=True, rooms=[clean_room(r) for r in found], api_count=len(page))
+    return _finish(page, search, fetch_limit=limit, display_limit=display_limit)
 
 
 # ---- HTTP -----------------------------------------------------------------
@@ -218,11 +282,14 @@ def search_rooms(
     if not search.get("city"):
         raise ValueError("rooms_client.search_rooms needs a validated city")
     budget.use_tool_call()
-    limit = limit or config.ROOMS_LIMIT
+    # Area is filtered after the fetch, so fetch more and still show the normal page.
+    area_mode = bool(search.get("area"))
+    limit = limit or (config.ROOMS_AREA_FETCH_LIMIT if area_mode else config.ROOMS_LIMIT)
+    display_limit = config.ROOMS_LIMIT if area_mode else limit
 
     path = offline_path()
     if path is not None:
-        return _offline_search(path, search, limit)
+        return _offline_search(path, search, limit, display_limit)
 
     token = os.getenv("KANGAROO_TOKEN")
     if not token:
@@ -248,8 +315,6 @@ def search_rooms(
     rooms = extract_rooms(raw.body)
     if rooms is None:
         return _fail("bad_payload", raw.status_code, _error_message(raw.body))
-    api_count = len(rooms)
-    rooms = filter_by_amenity(rooms, search.get("amenity"))
-    return RoomsResult(
-        ok=True, rooms=[clean_room(r) for r in rooms], status=raw.status_code, api_count=api_count
+    return _finish(
+        rooms, search, fetch_limit=limit, display_limit=display_limit, status=raw.status_code
     )

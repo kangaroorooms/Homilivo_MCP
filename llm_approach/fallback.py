@@ -12,6 +12,7 @@ from typing import Any
 
 from llm_approach import reuse, validators
 from llm_approach.actions import ActionResult, TurnBudget
+from llm_approach.actions.clarify import ASK_AFTER_RESULTS
 from llm_approach.actions.search import handle_new_search
 from llm_approach.schema import Decision, Intent
 from llm_approach.state import LLMConversationState
@@ -64,6 +65,10 @@ def run_fallback(message: str, state: LLMConversationState, budget: TurnBudget) 
     Blocking (the search calls the rooms API): run through ``asyncio.to_thread``.
     """
     clean = fallback_slots(message, state)
+    if clean is None and state.rooms_on_screen:
+        # Rooms are on screen: asking for a city again would ignore them.
+        state.set_pending("clarify")
+        return ActionResult(ASK_AFTER_RESULTS, None, "fallback_ask", error_class="llm_unavailable")
     if clean is None:
         state.set_pending("city")
         return ActionResult(ASK_CITY_AND_BUDGET, None, "fallback_ask", error_class="llm_unavailable")

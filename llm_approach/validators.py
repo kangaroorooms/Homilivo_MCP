@@ -35,6 +35,10 @@ def _city_candidates() -> dict[str, str]:
     return table
 
 
+def _is_known_city(raw: Any) -> bool:
+    return isinstance(raw, str) and re.sub(r"\s+", " ", raw.lower()).strip(" .,;:!?\"'") in _city_candidates()
+
+
 def validate_city(raw: Any) -> str | None:
     """Return a title-cased city, or None when ``raw`` is not a usable city."""
     if not isinstance(raw, str):
@@ -57,6 +61,42 @@ def validate_city(raw: Any) -> str | None:
     if len(text.split()) > MAX_CITY_WORDS:
         return None
     if any(token in _FILLER_TOKENS for token in re.split(r"[ .'-]+", text) if token):
+        return None
+    return text.title()
+
+
+MAX_AREA_WORDS = 4
+AREA_MIN_CHARS, AREA_MAX_CHARS = 2, 40
+_AREA_RE = re.compile(r"^[a-z0-9]+(?:[ .-]+[a-z0-9]+)*\.?$")
+_AREA_FILLER = frozenset(
+    """different any anywhere other another somewhere something anything
+    pls plz please urgent urgently asap idk unknown none nothing nope yes no
+    ok okay""".split()
+)
+_AREA_FILLER_PHRASES = frozenset(
+    {"area", "areas", "place", "location", "locality", "same", "same area", "nearby", "near me",
+     "i dont know", "i do not know", "dont know", "do not know"}
+)
+
+
+def validate_area(raw: Any) -> str | None:
+    """A title-cased locality inside a city, or None.
+
+    Filler ("different area", "any", "pls"), a known city or city alias, and
+    anything that is not 2 to 40 characters of letters, digits, spaces,
+    hyphens and dots (at most 4 words) is not an area."""
+    if not isinstance(raw, str):
+        return None
+    text = re.sub(r"\s+", " ", raw.lower()).strip(" ,;:!?\"'")
+    if not (AREA_MIN_CHARS <= len(text) <= AREA_MAX_CHARS) or not _AREA_RE.match(text):
+        return None
+    words = re.split(r"[ .-]+", text.strip(". "))
+    words = [w for w in words if w]
+    if not words or len(text.split()) > MAX_AREA_WORDS:
+        return None
+    if text in _AREA_FILLER_PHRASES or any(w in _AREA_FILLER for w in words):
+        return None
+    if text in _city_candidates():
         return None
     return text.title()
 
@@ -180,7 +220,7 @@ def validate_slots(
 ) -> tuple[dict[str, Any], list[str]]:
     """Validate everything the model proposed.
 
-    Returns ``(clean, rejected)``. ``clean`` has the six slot keys plus
+    Returns ``(clean, rejected)``. ``clean`` has the seven slot keys (area included) plus
     ``room_reference`` and ``compare_references``; a value that failed is None
     (or dropped from the compare list) and its name is listed in ``rejected``.
     A value the model left out is not counted as rejected. Reversed min/max
@@ -205,6 +245,15 @@ def validate_slots(
         "amenity": check("amenity", data.get("amenity"), validate_amenity),
         "ideal_for": check("ideal_for", data.get("ideal_for"), validate_ideal_for),
     }
+    raw_area = data.get("area")
+    clean["area"] = validate_area(raw_area)
+    if raw_area is not None and clean["area"] is None:
+        # A city put in the area slot is a city, not a bad value.
+        as_city = validate_city(raw_area) if _is_known_city(raw_area) else None
+        if as_city and clean["city"] is None:
+            clean["city"] = as_city
+        elif not as_city:
+            rejected.append("area")
     low, high = clean["min_price"], clean["max_price"]
     if low is not None and high is not None and low > high:
         clean["min_price"], clean["max_price"] = high, low

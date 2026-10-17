@@ -209,7 +209,7 @@ def test_refinement_adds_budget_to_current_search(state):
 def test_refinement_nothing_changed_asks(state):
     state.current_search["city"] = "bangalore"
     r = run(search.handle_refinement, make("REFINEMENT"), state)
-    assert r.reply == "Which area would you like?" and not r.tool_called
+    assert r.reply == "Which area would you like? For example Koramangala or Adugodi." and not r.tool_called
     assert len(state.rooms_on_screen) == 10
 
 

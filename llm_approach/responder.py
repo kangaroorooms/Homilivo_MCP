@@ -65,18 +65,24 @@ def _city_label(search: dict[str, Any]) -> str:
     return str(search.get("city") or "").strip().title()
 
 
+def place_label(search: dict[str, Any]) -> str:
+    """'Koramangala, Bangalore', 'Bangalore' or ''."""
+    area = str(search.get("area") or "").strip().title()
+    return ", ".join(part for part in (area, _city_label(search)) if part)
+
+
 def format_search_reply(rooms: list[dict[str, Any]], search: dict[str, Any]) -> str:
-    city = _city_label(search)
+    place = place_label(search)
     noun = "room" if len(rooms) == 1 else "rooms"
-    head = f"I found {len(rooms)} {noun}" + (f" in {city}" if city else "") + ":"
+    head = f"I found {len(rooms)} {noun}" + (f" in {place}" if place else "") + ":"
     lines = [room_line(i, r) for i, r in enumerate(rooms, 1)]
     tail = "Ask me about any of them, for example the cheapest one, or tell me what to change."
     return "\n".join([head, *lines, tail])
 
 
 def format_no_rooms_reply(search: dict[str, Any]) -> str:
-    city = _city_label(search)
-    where = f" in {city}" if city else ""
+    place = place_label(search)
+    where = f" in {place}" if place else ""
     return (
         f"I couldn't find any rooms{where} matching that. "
         "You could try a higher budget, a different room type or another area."

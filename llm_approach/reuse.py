@@ -187,6 +187,13 @@ def get_demo_auth_module() -> Any:
     return demo_auth
 
 
+def get_knowledge_preload() -> Callable[[], None]:
+    """``app.knowledge.store.warmup()``: loads the knowledge-base index. Lazy (embedding model)."""
+    from app.knowledge.store import warmup
+
+    return warmup
+
+
 @lru_cache(maxsize=1)
 def get_answer_platform_question() -> Callable[[str], dict]:
     """``answer_platform_question(query) -> {grounded, message, sources}``.

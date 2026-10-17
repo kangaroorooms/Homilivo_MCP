@@ -30,7 +30,8 @@ _SCHEMA = """\
   "intent": one of the 10 intents,
   "operation": one of the operations above for ROOM_FOLLOWUP, otherwise null,
   "slots": {"city": string|null, "bhk": integer|null, "min_price": integer|null,
-            "max_price": integer|null, "amenity": string|null, "ideal_for": string|null},
+            "max_price": integer|null, "amenity": string|null, "ideal_for": string|null,
+            "area": string|null},
   "room_reference": 1-based integer position of a room on screen, or "selected", or null,
   "compare_references": [1-based integers] (COMPARE only, else []),
   "standalone_query": the request rewritten so it needs no context, or null,
@@ -45,7 +46,8 @@ _RULES = """\
 - Use "reply" only for GENERAL_CHAT, OUT_OF_SCOPE and UNSUPPORTED_ACTION. Keep it to two sentences and steer back to finding a room. Never put prices, room details or Homilivo policies in it. Set reply to null for every other intent.
 - Prices are integers in rupees ("15k" -> 15000, "1.5 lakh" -> 150000). "under X" sets max_price, "above X" sets min_price.
 - Only fill a slot the user actually stated or that clearly continues the current search. Never invent a city, price or BHK. If the user did not name a city, city is null.
-- Words like "pls", "urgent", "a different area", "somewhere" are not cities.
+- Words like "pls", "urgent", "a different area", "somewhere" are not cities or areas.
+- area is a locality or neighbourhood inside a city (Koramangala, Indiranagar), never a city. A city goes in city. Without a named locality, area is null.
 - Room references are positions of rooms on screen (first = 1). Use "selected" for "it" / "this one" when selected_room_index is set. Use null when no room is meant.
 - When rooms are on screen, "in <place>" or "under <price>" refines the current search (REFINEMENT). When no rooms are on screen, it starts a new search.
 - When pending_question is set, read the message as an answer to that question.
@@ -80,7 +82,7 @@ def _state(
 
 
 def _decision(intent: str, **fields: Any) -> dict[str, Any]:
-    slot_keys = ("city", "bhk", "min_price", "max_price", "amenity", "ideal_for")
+    slot_keys = ("city", "bhk", "min_price", "max_price", "amenity", "ideal_for", "area")
     slots = {key: fields.pop(key, None) for key in slot_keys}
     out: dict[str, Any] = {
         "intent": intent,
@@ -125,6 +127,14 @@ FEW_SHOT_EXAMPLES: list[tuple[dict[str, Any], str, dict[str, Any]]] = [
      _decision("REFINEMENT", confidence=0.8, needs_clarification=True,
                clarifying_question="Which area would you like?",
                standalone_query="find rooms in a different area")),
+    (_state(rooms=True, city="Bangalore", pending="clarify", last_bot="Which area would you like?"), "koramangala",
+     _decision("REFINEMENT", area="Koramangala", standalone_query="find rooms in Koramangala, Bangalore")),
+    (_state(city="Bangalore"), "rooms in koramangala",
+     _decision("NEW_SEARCH", city="Bangalore", area="Koramangala",
+               standalone_query="find rooms in Koramangala, Bangalore")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "under 15k in indiranagar",
+     _decision("REFINEMENT", area="Indiranagar", max_price=15000,
+               standalone_query="find rooms in Indiranagar under 15000")),
     (_state(), "i dont know",
      _decision("UNCLEAR", confidence=0.4, needs_clarification=True,
                clarifying_question="Could you tell me which city and budget you have in mind?")),

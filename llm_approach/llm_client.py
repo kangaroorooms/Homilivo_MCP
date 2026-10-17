@@ -33,12 +33,20 @@ class LLMBudget:
     tokens_in: int = 0
     tokens_out: int = 0
     latency_ms: float = 0.0
+    error_class: str | None = None  # "RateLimitError" when Groq answered 429, else the last error class
 
     def try_consume(self) -> bool:
         if self.calls >= self.max_calls:
             return False
         self.calls += 1
         return True
+
+
+def is_rate_limit_error(exc: BaseException) -> bool:
+    """Groq RateLimitError, or any error carrying HTTP status 429."""
+    if type(exc).__name__ == "RateLimitError":
+        return True
+    return getattr(exc, "status_code", None) == 429 or getattr(getattr(exc, "response", None), "status_code", None) == 429
 
 
 _client: Any = None
@@ -93,10 +101,12 @@ async def decide(
             raw, tokens_in, tokens_out = await _call_groq(messages)
         except asyncio.TimeoutError:
             budget.latency_ms += (time.perf_counter() - started) * 1000
+            budget.error_class = "TimeoutError"
             logger.warning("llm_decision attempt=%d outcome=timeout", attempt)
             return None
         except Exception as exc:  # network, auth, rate limit: class name only
             budget.latency_ms += (time.perf_counter() - started) * 1000
+            budget.error_class = "RateLimitError" if is_rate_limit_error(exc) else type(exc).__name__
             logger.warning("llm_decision attempt=%d outcome=error class=%s", attempt, type(exc).__name__)
             return None
 

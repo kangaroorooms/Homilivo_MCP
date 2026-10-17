@@ -1,0 +1,27 @@
+# TEMPLATE (never run from here). Copy next to your existing start-frontend.ps1:
+#   Copy-Item llm_approach\scripts\start-frontend-llm.ps1.template ..\start-frontend-llm.ps1
+# It points the local website at the LLM-approach server on port 8001, then starts it.
+# The token is written to the git-excluded .env.development.local and is never printed.
+$r = Invoke-RestMethod http://localhost:8001/chat-ui/demo-token
+$tok = $r.token
+if (-not $tok) { throw "No token returned. Is the server on port 8001 running and KANGAROO_TOKEN set?" }
+$f = "C:\Faizal\AI intern\newkangaroorooms\.env.development.local"
+
+function Set-EnvLine($lines, $name, $value) {
+    $found = $false
+    $out = foreach ($l in $lines) {
+        if ($l -match "^$name=") { $found = $true; "$name=$value" } else { $l }
+    }
+    if (-not $found) { $out = @($out) + "$name=$value" }
+    $out
+}
+
+$lines = if (Test-Path $f) { Get-Content $f } else { @() }
+$lines = Set-EnvLine $lines "VITE_CHATBOT_WS_URL" "ws://localhost:8001/ws/chat"
+$lines = Set-EnvLine $lines "VITE_API_BASE_URL" "http://127.0.0.1:8001"
+$lines = Set-EnvLine $lines "VITE_CHATBOT_TOKEN" $tok
+$lines | Set-Content $f
+Write-Host "Website now points at port 8001 (token written, not shown)."
+
+Set-Location "C:\Faizal\AI intern\newkangaroorooms"
+npm run dev

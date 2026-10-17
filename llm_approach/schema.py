@@ -54,6 +54,7 @@ class Slots(BaseModel):
     max_price: RawNumber = None
     amenity: str | None = None
     ideal_for: str | None = None
+    area: str | None = None
 
 
 class Decision(BaseModel):
@@ -174,6 +175,7 @@ def parse_decision(raw: Any) -> Decision | None:
         max_price=_clean_number(raw_slots.get("max_price")),
         amenity=_clean_str(raw_slots.get("amenity")),
         ideal_for=_clean_str(raw_slots.get("ideal_for")),
+        area=_clean_str(raw_slots.get("area")),
     )
 
     refs = data.get("compare_references")

@@ -37,10 +37,11 @@ TOO_LONG_REPLY = (
 )
 EMPTY_REPLY = "Please type a message and I'll help you find a room."
 OUTPUT_BLOCKED_REPLY = "Sorry, I can't share that. I can help you find a room, though. Which city are you looking in?"
+RATE_LIMIT_REPLY = "I'm getting a lot of requests right now, please try again in a minute."
 BLOCKED_PLACEHOLDER = "[message blocked]"  # stored in history instead of the blocked text
 
 _SEARCH_SLOTS = ("city", "bhk", "min_price", "max_price")
-_SLOT_NAMES = ("city", "bhk", "min_price", "max_price", "amenity", "ideal_for")
+_SLOT_NAMES = ("city", "area", "bhk", "min_price", "max_price", "amenity", "ideal_for")
 
 _full_guardrails = True
 _store: SessionStore | None = None
@@ -124,7 +125,7 @@ def _clarify_rejected(
     if "city" in rejected:
         if decision.intent is Intent.REFINEMENT and state.current_search.get("city"):
             state.set_pending("clarify", "refinement")
-            return ActionResult(search.ASK_AREA, None, "ask_area")
+            return ActionResult(search.area_question(state), None, "ask_area")
         state.set_pending("city")
         return ActionResult(clarify.ASK_CITY, None, "ask_city")
     bad = [name for name in ("bhk", "min_price", "max_price") if name in rejected]
@@ -214,6 +215,9 @@ async def _run_turn(
     decision = await llm_client.decide(message, summary, llm_budget)
     m.llm_ms, m.tokens_in, m.tokens_out = llm_budget.latency_ms, llm_budget.tokens_in, llm_budget.tokens_out
 
+    if decision is None and llm_budget.error_class == "RateLimitError":
+        # Groq is throttling us: say so, rather than asking the user a misleading question.
+        return ActionResult(RATE_LIMIT_REPLY, None, "rate_limited", error_class="RateLimitError"), None
     if decision is None:
         m.fallback_used = True
         started = time.perf_counter()

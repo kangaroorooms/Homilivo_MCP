@@ -3,7 +3,7 @@
 LLM-decision pipeline (Option B) built beside the existing chatbot. See [PLAN.md](PLAN.md) for the design and phases.
 Only files inside this folder are created or changed. Existing code is reused by import only.
 
-**Status:** Phases 0 to 4 done (2026-10-17). Phase 5 (server) has not started. See the per-phase sections below.
+**Status:** Phases 0 to 5 done (2026-10-17); the live website checklist (PLAN section 10) is still to be run by hand. See the per-phase sections below.
 
 ## Phase 0 contents
 
@@ -494,3 +494,113 @@ One-off check with the real output guardrail (torch loaded, no network): `valida
 7. Fallback only searches when the old extractor yields a city that passes `validate_city`, or when a bare city answers a pending "which city?" question. The old extractor returns "Pls Urgent" for "rooms in pls urgent"; the validator rejects it.
 8. The CLI uses one event loop for the whole chat, because the cached `AsyncGroq` client is bound to the loop that created it.
 9. Not verified: behaviour of the real model on S1 to S18 (that is the live check), the real rooms API through the pipeline, and the knowledge base (S7 uses a stub in `--stub`).
+
+
+---
+
+# Phase 5: API server and website integration (2026-10-17)
+
+`server_app.py` serves the same protocol as `app/api.py` on port 8001, so the website works unchanged. Only files inside `llm_approach/` were created or edited; the frontend repo was only read.
+
+## Files
+
+| File | Purpose |
+|---|---|
+| `server_app.py` | FastAPI app: `/`, `/health`, `/ready`, `/chat-ui/demo-token`, `POST /chat`, `POST /chat/reset`, `WS /ws/chat` |
+| `scripts/start-server.ps1` | Starts uvicorn on 8001 with `--no-access-log` |
+| `scripts/start-frontend-llm.ps1.template` | Template (never run from here) to point the website at 8001 and start it |
+| `tests/test_server.py` | 54 tests: server plus the four carry-over fixes |
+
+## Run (PowerShell, venv active)
+
+```powershell
+cd "C:\Faizal\AI intern\Homilivo chatbot"
+.\venv\Scripts\Activate.ps1
+.\llm_approach\scripts\start-server.ps1
+# which runs: python -m uvicorn llm_approach.server_app:app --port 8001 --no-access-log
+```
+
+**Always use `--no-access-log`.** The WebSocket token is in the URL query string (`/ws/chat?token=...`) and uvicorn's access log would print it. As a second line of defence the server also installs a filter that rewrites `token=...` to `token=REDACTED` on the `uvicorn.access` logger; do not rely on it alone. The server itself never logs a URL, token, message or room data.
+
+`server_app.py` loads the repo-root `.env` at import (python-dotenv, `override=False`, same path as `cli.py`), so uvicorn needs no extra step; variables already set in the environment win, and nothing from `.env` is logged. `/ready` reports `groq_key_present` and `kangaroo_token_present` as booleans only (the rooms token is reported, not required for readiness).
+
+Needs `GROQ_API_KEY` (decisions) and `KANGAROO_TOKEN` (rooms API and demo-token issuing) in `.env` or the environment. Startup loads the guardrails (torch, about 40 s cold) and the knowledge base once; `/ready` returns 503 until both are loaded. Set `LLM_APPROACH_SKIP_PRELOAD=1` to skip that (tests do).
+
+## Point the local website at port 8001, and back to 8000
+
+Variables (all in the git-excluded `newkangaroorooms\.env.development.local`; values are not shown here):
+
+| Variable | Port 8001 (this server) | Port 8000 (current bot) |
+|---|---|---|
+| `VITE_CHATBOT_WS_URL` | `ws://localhost:8001/ws/chat` | `ws://localhost:8000/ws/chat` |
+| `VITE_API_BASE_URL` | `http://127.0.0.1:8001` | `http://127.0.0.1:8000` |
+| `VITE_CHATBOT_TOKEN` | demo token from `http://localhost:8001/chat-ui/demo-token` | demo token from `http://localhost:8000/chat-ui/demo-token` |
+
+- To 8001: copy the template once, `Copy-Item llm_approach\scripts\start-frontend-llm.ps1.template ..\start-frontend-llm.ps1`, then run `..\start-frontend-llm.ps1` (next to your existing `start-frontend.ps1`). It fetches a token, writes the three variables, never prints the token, and runs `npm run dev`.
+- Back to 8000: start the old backend and run the existing `..\start-frontend.ps1`. It rewrites only `VITE_CHATBOT_TOKEN`, so also set `VITE_CHATBOT_WS_URL` and `VITE_API_BASE_URL` back to the 8000 values above (edit the file by hand once, or keep two copies of the file).
+- Demo tokens are held in memory and last an hour; after a server restart the website needs a fresh token (rerun the script).
+
+## Protocol notes
+
+- Same events and payloads as the current backend: `typing`, `token` (repeated), `done` (authoritative), `error` (connection stays open), `ping` after 20 s of silence (`WS_HEARTBEAT_INTERVAL_SECONDS`). Close 4401 for a missing or empty token, 4429 for the per-IP rate limit on connect.
+- `done` carries exactly the `ChatResponse` fields: `success, session_id, request_id, mode, message, room_count, rooms, selected_room, pending_clarification, sources, search_performed`. Cards have `id (str), title, city, location|null, price_per_month, room_type|null, ideal_for[], amenities[]` (built by `responder.room_card`, the same mapping as `_structure_room`). `rooms` is the cards of this turn, or the rooms still on screen when the turn left them unchanged; `selected_room` is the room in focus or `null`.
+- Message limit 500 characters. Session ids must be UUIDs (case-insensitive, stored lowercase); anything else is replaced by a fresh UUID without being logged, and the socket reuses its own id when the client sends none.
+- `mode` accepts `fast|qwen|gemma|groq` (default `fast`), is echoed back and ignored. REST rejects any other value with 422; the socket sends an `error` event.
+- Check order per socket message: JSON, object, message, mode, per-IP limit, per-session limit, then `typing`.
+- Errors become normal bot messages: an exception that escapes `pipeline.handle_turn` gives a `done` with `success:false` and "Something went wrong on our side, please try again." (the pipeline's own errors use its `ERROR_REPLY`). The `error` event is kept only for protocol problems: bad JSON, bad length, bad mode, rate limit.
+- `sources` is always `[]`: the pipeline does not return knowledge-base titles.
+- Rate limiting is `app.rate_limit` (per IP, plus per session for client-supplied ids), read through `reuse`.
+- **Tokens (mirrors the current backend, not a new security choice):** any non-empty token connects. A valid demo token is redeemed; anything else is treated as the caller's own credential. The rooms API always uses the server's `KANGAROO_TOKEN`, so a caller-supplied token is accepted but not forwarded. Nothing is stored or logged.
+- **CORS:** none by default, like the current backend (the browser WebSocket does not use CORS). Opt in with `LLM_APPROACH_CORS_ORIGINS` (comma-separated origins, for example the Vite dev origin); unset means no CORS middleware.
+- **`/api/chat` is not implemented.** `chatbotApi.ts` calls that separate legacy endpoint (`{message, previous_interaction_id}`); the chat widget uses the WebSocket only.
+- Not implemented: `/feedback`, `/metrics`, `/knowledge/health`.
+
+## Carry-over fixes (edits to earlier files)
+
+| Fix | Files | Behaviour |
+|---|---|---|
+| a. Groq rate limit | `llm_client.py` (`is_rate_limit_error`, `LLMBudget.error_class`), `pipeline.py` (`RATE_LIMIT_REPLY`) | A Groq `RateLimitError` or any error with status 429 gives "I'm getting a lot of requests right now, please try again in a minute.", no fallback search; `error_class="RateLimitError"` in metrics. Other Groq errors still use the fallback |
+| b. Fallback question | `fallback.py` | No decision and rooms on screen: "Would you like to search again, or ask about these rooms?" (pending `clarify`). No rooms: the old city and budget question |
+| c. Platform placeholders | `actions/platform.py` | A retrieved text containing `placeholder`, `not verified`, `confirm wording`, `todo`, `tbd` (the last two as whole words) or `lorem`, case-insensitive, gives "I don't have that information, please contact Homilivo support." (`error_class="placeholder_text"`). `app/knowledge` untouched |
+| d. Area question | `actions/search.py` (`area_examples`, `area_question`), `pipeline.py` | "Which area would you like? For example Koramangala or Adugodi." Up to 3 distinct locations of the rooms on screen, none invented, none when no room has a location. If the reply only repeats the current city: "You're already searching in Bangalore. Which area would you like? For example ..." |
+
+Other edits to earlier files: `reuse.py` (`get_knowledge_preload()`), `tests/test_actions.py` (`test_refinement_nothing_changed_asks` now expects the example areas).
+
+## Test results
+
+`python -m pytest llm_approach/tests -q`: **525 passed** (471 earlier + 54 new), about 8 s, offline (TestClient, mocked Groq, offline rooms, fake guardrails), no torch. A `python -I` subprocess test checks that `server_app` imports without torch, sentence_transformers, ollama, mcp, agent_modes or `app.guardrails`. `run_scenarios --stub`: 35/35 turns pass. Nothing was run against live Groq, the live rooms API or real uvicorn.
+
+## Deviations and open points
+
+1. `/ready` requires the Groq key, the knowledge base and the guardrails; there is no rooms API ping. The old server treats the Groq key as optional; here it is the decision engine.
+2. Tokens stream after the turn, not live: the pipeline makes one non-streaming JSON call, so `token` events are the final reply split on whitespace.
+3. On a rate-limited turn the user message and the busy reply are recorded in history.
+4. Not verified: a real uvicorn run (log redaction is tested on the filter, not on uvicorn), the knowledge-base preload (`app.knowledge.store.warmup`, stubbed in tests), and the website itself. The PLAN section 10 checklist is yours to run.
+
+---
+
+# Phase 5b: area (locality) support (2026-10-17)
+
+Problem seen on the website: the bot asked "Which area would you like?", the user answered "Koramangala", and the bot replied "You're already searching in Bangalore. Which area would you like?". The decision schema had no area slot and the rooms API has no area filter.
+
+## What changed
+
+- `schema.py`: `Slots.area`, coerced like the other string slots.
+- `prompts.py`: `area` in the schema text, one rule (a locality inside a city, never a city), three few-shot examples (area reply, "rooms in koramangala", "under 15k in indiranagar"). System prompt 11,823 -> 13,090 characters (+1,267). The `MAX_LLM_CONTEXT_CHARS` (8,000) limit applies to the state summary, not to the system prompt; a test checks the summary stays under it with an area set.
+- `validators.py`: `validate_area` (2 to 40 chars, letters/digits/spaces/hyphen/dot, at most 4 words, filler rejected, known city or alias rejected, title-cased). `validate_slots` returns `area`; a city put in the area slot becomes the city when none was given.
+- `state.py`: `current_search` has `area`; `rooms_truncated` flag (more matches than shown).
+- `rooms_client.py`: one helper path, `_finish`, used by the live API and the offline fixture: area filter (whole-word match of the normalised area in the normalised `location` or `landmark`), then amenity, then the display cut. Area is never an API parameter. `config.ROOMS_AREA_FETCH_LIMIT = 30` (env `LLM_APPROACH_ROOMS_AREA_FETCH_LIMIT`) is the fetch limit when an area is set; at most `ROOMS_LIMIT` (10) matches are shown.
+- `actions/search.py`: area in new search and refinement. A different city clears the area; an area reply replaces it; budget or room-type changes keep area and city. Area with no city anywhere -> "Which city is that area in?" and the area is kept in `current_search`, so the city answer completes the search. No match -> "I couldn't find rooms in {area}, {city}. Areas with rooms: ..." (up to 5 real locations of the fetched rooms, never invented). Repeating only the city keeps the "You're already searching in {city}" wording.
+- `responder.py`: header "I found 9 rooms in Koramangala, Bangalore:".
+- `pipeline.py`: `area` added to the slot names in metrics.
+- Scenarios S19 to S22 (the stub runner loads every `S*.json`); `tests/test_area.py` (new); `tests/test_pipeline.py` expects 22 scenarios.
+
+## SHOW_MORE honesty
+
+"These are all the matching rooms" is said only when the fetch returned fewer rooms than the fetch limit (30 with an area, 10 without) and no matching rooms were cut for display.
+
+## Assumptions and open points
+
+- **The real API's maximum `limit` is unverified.** If it caps below 30 (for example at 10 or 20), area searches only see that many of the newest rooms in the city, so an area can show "no rooms" or fewer rooms than exist. Check by hand with a request using `limit=30` and compare the returned count. The no-match message does not say how many rooms were checked.
+- Area matching is a substring-by-word on `location` and `landmark`, so "6 block" matches "6 block Koramangala" but not "6th block Koramangala".
+- The rule-based fallback (Groq down) has no area extraction; an area reply during an outage is not searched.

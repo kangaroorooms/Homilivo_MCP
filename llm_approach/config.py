@@ -37,6 +37,19 @@ ROOMS_API_TIMEOUT_S = 15.0
 ROOMS_RETRY_JITTER_S = (2.0, 4.0)  # one retry, timeout or connection error only
 ROOMS_LIMIT = 10
 ROOMS_SORT = "latest"
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, "").strip() or default)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+# The API has no area filter, so an area search fetches this many rooms and
+# filters them here. ASSUMPTION: the real API accepts this limit (unverified).
+ROOMS_AREA_FETCH_LIMIT = _int_env("LLM_APPROACH_ROOMS_AREA_FETCH_LIMIT", 30)
 OFFLINE_ROOMS_ENV = "LLM_APPROACH_OFFLINE_ROOMS"  # "1" -> fixtures/rooms_bangalore.json, or a path
 
 DEBUG = _flag("LLM_APPROACH_DEBUG")  # may print decision JSON in the CLI

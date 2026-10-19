@@ -212,6 +212,14 @@ def _check_turn(
         eq("selected", expect["selected"], state.selected_room_index if state else None)
     if "pending" in expect:
         eq("pending", expect["pending"], (state.pending_question or {}).get("type") if state else None)
+    if "facts" in expect:  # session memory: stored facts, {key: value}
+        have = {k: state.get_fact(k) for k in expect["facts"]} if state else {}
+        add("facts", have == expect["facts"], f"facts differ (expected, stored): {expect['facts']} vs {have}")
+    if "no_facts" in expect:  # these keys must not be stored
+        stored = [k for k in expect["no_facts"] if state and state.get_fact(k) is not None]
+        add("no_facts", not stored, f"stored but should not be: {stored}")
+    if "queries_logged" in expect:
+        eq("queries_logged", expect["queries_logged"], state.query_count if state else None)
     if "search" in expect:
         sent = spy.searches[-1] if len(spy.searches) > searches_before else {}
         wrong = {k: (v, sent.get(k)) for k, v in expect["search"].items() if sent.get(k) != v}
@@ -245,6 +253,8 @@ async def run_scenario(
 
     with runtime(scenario, mode, script, spy):
         for i, turn in enumerate(scenario["turns"], 1):
+            if turn.get("new_session"):  # a brand-new session: nothing from before may be visible
+                session_id = str(uuid.uuid4())
             if mode == "live" and spacing and last_llm_turn_at is not None:
                 wait = spacing - (time.monotonic() - last_llm_turn_at)
                 if wait > 0:

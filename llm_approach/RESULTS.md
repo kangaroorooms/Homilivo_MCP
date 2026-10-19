@@ -20,11 +20,11 @@ Everything below ran with no Groq call and no rooms-API call (stub LLM, offline 
 
 | Check | Result |
 |---|---|
-| `python -m pytest llm_approach/tests -q` | **843 passed** (817 plus 26 added by the independent audit), about 10 s, no network, no torch |
+| `python -m pytest llm_approach/tests -q` | **1000 passed** (843 before session memory, plus 157), about 12 s, no network, no torch |
 | `run_safety` (real guardrail loaded) | **43/43 attacks blocked**; **0/144 false positives** on general messages; **room-text injection 6/6** neutralised |
 | `run_robustness` | **7/7 clean** (Groq timeout, invalid JSON twice, 429, rooms API 500 with a Prisma message, rooms timeout, empty results, failing output guardrail): consistent history, no raw error text, rooms kept where required |
-| `run_scenarios --stub` | **67/67 turns pass** across 28 scenarios (S1 to S28) |
-| `run_eval --dry-run --dataset all` | 186 calls, about 688K tokens, about 93 min at 30 s spacing. Estimate only |
+| `run_scenarios --stub` | **182/182 turns pass** across 52 scenarios (S1 to S52; S29 to S52 are session memory) |
+| `run_eval --dry-run --dataset all` | 186 calls, about 886K tokens (688K before session memory), about 93 min at 30 s spacing. Estimate only |
 | Website test, checklist items 1 to 10 (PLAN section 10) | Run by hand against port 8001 by the project owner and reported as done. The per-item replies are not stored in this folder |
 
 Added in this phase (Phase 7, offline):
@@ -35,7 +35,9 @@ Added in this phase (Phase 7, offline):
 - **Concurrency and restart** (`tests/test_concurrency_restart.py`): two sessions interleave while one session's turns stay in order; a cancelled turn releases its lock; a fresh `SessionStore` after a simulated restart starts clean (no stale rooms, no error) and the server keeps working.
 - **Startup config** (`tests/test_startup_config.py`): the CLI with a missing or empty `GROQ_API_KEY` says so and exits with code 2; the server starts, reports the keys as missing on `/ready` and answers `/chat` with a friendly reply. No secret appears in any message.
 
-Not changed in this phase: the system prompt text, the few-shot examples, `schema.py`, `validators.py`, `prompts.py`.
+Not changed in the Phase 7 offline work: the system prompt text, the few-shot examples, `schema.py`, `validators.py`, `prompts.py`.
+
+**Session memory (2026-10-19).** The bot now remembers facts the user gave (name, age, occupation, gender, preferred city, budget) and every message of the session, and answers "what is my name", "what was my first query", "what was my first query regarding rooms" and similar from state, with fixed wording and no model-written text. This is a deliberate change to the prompt, schema and validators (`CONVERSATION_RECALL`, `user_facts`; system prompt 13,090 to 17,344 characters after the live-test fixes). The evaluation must run on this version; the three files are frozen again. Safety re-run on this version: 43/43 attacks blocked, 0/144 false positives, 6/6 room-text injections neutralised, robustness 7/7. Details: README, section "Session memory". Live-test fixes the same day: a recall question for several facts is answered in one sentence, recall never falls into the generic clarifier, a bare "yes" no longer loops, and a facts-only message gets a short acknowledgement without a nudge (README, last section). Not verified against the real model (stub only).
 
 ---
 

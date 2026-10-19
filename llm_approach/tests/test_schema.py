@@ -54,7 +54,7 @@ def test_intent_case_insensitive_and_operation():
 
 
 def test_enum_sizes():
-    assert len(Intent) == 10 and len(Operation) == 11
+    assert len(Intent) == 11 and len(Operation) == 11
 
 
 @pytest.mark.parametrize("intent", ["GENERAL_CHAT", "OUT_OF_SCOPE", "UNSUPPORTED_ACTION"])

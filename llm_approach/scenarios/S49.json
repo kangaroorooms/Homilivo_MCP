@@ -1,0 +1,81 @@
+{
+  "id": "S49",
+  "title": "Clarifier loop: three bare 'yes' in a row never repeat the same question",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        }
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10
+      }
+    },
+    {
+      "user": "hmm",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.3
+      },
+      "expect": {
+        "action": "clarify",
+        "reply_contains": [
+          "Would you like to search again, or ask about these rooms?"
+        ]
+      }
+    },
+    {
+      "user": "yes",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.3
+      },
+      "expect": {
+        "action": "clarify",
+        "reply_contains": [
+          "remember what you tell me"
+        ],
+        "reply_not_contains": [
+          "Would you like to search again"
+        ]
+      }
+    },
+    {
+      "user": "yes",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.3
+      },
+      "expect": {
+        "action": "clarify",
+        "reply_contains": [
+          "Just tell me a city"
+        ]
+      }
+    },
+    {
+      "user": "yes",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.9,
+        "reply": "Okay!"
+      },
+      "expect": {
+        "action": "help",
+        "reply_contains": [
+          "remember what you tell me"
+        ],
+        "reply_not_contains": [
+          "Would you like to"
+        ],
+        "tool_called": false
+      }
+    }
+  ]
+}

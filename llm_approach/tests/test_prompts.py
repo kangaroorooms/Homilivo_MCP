@@ -22,7 +22,7 @@ def test_system_prompt_contents():
 
 def test_few_shot_count_and_coverage():
     examples = prompts.FEW_SHOT_EXAMPLES
-    assert 15 <= len(examples) <= 25
+    assert 15 <= len(examples) <= 33  # 25 originals + 8 session-memory examples
     assert {d["intent"] for _, _, d in examples} == {i.value for i in Intent}
     messages = {m for _, m, _ in examples}
     for known in ("in udupi", "find me a room", "something in a different area",
@@ -61,7 +61,8 @@ def test_state_summary_shape_and_allowed_room_fields(rooms):
         "recent_turns": [{"role": "user", "content": "hi"}],
     })
     assert set(summary) == {"current_search", "pending_question", "last_bot_message",
-                            "rooms_on_screen", "selected_room_index", "recent_turns"}
+                            "rooms_on_screen", "selected_room_index", "recent_turns", "user_facts"}
+    assert summary["user_facts"] == {}
     assert len(summary["last_bot_message"]) == 300
     assert all(set(r) == {"index", "title", "price", "type", "location"} for r in summary["rooms_on_screen"])
     assert summary["rooms_on_screen"][0]["index"] == 1

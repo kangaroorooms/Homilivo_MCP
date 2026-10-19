@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable
 
 from llm_approach import config, reuse
+from llm_approach.schema import FACT_KEYS
 
 ERROR_REPLY = "Sorry, something went wrong on my side. Please try again."
 
@@ -57,6 +58,13 @@ ROOM_ALLOWED_FIELDS = frozenset(
         "availabilityStatus",
     }
 )
+
+# Session memory (see record_query / set_fact). Caps keep one session small.
+QUERY_LOG_MAX = 200
+QUERY_TEXT_MAX_CHARS = 500
+QUERY_BLOCKED = "BLOCKED"  # intent stored for messages that were blocked, too long or failed before a decision
+QUERY_PLACEHOLDER = "[message withheld]"  # stored instead of the text of such messages
+USER_FACT_KEYS = frozenset(FACT_KEYS)
 
 SEARCH_FIELDS = ("city", "area", "bhk", "min_price", "max_price", "room_types", "ideal_for", "amenity")
 PENDING_TYPES = ("city", "clarify", "reject")
@@ -99,6 +107,12 @@ class LLMConversationState:
     total_rooms: int | None = None  # meta.total of the last result (None: unknown)
     turn_count: int = 0
     updated_at: float = 0.0
+    # Session memory. user_queries: every user message in order, {turn, text, intent}; ``turn``
+    # counts all messages of the session (1-based) and keeps counting when old entries are dropped.
+    # user_facts: allowlisted keys only, {key: {value, turn}}.
+    user_queries: list[dict[str, Any]] = field(default_factory=list)
+    query_count: int = 0
+    user_facts: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # ---- search / rooms ------------------------------------------------
 
@@ -184,6 +198,40 @@ class LLMConversationState:
         self.turn_count += 1
         self.updated_at = time.time() if now is None else now
 
+    # ---- session memory ------------------------------------------------
+
+    def record_query(self, text: str | None, intent: str = "UNCLEAR") -> int:
+        """Log one user message and return its turn number. Call once per message.
+
+        ``text=None`` (blocked, too long, failed security check) stores a placeholder, never the
+        text. Text longer than QUERY_TEXT_MAX_CHARS is cut. The oldest entry is dropped past
+        QUERY_LOG_MAX."""
+        self.query_count += 1
+        if text is None:
+            text, intent = QUERY_PLACEHOLDER, QUERY_BLOCKED
+        self.user_queries.append(
+            {"turn": self.query_count, "text": str(text)[:QUERY_TEXT_MAX_CHARS], "intent": intent}
+        )
+        if len(self.user_queries) > QUERY_LOG_MAX:
+            del self.user_queries[: len(self.user_queries) - QUERY_LOG_MAX]
+        return self.query_count
+
+    def set_last_query_intent(self, intent: str) -> None:
+        """Set the intent of the latest logged message (known only after the decision)."""
+        if self.user_queries and self.user_queries[-1]["intent"] != QUERY_BLOCKED:
+            self.user_queries[-1]["intent"] = intent
+
+    def set_fact(self, key: str, value: Any) -> bool:
+        """Store (or overwrite) one already validated fact. Unknown keys are refused."""
+        if key not in USER_FACT_KEYS:
+            return False
+        self.user_facts[key] = {"value": value, "turn": self.query_count}
+        return True
+
+    def get_fact(self, key: str) -> Any:
+        entry = self.user_facts.get(key)
+        return entry["value"] if entry else None
+
     # ---- prompt view ---------------------------------------------------
 
     def to_prompt_state(self) -> dict[str, Any]:
@@ -203,6 +251,7 @@ class LLMConversationState:
             "rooms_on_screen": [dict(r) for r in self.rooms_on_screen],
             "selected_room_index": self.selected_room_index,
             "recent_turns": [dict(m) for m in self.history],
+            "user_facts": {k: e["value"] for k, e in self.user_facts.items()},
         }
 
 

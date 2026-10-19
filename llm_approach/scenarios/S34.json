@@ -1,0 +1,68 @@
+{
+  "id": "S34",
+  "title": "Session memory: recall before any fact is given never guesses",
+  "turns": [
+    {
+      "user": "what is my name?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "name"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "action": "recall_name",
+        "reply_contains": [
+          "You haven't told me your name in this chat."
+        ]
+      }
+    },
+    {
+      "user": "how old am I?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "age"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "You haven't told me your age in this chat."
+        ]
+      }
+    },
+    {
+      "user": "what's my job?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "fact",
+        "recall_key": "occupation"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "You haven't told me your occupation in this chat."
+        ]
+      }
+    },
+    {
+      "user": "what was my first query regarding rooms?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "first_room_query"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "You haven't searched for a room in this chat yet."
+        ]
+      }
+    }
+  ]
+}

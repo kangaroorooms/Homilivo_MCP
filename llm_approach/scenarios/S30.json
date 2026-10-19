@@ -1,0 +1,39 @@
+{
+  "id": "S30",
+  "title": "Session memory: age is remembered and recalled",
+  "turns": [
+    {
+      "user": "I'm 23",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Got it!",
+        "user_facts": {
+          "age": 23
+        }
+      },
+      "expect": {
+        "action": "facts_saved",
+        "facts": {
+          "age": 23
+        }
+      }
+    },
+    {
+      "user": "what's my age?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "age"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "action": "recall_age",
+        "reply_contains": [
+          "23"
+        ]
+      }
+    }
+  ]
+}

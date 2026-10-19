@@ -839,3 +839,73 @@ Read-only audit first, then fixes inside `llm_approach/` only. The system prompt
 ## Tests
 
 `python -m pytest llm_approach/tests -q`: **843 passed** (817 + 26 in `tests/test_audit_fixes.py`). The new tests fail on the old code (checked by reverting the source files).
+
+---
+
+# Session memory (2026-10-19)
+
+Within one session the bot remembers what the user said and answers recall questions: "what is my name", "what's my age", "what was my first query", "what was my first query regarding rooms", "what was my second query". Before this, "what is my name" was classified OUT_OF_SCOPE and got the "I can only help with finding rooms" reply.
+
+## How it works
+
+- **State (`state.py`).** `user_queries`: every user message in order, `{turn, text, intent}`, at most 200 entries of at most 500 characters (oldest dropped first). `turn` is a per-session message counter that keeps counting after old entries are dropped, so "the second query" stays correct. A blocked, too-long or failed-security-check message is stored as the placeholder `[message withheld]` with intent `BLOCKED`, never as text. `user_facts`: `{key: {value, turn}}` with the allowlisted keys `name`, `age`, `occupation`, `gender`, `preferred_city`, `budget`. Both live inside the session state, so TTL expiry, LRU eviction and `reset` clear them together with the rest. A new session starts empty.
+- **Decision layer.** New intent `CONVERSATION_RECALL` with `recall_target` (`name`, `age`, `fact`, `first_query`, `last_query`, `first_room_query`, `nth_query`, `all_queries`), `recall_key` (for `fact`) and `recall_index` (1-based, for `nth_query`). New optional `user_facts` on every decision, filled from any message. The state summary shows the model only `user_facts` (sanitised), never the query log.
+- **Validation (`validators.validate_user_facts`).** `name`: 1 to 40 characters, letters, spaces and `. - '` only, at most 4 words, and not text the injection filter would block. `age`: integer 16 to 100. `occupation`: letters and a few separators, at most 40 characters. `gender`: male, female, non-binary, other. `preferred_city`: the normal city validator. `budget`: the normal price validator. Unknown keys are dropped. A value with an e-mail address or 7 or more digits is rejected, so phone numbers and e-mails are never stored. Zero-width, control and format characters in a value reject it. A value must also appear in the user's own message (grounding), so a hallucinated fact is not stored.
+- **Actions (`actions/recall.py`).** `capture_facts` runs as a side effect on every intent, before the main action, so "I'm Faizal, 23, need a 2 BHK in Bangalore" stores the facts and runs the search. A newer value overwrites the older one (a correction). `handle_recall` answers from state with fixed templates ("Your name is Faizal.", `Your first question was: "2 BHK in Bangalore".`, "You haven't told me your age in this chat."); no model-written text. A quoted query goes through `sanitize.neutralize` and the injection filter, and the whole reply goes through the output guard like every reply. A chat message that only gave facts gets a fixed acknowledgement ("Nice to meet you, Faizal!") instead of the model's reply text.
+- **Pipeline.** The message is logged right after the security check (placeholder when blocked), the intent is filled in after the decision. The facts and the query log are never sent to the rooms API (search uses the validated slots only), never put in a log line or a metrics record.
+
+## Behaviour notes
+
+- Message numbers count every message of the session, including greetings and recall questions themselves. `first_query` is the very first message; `first_room_query` is the first message whose intent was NEW_SEARCH or REFINEMENT; `last_query` and `all_queries` skip earlier recall questions.
+- `preferred_city` and `budget` are remembered and can be recalled, but they are not used as search defaults. That would be a product decision.
+- Personal questions the chat cannot answer ("what's my bank balance") stay OUT_OF_SCOPE.
+- Facts are kept only for the lifetime of the session (in memory, TTL 3600 s). Nothing is written to disk.
+
+## Changes to frozen files (this feature only)
+
+- `prompts.py`: intent line for CONVERSATION_RECALL, the OUT_OF_SCOPE line now also says "or this chat" and gives the bank-balance example, four new schema fields, two new rules, six new few-shot examples (name capture, name recall, first room query, correction, mixed message, bank balance), `user_facts` in `build_state_summary`, the `facts=` argument of the example helpers. All other rules and examples are unchanged. System prompt: 13,090 characters (about 3,272 tokens) before, 16,473 characters (about 4,118 tokens) after.
+- `schema.py`: `Intent.CONVERSATION_RECALL`, `RecallTarget`, `FACT_KEYS`, the four decision fields, and the parsing of them. `_enum_or_none` now also accepts lowercase enum values.
+- `validators.py`: `validate_name`, `validate_age`, `validate_occupation`, `validate_gender`, `validate_user_facts` and the grounding check.
+- Other files touched: `state.py`, `pipeline.py`, `actions/recall.py` (new), `eval/label_map.py` (`NEW_ONLY_INTENTS`: the POC label set has no recall label and none of the 186 evaluation items is a recall question; a prediction of the new intent for a POC item counts as a wrong intent, so the baseline comparison is unchanged), `eval/run_scenarios.py` (`facts`, `no_facts` and `queries_logged` checks; `"new_session": true` on a turn starts a fresh session).
+
+## Tests
+
+`tests/test_session_memory.py` (new): caps, ordering, placeholders, eviction, reset, the validators, the prompt view, the seven goals, corrections, nth/last/all queries, recall after 35 more turns, a fresh session, injection through a fact, blocked and too-long messages, the output guard, facts never reaching the rooms client. `tests/test_log_audit.py`: new test that facts and queries never appear in logs, metrics or error replies. Scenarios `S29` to `S42`. One existing test changed on purpose: `test_501_characters_gets_short_reply_without_llm` used to expect no session for a too-long message; it now expects a placeholder entry and no history. The prompt, summary-key, enum-size and few-shot-count assertions in `test_prompts.py`, `test_pipeline.py`, `test_schema.py` and `test_state.py` were updated for the new key, intent and examples.
+
+`python -m pytest llm_approach/tests -q`: **931 passed** (843 before). `run_scenarios --stub`: **150/150 turns, 42 scenarios**. `run_safety`: 43/43, 0/144 false positives, 6/6. `run_robustness`: 7/7. `run_eval --dry-run --dataset all`: 186 calls, about 846K tokens (about 688K before).
+
+## Freeze
+
+The prompt, schema and validators are frozen again. The live evaluation must run on this version.
+
+---
+
+# Session memory fixes after the live test (2026-10-19)
+
+Live transcript (rooms on screen): "actually my name is ziyad and i'm 20 years old" got "Got it, Ziyad! Would you like to ask about these rooms or search again?"; "what's my name and age ?" got "Would you like to search again, or ask about these rooms?"; "yes" got the same question again.
+
+## Root causes (reproduced with the stub LLM)
+
+- **P1.** That reply is `clarify.ASK_AFTER_RESULTS`, produced only by `clarify.handle_unclear`. `pipeline._decide_action` sent every decision with intent UNCLEAR or confidence below 0.6 to that clarifier, **including a CONVERSATION_RECALL decision**, and a recall decision with `needs_clarification` also went there. `recall_target` held a single value, so a question for two facts is the kind the model hedges on (UNCLEAR or low confidence). A confident single target answered only the name. The live model's exact JSON was not available offline, so all these variants are covered by tests.
+- **P2.** `handle_unclear` looked at neither the user message nor the last bot message, so "yes" produced the identical text every time. When the model labelled a bare "yes" GENERAL_CHAT the same loop ran through the steer sentence.
+- **P3.** `acknowledge` appended the rooms steer.
+
+## Changes
+
+- **Several asks in one question.** New `recall_targets` (a list of name, age, occupation, gender, preferred_city, budget, first_query, last_query, first_room_query); `recall_target` still works. One reply from fixed templates: "Your name is Ziyad and you're 20." / "Your name is Ziyad, but you haven't told me your age in this chat." / "You haven't told me that in this chat." Queries get their own sentence after the facts sentence.
+- **Recall never goes to the generic clarifier.** A CONVERSATION_RECALL decision is always answered by the recall action, which asks its own question when it has no target.
+- **Safety net (`recall.detect_recall_cue`).** Only when the model said UNCLEAR or was unsure (confidence below the threshold): the message must contain a recall cue ("my name", "my age", "how old am I", "my first/last/previous query|message|question", "what did I say|tell|ask", "I told you already|before|earlier") **and** question wording ("?", a wh-word, "tell me", "remember", "recall", "did I", "told you"). Statements ("my name is Faizal") and room requests never match. Proof: `tests/test_recall_fixes.py::test_no_benign_or_eval_message_routes_to_recall` runs the cue over the 146 general messages (including the 144 benign safety set) and all 186 eval items: 0 hits.
+- **Clarifier loop.** A non-city clarifying question is never repeated word for word, and a bare "yes/no/ok/..." (also when the model calls it small talk right after our generic question) gets a help message: what the bot can do (search rooms, answer questions about the rooms shown, remember what you tell it in this chat). It alternates with a shorter form, so three "yes" in a row never give the same text twice. The rooms wording appears only when rooms are on screen; a model-written clarifying question that mentions "these rooms" with none on screen is replaced. A pending "which city?" question is still asked again (scenario S5).
+- **Acknowledgement.** A facts-only message gets a short fixed reply with no nudge: "Got it, Ziyad!", "Okay, I'll call you Ravi from now on." (correction), "Got it, I'll remember that." (other facts). A mixed message still runs the search. (The earlier "Nice to meet you" is gone.)
+
+## Changes to prompts.py, schema.py, validators.py
+
+- `prompts.py`: one schema line (`recall_targets`), one sentence added to the recall rule, two few-shot examples ("what's my name and age?", "what was my first query and my name?"), the `recall_targets` field in the example helper. System prompt **16,473 → 17,344 characters** (about 4,118 → 4,336 tokens); 33 examples.
+- `schema.py`: `RECALL_TOKENS`, `Decision.recall_targets`, `_recall_targets` parsing (a list placed in `recall_target` is accepted too; `nth_query` and `all_queries` stay single-target).
+- `validators.py`: not changed in this fix.
+- Also touched: `actions/recall.py`, `actions/clarify.py`, `pipeline.py`.
+
+## Tests and checks
+
+New `tests/test_recall_fixes.py` (59 tests) and scenarios `S43` to `S52` (transcript replay, name only, age only, both, before given, correction then combined recall, three "yes", recall with and without rooms, safety net). `pytest llm_approach/tests -q`: **1000 passed** (931 before). `run_scenarios --stub`: **182/182 turns, 52 scenarios**. `run_safety`: 43/43, 0/144, 6/6. `run_robustness`: 7/7. `run_eval --dry-run --dataset all`: 186 calls, about 886K tokens (846K before). Prompt, schema and validators are frozen again.
+

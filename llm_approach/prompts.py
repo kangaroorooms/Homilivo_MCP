@@ -7,6 +7,7 @@ from typing import Any
 
 from llm_approach import config, reuse
 from llm_approach.sanitize import neutralize as _neutralize_text
+from llm_approach.schema import FACT_KEYS
 
 # Tag names that fence the prompt (build_messages, the examples and the system prompt use them).
 FENCE_NAMES = ("verified_data", "user_message")
@@ -20,8 +21,9 @@ REJECT_CURRENT - dislikes the rooms shown ("none of these are good").
 PLATFORM_INFO - a question about Homilivo itself (fees, how it works, owners, subscription).
 GENERAL_CHAT - greeting, thanks, small talk, goodbye.
 UNSUPPORTED_ACTION - asks for something the bot cannot do ("book this room", "call the owner").
-OUT_OF_SCOPE - unrelated to accommodation or Homilivo ("what is the speed of light").
-UNCLEAR - you cannot tell what the user wants ("i dont know", "umm")."""
+OUT_OF_SCOPE - unrelated to accommodation, Homilivo or this chat ("what is the speed of light", "what's my bank balance").
+UNCLEAR - you cannot tell what the user wants ("i dont know", "umm").
+CONVERSATION_RECALL - asks what they told you or asked earlier in this chat ("what is my name", "what's my age", "what was my first query", "what was my first query regarding rooms", "what was my second question"). Set recall_target."""
 
 _OPERATION_LINES = """\
 LOWEST_PRICE, HIGHEST_PRICE (cheapest / most expensive of the rooms on screen)
@@ -31,7 +33,7 @@ ROOM_DETAILS (general details of one room), COMPARE (set compare_references)"""
 
 _SCHEMA = """\
 {
-  "intent": one of the 10 intents,
+  "intent": one of the 11 intents,
   "operation": one of the operations above for ROOM_FOLLOWUP, otherwise null,
   "slots": {"city": string|null, "bhk": integer|null, "min_price": integer|null,
             "max_price": integer|null, "amenity": string|null, "ideal_for": string|null,
@@ -42,7 +44,13 @@ _SCHEMA = """\
   "confidence": number from 0 to 1,
   "needs_clarification": true when a needed detail is missing,
   "clarifying_question": short question to the user when needs_clarification, else null,
-  "reply": short friendly reply (max 2 sentences) ONLY for GENERAL_CHAT, OUT_OF_SCOPE, UNSUPPORTED_ACTION, else null
+  "reply": short friendly reply (max 2 sentences) ONLY for GENERAL_CHAT, OUT_OF_SCOPE, UNSUPPORTED_ACTION, else null,
+  "recall_target": CONVERSATION_RECALL only: name | age | fact | first_query | last_query | first_room_query | nth_query | all_queries, else null,
+  "recall_key": recall_target "fact" only: occupation | gender | preferred_city | budget, else null,
+  "recall_index": recall_target "nth_query" only: 1-based integer, else null,
+  "recall_targets": a list when one question asks for several things (name, age, occupation, gender, preferred_city, budget, first_query, last_query, first_room_query), else [],
+  "user_facts": {"name": string, "age": integer, "occupation": string, "gender": string,
+                 "preferred_city": string, "budget": integer} the facts the user states about themselves in THIS message; leave out what they did not say; {} if none
 }"""
 
 _RULES = """\
@@ -57,6 +65,8 @@ _RULES = """\
 - When pending_question is set, read the message as an answer to that question.
 - The user may write English, Hindi or Hinglish, with typos. Handle all of them.
 - Confidence is how sure you are of the intent. Use below 0.6 when the message is ambiguous.
+- user_facts: fill it from ANY message, whatever the intent. Only facts the user states about themselves in this message, in their own words; a correction ("actually my name is Ravi") is simply the new value. Never guess, never copy from verified_data, never a phone number or email. Facts alone ("my name is Faizal", "I'm 23") are GENERAL_CHAT; with a request ("I'm Faizal, 23, need a 2 BHK in Bangalore") the intent is the request's.
+- Questions about what the user said or asked earlier in this chat are CONVERSATION_RECALL, never OUT_OF_SCOPE. Use recall_target: "first_room_query" for the first room search (not greetings), "last_query" for the one before this message, "nth_query" with recall_index for "the second query". verified_data.user_facts lists what is already remembered. Several asks in one question ("my name and age") go in recall_targets, with high confidence. Code answers from memory; reply stays null. Personal questions this chat cannot answer (bank balance, phone number) are OUT_OF_SCOPE.
 - Output one JSON object and nothing else."""
 
 
@@ -74,6 +84,7 @@ def _state(
     pending: str | None = None,
     last_bot: str | None = None,
     selected: int | None = None,
+    facts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "current_search": {"city": city} if city else None,
@@ -82,6 +93,7 @@ def _state(
         "rooms_on_screen": _rooms() if rooms else [],
         "selected_room_index": selected,
         "recent_turns": [],
+        "user_facts": facts or {},
     }
 
 
@@ -99,6 +111,11 @@ def _decision(intent: str, **fields: Any) -> dict[str, Any]:
         "needs_clarification": fields.pop("needs_clarification", False),
         "clarifying_question": fields.pop("clarifying_question", None),
         "reply": fields.pop("reply", None),
+        "recall_target": fields.pop("recall_target", None),
+        "recall_key": fields.pop("recall_key", None),
+        "recall_index": fields.pop("recall_index", None),
+        "recall_targets": fields.pop("recall_targets", []),
+        "user_facts": fields.pop("user_facts", {}),
     }
     assert not fields, f"unknown example fields: {fields}"
     return out
@@ -171,6 +188,28 @@ FEW_SHOT_EXAMPLES: list[tuple[dict[str, Any], str, dict[str, Any]]] = [
     (_state(), "what is the speed of light",
      _decision("OUT_OF_SCOPE",
                reply="That's outside what I can help with. I can help you find a room, though.")),
+    (_state(), "my name is Faizal",
+     _decision("GENERAL_CHAT", user_facts={"name": "Faizal"},
+               reply="Nice to meet you! Which city are you looking in?")),
+    (_state(facts={"name": "Faizal"}), "what is my name?",
+     _decision("CONVERSATION_RECALL", recall_target="name")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN, facts={"name": "Faizal"}),
+     "what was my first query regarding rooms?",
+     _decision("CONVERSATION_RECALL", recall_target="first_room_query")),
+    (_state(facts={"name": "Faizal"}), "actually my name is Ravi",
+     _decision("GENERAL_CHAT", user_facts={"name": "Ravi"},
+               reply="Got it! Which city are you looking in?")),
+    (_state(), "I'm Faizal, 23, need a 2 BHK in Bangalore",
+     _decision("NEW_SEARCH", city="Bangalore", bhk=2, user_facts={"name": "Faizal", "age": 23},
+               standalone_query="find 2 BHK rooms in Bangalore")),
+    (_state(facts={"name": "Ziyad", "age": 20}), "what's my name and age?",
+     _decision("CONVERSATION_RECALL", recall_targets=["name", "age"])),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN, facts={"name": "Ziyad"}),
+     "what was my first query and my name?",
+     _decision("CONVERSATION_RECALL", recall_targets=["first_query", "name"])),
+    (_state(facts={"name": "Faizal"}), "what's my bank balance",
+     _decision("OUT_OF_SCOPE",
+               reply="I can't help with that. I can help you find a room, though.")),
 ]
 
 
@@ -248,6 +287,17 @@ def _trim(value: Any, limit: int) -> Any:
     return value[:limit] if isinstance(value, str) else value
 
 
+def _facts_view(facts: Any) -> dict[str, Any]:
+    """Allowlisted keys with plain string/int values only (the query log never goes in the prompt)."""
+    if not isinstance(facts, dict):
+        return {}
+    return {
+        k: facts[k]
+        for k in FACT_KEYS
+        if isinstance(facts.get(k), (str, int)) and not isinstance(facts.get(k), bool)
+    }
+
+
 def _size(summary: dict[str, Any]) -> int:
     return len(_dump(summary))
 
@@ -288,6 +338,7 @@ def build_state_summary(state: dict[str, Any] | None) -> dict[str, Any]:
         "rooms_on_screen": rooms,
         "selected_room_index": state.get("selected_room_index"),
         "recent_turns": turns,
+        "user_facts": _facts_view(state.get("user_facts")),
     }
     summary = neutralize(summary)
 

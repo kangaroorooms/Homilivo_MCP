@@ -21,6 +21,18 @@ class Intent(str, Enum):
     UNSUPPORTED_ACTION = "UNSUPPORTED_ACTION"
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
     UNCLEAR = "UNCLEAR"
+    CONVERSATION_RECALL = "CONVERSATION_RECALL"
+
+
+class RecallTarget(str, Enum):
+    NAME = "name"
+    AGE = "age"
+    FACT = "fact"
+    FIRST_QUERY = "first_query"
+    LAST_QUERY = "last_query"
+    FIRST_ROOM_QUERY = "first_room_query"
+    NTH_QUERY = "nth_query"
+    ALL_QUERIES = "all_queries"
 
 
 class Operation(str, Enum):
@@ -40,6 +52,12 @@ class Operation(str, Enum):
 REPLY_INTENTS = frozenset(
     {Intent.GENERAL_CHAT, Intent.OUT_OF_SCOPE, Intent.UNSUPPORTED_ACTION}
 )
+
+# Facts about the user the session may keep (validators.validate_user_facts checks the values).
+FACT_KEYS = ("name", "age", "occupation", "gender", "preferred_city", "budget")
+
+# One recall question may ask for several of these at once ("what is my name and age").
+RECALL_TOKENS = (*FACT_KEYS, "first_query", "last_query", "first_room_query")
 
 RoomRef = Union[int, str, None]  # 1-based index, "selected" or None
 RawNumber = Union[int, str, None]  # numbers stay numbers; strings go to validators
@@ -70,6 +88,11 @@ class Decision(BaseModel):
     needs_clarification: bool = False
     clarifying_question: str | None = None
     reply: str | None = None
+    recall_target: RecallTarget | None = None
+    recall_key: str | None = None  # a FACT_KEYS entry, for recall_target "fact"
+    recall_index: int | None = None  # 1-based, for recall_target "nth_query"
+    user_facts: dict[str, Any] = Field(default_factory=dict)  # raw; validators.validate_user_facts cleans
+    recall_targets: list[str] = Field(default_factory=list)  # several recall asks at once (RECALL_TOKENS)
 
 
 # ---- coercion helpers ---------------------------------------------------
@@ -111,6 +134,41 @@ def _room_reference(value: Any) -> RoomRef:
     return _ref_index(value)
 
 
+def _user_facts(value: Any) -> dict[str, Any]:
+    """Allowlisted keys only, scalar string or int values only."""
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key in FACT_KEYS:
+        raw = value.get(key)
+        if isinstance(raw, bool):
+            continue
+        if isinstance(raw, str) and raw.strip():
+            out[key] = raw.strip()
+        elif isinstance(raw, (int, float)) and raw == raw and abs(raw) != float("inf"):
+            out[key] = int(raw)
+    return out
+
+
+def _recall_targets(data: dict) -> list[str]:
+    """Several recall targets from ``recall_targets`` (or a list put in ``recall_target``), as
+    RECALL_TOKENS in order, no duplicates. ``fact`` stands for ``recall_key``."""
+    raw = data.get("recall_targets")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        raw = data.get("recall_target") if isinstance(data.get("recall_target"), list) else []
+    out: list[str] = []
+    for item in raw:
+        token = item.strip().lower() if isinstance(item, str) else ""
+        if token == "fact":
+            key = data.get("recall_key")
+            token = key.strip().lower() if isinstance(key, str) else ""
+        if token in RECALL_TOKENS and token not in out:
+            out.append(token)
+    return out
+
+
 def _confidence(value: Any) -> float:
     if isinstance(value, bool):
         return 0.0
@@ -126,11 +184,17 @@ def _confidence(value: Any) -> float:
 
 def _enum_or_none(enum_cls: type[Enum], value: Any):
     if isinstance(value, str):
-        try:
-            return enum_cls(value.strip().upper())
-        except ValueError:
-            return None
+        text = value.strip()
+        for candidate in (text.upper(), text.lower()):
+            try:
+                return enum_cls(candidate)
+            except ValueError:
+                continue
     return None
+
+
+def _lower(value: Any) -> Any:
+    return value.strip().lower() if isinstance(value, str) else value
 
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE)
@@ -193,4 +257,9 @@ def parse_decision(raw: Any) -> Decision | None:
         needs_clarification=needs if isinstance(needs, bool) else False,
         clarifying_question=_clean_str(data.get("clarifying_question")),
         reply=_clean_str(data.get("reply")) if intent in REPLY_INTENTS else None,
+        recall_target=_enum_or_none(RecallTarget, _lower(data.get("recall_target"))),
+        recall_key=_clean_str(data.get("recall_key")),
+        recall_index=_ref_index(data.get("recall_index")),
+        user_facts=_user_facts(data.get("user_facts")),
+        recall_targets=_recall_targets(data),
     )

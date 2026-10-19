@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import difflib
 import re
+import unicodedata
 from typing import Any
 
-from llm_approach import reuse
-from llm_approach.schema import Slots
+from llm_approach import extra_security, reuse
+from llm_approach.schema import FACT_KEYS, Slots
 
 BHK_MIN, BHK_MAX = 1, 5
 PRICE_MIN, PRICE_MAX = 500, 500_000
@@ -268,4 +269,125 @@ def validate_slots(
     if len(good) != len(refs):
         rejected.append("compare_references")
     clean["compare_references"] = good
+    return clean, rejected
+
+
+# ---- user facts (session memory) -----------------------------------------------------
+
+NAME_MAX_CHARS, NAME_MAX_WORDS = 40, 4
+AGE_MIN, AGE_MAX = 16, 100
+OCCUPATION_MIN_CHARS, OCCUPATION_MAX_CHARS, OCCUPATION_MAX_WORDS = 2, 40, 5
+_NAME_PUNCT = " .'-"
+_OCCUPATION_PUNCT = " .'-&/"
+_AGE_RE = re.compile(r"(\d{1,3})(?:\s*(?:years?|yrs?|yo|y/o)(?:\s*old)?)?", re.IGNORECASE)
+_GENDERS = {
+    "male": "male", "man": "male", "boy": "male", "m": "male",
+    "female": "female", "woman": "female", "girl": "female", "f": "female",
+    "non-binary": "non-binary", "nonbinary": "non-binary", "non binary": "non-binary",
+    "other": "other",
+}
+_NUMBER_WORDS = re.compile(
+    r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
+    r"sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|"
+    r"hundred|thousand|lakh|lac)\b",
+    re.IGNORECASE,
+)
+
+
+def _plain_text(raw: Any, allowed_punct: str, min_chars: int, max_chars: int, max_words: int) -> str | None:
+    """Letters (any script, with combining marks) plus ``allowed_punct``; None otherwise.
+
+    Rejects, rather than cleans, anything with invisible/format/control characters (zero-width
+    joiners, tag characters), digits, '@', angle brackets, colons or brackets, and any text the
+    injection filter would block (role prefixes, "ignore previous instructions", fence tags)."""
+    if not isinstance(raw, str):
+        return None
+    text = re.sub(r"\s+", " ", raw).strip()
+    if not (min_chars <= len(text) <= max_chars) or len(text.split()) > max_words:
+        return None
+    for char in text:
+        category = unicodedata.category(char)
+        if not (char.isalpha() or category.startswith("M") or char in allowed_punct):
+            return None
+    if not text[0].isalpha() or extra_security.is_extra_blocked(text)[0]:
+        return None
+    return text
+
+
+def validate_name(raw: Any) -> str | None:
+    text = _plain_text(raw, _NAME_PUNCT, 1, NAME_MAX_CHARS, NAME_MAX_WORDS)
+    if text is None:
+        return None
+    return text.title() if text.islower() or text.isupper() else text
+
+
+def validate_age(raw: Any) -> int | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, float) and raw.is_integer():
+        raw = int(raw)
+    if isinstance(raw, str):
+        match = _AGE_RE.fullmatch(raw.strip())
+        if not match:
+            return None
+        raw = int(match.group(1))
+    return raw if isinstance(raw, int) and AGE_MIN <= raw <= AGE_MAX else None
+
+
+def validate_occupation(raw: Any) -> str | None:
+    text = _plain_text(raw, _OCCUPATION_PUNCT, OCCUPATION_MIN_CHARS, OCCUPATION_MAX_CHARS, OCCUPATION_MAX_WORDS)
+    return text.lower() if text else None
+
+
+def validate_gender(raw: Any) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    return _GENDERS.get(re.sub(r"\s+", " ", raw.lower()).strip())
+
+
+_FACT_VALIDATORS = {
+    "name": validate_name,
+    "age": validate_age,
+    "occupation": validate_occupation,
+    "gender": validate_gender,
+    "preferred_city": validate_city,
+    "budget": _valid_price,
+}
+assert set(_FACT_VALIDATORS) == set(FACT_KEYS)
+
+
+def _grounded(key: str, raw: Any, clean: Any, message: str) -> bool:
+    """The value must come from the user's message, not from the model's imagination."""
+    flat = re.sub(r"\s+", " ", message.lower())
+    if key in ("age", "budget"):
+        return bool(re.search(r"\d", flat) or _NUMBER_WORDS.search(flat))
+    if key == "gender":  # "I'm a woman" grounds "female"; one-letter synonyms never count
+        words = set(re.findall(r"[a-z]+(?:[ -][a-z]+)?", flat))
+        return any(len(word) > 1 and _GENDERS.get(word) == clean for word in words)
+    candidates = {re.sub(r"\s+", " ", str(v).lower()).strip() for v in (raw, clean) if isinstance(v, str)}
+    return any(c and c in flat for c in candidates)
+
+
+def validate_user_facts(raw: Any, message: str | None = None) -> tuple[dict[str, Any], list[str]]:
+    """Clean the facts the model extracted. Returns ``(clean, rejected)`` (key names only).
+
+    Unknown keys are dropped silently. Values that fail their validator are rejected, and so is
+    any value containing an e-mail address or a phone-number-like run of digits. With ``message``,
+    a value that does not appear in the user's message is rejected as well."""
+    clean: dict[str, Any] = {}
+    rejected: list[str] = []
+    if not isinstance(raw, dict):
+        return clean, rejected
+    for key in FACT_KEYS:
+        value = raw.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str) and ("@" in value or len(re.findall(r"\d", value)) >= 7):
+            rejected.append(key)  # e-mail or phone number: never stored
+            continue
+        checked = _FACT_VALIDATORS[key](value)
+        if checked is None or (message is not None and not _grounded(key, value, checked, message)):
+            rejected.append(key)
+            continue
+        clean[key] = checked
     return clean, rejected

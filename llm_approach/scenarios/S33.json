@@ -1,0 +1,60 @@
+{
+  "id": "S33",
+  "title": "Session memory: a correction overwrites the stored name",
+  "turns": [
+    {
+      "user": "my name is Faizal",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice to meet you!",
+        "user_facts": {
+          "name": "Faizal"
+        }
+      },
+      "expect": {
+        "facts": {
+          "name": "Faizal"
+        }
+      }
+    },
+    {
+      "user": "actually my name is Ravi",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Got it!",
+        "user_facts": {
+          "name": "Ravi"
+        }
+      },
+      "expect": {
+        "action": "facts_saved",
+        "facts": {
+          "name": "Ravi"
+        },
+        "reply_contains": [
+          "Ravi"
+        ]
+      }
+    },
+    {
+      "user": "what is my name?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "name"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "Your name is Ravi."
+        ],
+        "reply_not_contains": [
+          "Faizal"
+        ]
+      }
+    }
+  ]
+}

@@ -26,7 +26,7 @@ from llm_approach import (
     reuse,
     validators,
 )
-from llm_approach.actions import ActionResult, TurnBudget, clarify, conversation, followup, platform, search
+from llm_approach.actions import ActionResult, TurnBudget, clarify, conversation, followup, platform, recall, search
 from llm_approach.schema import Decision, Intent
 from llm_approach.state import ERROR_REPLY, LLMConversationState, SessionStore
 
@@ -109,6 +109,14 @@ def _ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000
 
 
+def _log_withheld(store: SessionStore, session_id: str) -> None:
+    """A too-long message still counts as a message the user sent: log a placeholder."""
+    try:
+        store.get_or_create(session_id).record_query(None)
+    except ValueError:  # not a session id: nothing to log against
+        pass
+
+
 def _result(
     reply: str, rooms, m: metrics_mod.TurnMetrics, *, success: bool = True, debug=None, started: float
 ) -> TurnResult:
@@ -163,6 +171,7 @@ _HANDLERS = {
     Intent.UNSUPPORTED_ACTION: conversation.handle_unsupported,
     Intent.OUT_OF_SCOPE: conversation.handle_out_of_scope,
     Intent.UNCLEAR: clarify.handle_unclear,
+    Intent.CONVERSATION_RECALL: recall.handle_recall,
 }
 _THREADED = {Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.PLATFORM_INFO}  # blocking I/O
 
@@ -173,6 +182,7 @@ async def _decide_action(
     state: LLMConversationState,
     budget: TurnBudget,
     m: metrics_mod.TurnMetrics,
+    stored_facts: dict[str, Any] | None = None,
 ) -> tuple[ActionResult, dict[str, Any], list[str]]:
     validated, rejected = validators.validate_slots(
         decision.slots,
@@ -189,11 +199,36 @@ async def _decide_action(
         return forced, validated, rejected
 
     low_confidence = decision.confidence < config.CONFIDENCE_THRESHOLD
+    # Recall questions are answered from state and never go to the generic clarifier: the recall
+    # action asks its own question when it has no target. Safety net: a message with a personal
+    # recall cue that the model called UNCLEAR or was unsure about is answered the same way.
+    net = None
+    if decision.intent is not Intent.CONVERSATION_RECALL and (low_confidence or decision.intent is Intent.UNCLEAR):
+        net = recall.detect_recall_cue(message)
+    if decision.intent is Intent.CONVERSATION_RECALL or net is not None:
+        if net is not None:
+            state.set_last_query_intent(Intent.CONVERSATION_RECALL.value)
+            decision = decision.model_copy(
+                update={"intent": Intent.CONVERSATION_RECALL, "recall_target": None, "recall_targets": net}
+            )
+        return recall.handle_recall(decision, validated, state, budget, user_message=message), validated, rejected
     # needs_clarification on a search is answered by the search handler itself
     # (it asks for the city or area); on any other intent, ask a question.
     asks = decision.needs_clarification and decision.intent not in (Intent.NEW_SEARCH, Intent.REFINEMENT)
     if low_confidence or asks or decision.intent is Intent.UNCLEAR:
-        return clarify.handle_unclear(decision, validated, state, budget), validated, rejected
+        return (
+            clarify.handle_unclear(decision, validated, state, budget, user_message=message),
+            validated,
+            rejected,
+        )
+
+    if (decision.intent is Intent.GENERAL_CHAT and not stored_facts
+            and clarify.is_bare_reply(message) and clarify.was_generic_prompt(state)):
+        # "yes" to our generic question is not small talk: say what we can do instead of repeating it
+        return ActionResult(clarify.help_message(state), None, "help"), validated, rejected
+
+    if stored_facts and decision.intent is Intent.GENERAL_CHAT:
+        return recall.acknowledge(stored_facts, state), validated, rejected  # fixed wording, not the model's
 
     handler = _HANDLERS[decision.intent]
     kwargs = {"user_message": message} if decision.intent is Intent.PLATFORM_INFO else {}
@@ -224,12 +259,15 @@ async def _run_turn(
         started = time.perf_counter()
         action = await asyncio.to_thread(fallback.run_fallback, message, state, budget)
         m.api_ms = _ms(started) if budget.tool_calls else 0.0
+        state.set_last_query_intent(Intent.NEW_SEARCH.value if action.tool_called else Intent.UNCLEAR.value)
         return action, None
 
     m.intent = decision.intent.value
     m.operation = decision.operation.value if decision.operation else None
     m.confidence = decision.confidence
-    action, validated, rejected = await _decide_action(message, decision, state, budget, m)
+    state.set_last_query_intent(m.intent)
+    stored_facts = recall.capture_facts(decision.user_facts, message, state)  # side effect on every intent
+    action, validated, rejected = await _decide_action(message, decision, state, budget, m, stored_facts)
     debug = {
         "intent": m.intent,
         "operation": m.operation,
@@ -260,16 +298,20 @@ async def handle_turn(
             return _result(EMPTY_REPLY, None, m, success=False, started=started)
         if len(text) > config.MAX_USER_MESSAGE_CHARS:
             m.action = "too_long"
+            _log_withheld(store, session_id)
             return _result(TOO_LONG_REPLY, None, m, success=False, started=started)
 
         async with store.turn(session_id, user_message=text) as state:
-            debug = None
+            logged = False
+            queries_before = state.query_count
             try:
                 if _input_blocked(text):
                     m.action = "security_block"
+                    state.record_query(None)  # placeholder, never the blocked text
                     state.record_turn(BLOCKED_PLACEHOLDER, extra_security.REFUSAL)
                     return _result(extra_security.REFUSAL, None, m, success=False, started=started)
 
+                state.record_query(text)
                 action, debug = await _run_turn(text, state, m)
                 reply, rooms = action.reply, action.rooms
                 m.action, m.tool_called = action.action, action.tool_called
@@ -282,6 +324,8 @@ async def handle_turn(
                 logger.error("turn failed: %s", type(exc).__name__)
                 m.error_class, m.action = type(exc).__name__, "error"
                 reply, rooms, debug = ERROR_REPLY, None, None
+                if state.query_count == queries_before:
+                    state.record_query(None)
                 state.record_turn(text, reply)
                 return _result(reply, rooms, m, success=False, started=started)
 

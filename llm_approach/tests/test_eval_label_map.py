@@ -51,3 +51,9 @@ def test_every_dataset_label_is_mapped():
     for name in datasets.INTENT_DATASETS:
         for item in datasets.load_dataset(name):
             assert item["gold_intent"] is not None, item["item"]
+
+
+def test_new_only_intents_are_not_poc_targets():
+    assert label_map.NEW_ONLY_INTENTS == {"CONVERSATION_RECALL"}
+    assert all(intent not in label_map.NEW_ONLY_INTENTS for intent, _ in label_map.POC_TO_NEW.values())
+    assert label_map.intent_of("OUT_OF_SCOPE") == "OUT_OF_SCOPE"  # personal chat questions are not remapped

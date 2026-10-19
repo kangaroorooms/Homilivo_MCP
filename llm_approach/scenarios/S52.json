@@ -1,0 +1,48 @@
+{
+  "id": "S52",
+  "title": "Safety net: the model calls a recall question UNCLEAR, wording still gets it answered",
+  "turns": [
+    {
+      "user": "I'm Ziyad and 20",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!",
+        "user_facts": {
+          "name": "Ziyad",
+          "age": 20
+        }
+      },
+      "expect": {
+        "action": "facts_saved"
+      }
+    },
+    {
+      "user": "what's my name and age ?",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.3
+      },
+      "expect": {
+        "action": "recall_several",
+        "tool_called": false,
+        "reply_contains": [
+          "Your name is Ziyad and you're 20."
+        ]
+      }
+    },
+    {
+      "user": "what is the speed of light",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.3
+      },
+      "expect": {
+        "action": "clarify",
+        "reply_not_contains": [
+          "Your name"
+        ]
+      }
+    }
+  ]
+}

@@ -268,7 +268,7 @@ def test_rooms_are_sanitised(rooms):
 # ---- prompt state ---------------------------------------------------------
 
 PROMPT_KEYS = {"current_search", "pending_question", "last_bot_message",
-               "rooms_on_screen", "selected_room_index", "recent_turns"}
+               "rooms_on_screen", "selected_room_index", "recent_turns", "user_facts"}
 
 
 def test_to_prompt_state_keys_match_build_state_summary(rooms):

@@ -1,0 +1,77 @@
+{
+  "id": "S32",
+  "title": "Session memory: first room query skips greetings",
+  "turns": [
+    {
+      "user": "hi",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hello!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "2bhk in pune",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Pune"
+        },
+        "standalone_query": "find rooms in Pune"
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true
+      }
+    },
+    {
+      "user": "under 20k",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "max_price": 20000
+        }
+      },
+      "expect": {
+        "action": "refinement",
+        "tool_called": true
+      }
+    },
+    {
+      "user": "what was my first query regarding rooms?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "first_room_query"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "action": "recall_first_room_query",
+        "reply_contains": [
+          "\"2bhk in pune\""
+        ],
+        "reply_not_contains": [
+          "\"hi\"",
+          "under 20k"
+        ]
+      }
+    }
+  ]
+}

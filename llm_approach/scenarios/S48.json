@@ -1,0 +1,82 @@
+{
+  "id": "S48",
+  "title": "Recall: a correction followed by a combined recall",
+  "turns": [
+    {
+      "user": "I'm Faizal and 23",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!",
+        "user_facts": {
+          "name": "Faizal",
+          "age": 23
+        }
+      },
+      "expect": {
+        "action": "facts_saved"
+      }
+    },
+    {
+      "user": "sorry, my name is Ziyad and I'm 20",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!",
+        "user_facts": {
+          "name": "Ziyad",
+          "age": 20
+        }
+      },
+      "expect": {
+        "action": "facts_saved",
+        "facts": {
+          "name": "Ziyad",
+          "age": 20
+        },
+        "reply_not_contains": [
+          "Faizal"
+        ]
+      }
+    },
+    {
+      "user": "what's my name and age?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_targets": [
+          "name",
+          "age"
+        ]
+      },
+      "expect": {
+        "tool_called": false,
+        "reply_contains": [
+          "Your name is Ziyad and you're 20."
+        ],
+        "reply_not_contains": [
+          "Faizal",
+          "23"
+        ]
+      }
+    },
+    {
+      "user": "what was my first query and my name?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_targets": [
+          "first_query",
+          "name"
+        ]
+      },
+      "expect": {
+        "tool_called": false,
+        "reply_contains": [
+          "Your name is Ziyad.",
+          "Your first question was: \"I'm Faizal and 23\"."
+        ]
+      }
+    }
+  ]
+}

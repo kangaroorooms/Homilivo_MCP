@@ -22,7 +22,7 @@ SCENARIOS = run_scenarios.load_scenarios()
 
 
 def test_all_scenarios_exist():
-    assert [s["id"] for s in SCENARIOS] == [f"S{n}" for n in range(1, 29)]
+    assert [s["id"] for s in SCENARIOS] == [f"S{n}" for n in range(1, 53)]
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=[s["id"] for s in SCENARIOS])
@@ -123,7 +123,10 @@ def test_output_guardrail_sees_the_final_reply(pipe):
 def test_501_characters_gets_short_reply_without_llm(pipe):
     r = pipe.turn("a" * 501)
     assert r.reply == pipeline.TOO_LONG_REPLY and r.success is False
-    assert pipe.llm_calls == 0 and pipe.security_calls == [] and pipe.state is None
+    assert pipe.llm_calls == 0 and pipe.security_calls == []
+    # Session memory: the message is logged as a placeholder (never its text); no history is written.
+    assert pipe.state.history == [] and pipe.state.turn_count == 0
+    assert pipe.state.user_queries == [{"turn": 1, "text": "[message withheld]", "intent": "BLOCKED"}]
 
 
 def test_500_characters_is_accepted(pipe):
@@ -215,7 +218,7 @@ def test_prompt_has_selected_room_wifi_example():
     assert decision["room_reference"] == "selected"
     assert '"does it have wifi"' not in prompts.system_prompt()  # rendered as <user_message>, not quoted
     assert "<user_message>does it have wifi</user_message>" in prompts.system_prompt()
-    assert 15 <= len(prompts.FEW_SHOT_EXAMPLES) <= 25
+    assert 15 <= len(prompts.FEW_SHOT_EXAMPLES) <= 33  # 25 originals + 8 session-memory examples
 
 
 def test_s8_through_the_real_llm_client_with_mocked_groq(monkeypatch, fake_groq):

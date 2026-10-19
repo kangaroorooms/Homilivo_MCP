@@ -95,6 +95,8 @@ class _Spy:
     def __init__(self) -> None:
         self.llm_calls = 0
         self.llm_calls_this_turn = 0
+        self.answer_calls = 0  # calls of the conversation answerer (the second call of a chat question)
+        self.answer_calls_this_turn = 0
         self.searches: list[dict[str, Any]] = []
 
 
@@ -131,8 +133,12 @@ class _FakeResponse:
 
 
 @contextlib.contextmanager
-def runtime(scenario: dict[str, Any], mode: str, script: list[Any], spy: _Spy) -> Iterator[None]:
-    """Patch what a run needs. ``script`` is the queue of scripted LLM replies (stub)."""
+def runtime(
+    scenario: dict[str, Any], mode: str, script: list[Any], spy: _Spy, answers: list[Any] | None = None
+) -> Iterator[None]:
+    """Patch what a run needs. ``script`` is the queue of scripted LLM replies (stub); ``answers`` the
+    queue of scripted replies of the conversation answerer (a dict is dumped to JSON, a str is raw model
+    text, "rate_limit" / "timeout" set the budget's error class like the real client)."""
     real_search = rooms_client.search_rooms
 
     def spying_search(search, budget, **kw):
@@ -151,7 +157,21 @@ def runtime(scenario: dict[str, Any], mode: str, script: list[Any], spy: _Spy) -
                     return None
                 return None if item in (None, "timeout") else parse_decision(item)
 
+            async def fake_generate_json(messages, budget):
+                spy.answer_calls += 1
+                if not budget.try_consume():
+                    return None
+                budget.record_latency(1.0)
+                item = (answers or []).pop(0)
+                if item in ("rate_limit", "timeout"):
+                    budget.error_class = "RateLimitError" if item == "rate_limit" else "TimeoutError"
+                    return None
+                budget.tokens_in += 300
+                budget.tokens_out += 40
+                return json.dumps(item) if isinstance(item, dict) else item
+
             stack.enter_context(_patched(llm_client, "decide", fake_decide))
+            stack.enter_context(_patched(llm_client, "generate_json", fake_generate_json))
             stack.enter_context(_patched(reuse, "get_is_security_blocked", lambda: (lambda m: (False, ""))))
             stack.enter_context(_patched(reuse, "get_output_guardrail", lambda: (lambda t: (True, t))))
             kb_answer = {**STUB_KB_ANSWER, **scenario.get("kb_answer", {})}  # a scenario may stub a different answer
@@ -173,7 +193,14 @@ def runtime(scenario: dict[str, Any], mode: str, script: list[Any], spy: _Spy) -
                 spy.llm_calls += 1
                 return await real_decide(user_message, state_summary, budget)
 
+            real_generate = llm_client.generate_json
+
+            async def counting_generate(messages, budget):
+                spy.answer_calls += 1
+                return await real_generate(messages, budget)
+
             stack.enter_context(_patched(llm_client, "decide", counting_decide))
+            stack.enter_context(_patched(llm_client, "generate_json", counting_generate))
             stack.enter_context(_env(**{config.OFFLINE_ROOMS_ENV: "1"}))
         yield
 
@@ -204,6 +231,8 @@ def _check_turn(
     if "llm_called" in expect:
         called = spy.llm_calls_this_turn > 0 if mode == "stub" else (m.get("llm_ms", 0) > 0 or m.get("tokens_in", 0) > 0)
         eq("llm_called", expect["llm_called"], called)
+    if "answer_called" in expect:  # the conversation answerer (second call) ran
+        eq("answer_called", expect["answer_called"], spy.answer_calls_this_turn > 0)
     if "rooms_shown" in expect:
         eq("rooms_shown", expect["rooms_shown"], bool(result.rooms))
     if "rooms_on_screen" in expect:
@@ -246,12 +275,16 @@ async def run_scenario(
         ]
 
     script = [t["llm"] for t in scenario["turns"] if t["llm"] != "never"]
+    answers: list[Any] = []
+    for t in scenario["turns"]:  # "answer": one scripted answerer reply, or a list (a retry)
+        given = t.get("answer")
+        answers += given if isinstance(given, list) else ([] if given is None else [given])
     spy = _Spy()
     store = SessionStore()
     session_id = str(uuid.uuid4())
     last_llm_turn_at: float | None = None
 
-    with runtime(scenario, mode, script, spy):
+    with runtime(scenario, mode, script, spy, answers):
         for i, turn in enumerate(scenario["turns"], 1):
             if turn.get("new_session"):  # a brand-new session: nothing from before may be visible
                 session_id = str(uuid.uuid4())
@@ -259,9 +292,10 @@ async def run_scenario(
                 wait = spacing - (time.monotonic() - last_llm_turn_at)
                 if wait > 0:
                     await asyncio.sleep(wait)
-            calls_before, searches_before = spy.llm_calls, len(spy.searches)
+            calls_before, searches_before, answers_before = spy.llm_calls, len(spy.searches), spy.answer_calls
             result = await pipeline.handle_turn(session_id, turn["user"], store=store)
             spy.llm_calls_this_turn = spy.llm_calls - calls_before
+            spy.answer_calls_this_turn = spy.answer_calls - answers_before
             if spy.llm_calls_this_turn:
                 last_llm_turn_at = time.monotonic()
             report = TurnReport(

@@ -29,6 +29,7 @@ from llm_approach.state import QUERY_BLOCKED, LLMConversationState
 
 ROOM_INTENTS = frozenset({"NEW_SEARCH", "REFINEMENT"})
 RECALL_INTENT = "CONVERSATION_RECALL"
+META_INTENTS = frozenset({RECALL_INTENT, "CONVERSATION_QUESTION"})  # questions about the chat, not room queries
 QUOTE_MAX_CHARS = 200
 ALL_QUERIES_SHOWN = 5
 
@@ -144,7 +145,7 @@ def _first_room_query(earlier: list[dict[str, Any]]) -> str:
 
 
 def _last_query(earlier: list[dict[str, Any]]) -> str:
-    found = next((q for q in reversed(earlier) if q["intent"] != RECALL_INTENT), None)
+    found = next((q for q in reversed(earlier) if q["intent"] not in META_INTENTS), None)
     return _say("last", found) if found else NO_OTHER_QUERY
 
 
@@ -214,7 +215,7 @@ def _single(decision: Decision, state: LLMConversationState) -> tuple[str, str]:
         found = next((q for q in earlier if q["turn"] == n), None)
         return (_say(ordinal(n), found) if found else FORGOTTEN), "nth_query"
     if target is RecallTarget.ALL_QUERIES:
-        asked = [q for q in earlier if q["intent"] != RECALL_INTENT]
+        asked = [q for q in earlier if q["intent"] not in META_INTENTS]
         if not asked:
             return NO_OTHER_QUERY, "all_queries"
         shown = asked[-ALL_QUERIES_SHOWN:]

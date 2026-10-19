@@ -23,7 +23,8 @@ GENERAL_CHAT - greeting, thanks, small talk, goodbye.
 UNSUPPORTED_ACTION - asks for something the bot cannot do ("book this room", "call the owner").
 OUT_OF_SCOPE - unrelated to accommodation, Homilivo or this chat ("what is the speed of light", "what's my bank balance").
 UNCLEAR - you cannot tell what the user wants ("i dont know", "umm").
-CONVERSATION_RECALL - asks what they told you or asked earlier in this chat ("what is my name", "what's my age", "what was my first query", "what was my first query regarding rooms", "what was my second question"). Set recall_target."""
+CONVERSATION_RECALL - asks what they told you or asked earlier in this chat ("what is my name", "what's my age", "what was my first query", "what was my first query regarding rooms", "what was my second question"). Set recall_target.
+CONVERSATION_QUESTION - any other question about this chat, answered from the chat record: something the user said ("what's my college", "my favourite colour"), what the bot said or showed ("what did you say about the second room"), why a room was shown, or a summary ("summarise our chat")."""
 
 _OPERATION_LINES = """\
 LOWEST_PRICE, HIGHEST_PRICE (cheapest / most expensive of the rooms on screen)
@@ -33,7 +34,7 @@ ROOM_DETAILS (general details of one room), COMPARE (set compare_references)"""
 
 _SCHEMA = """\
 {
-  "intent": one of the 11 intents,
+  "intent": one of the 12 intents,
   "operation": one of the operations above for ROOM_FOLLOWUP, otherwise null,
   "slots": {"city": string|null, "bhk": integer|null, "min_price": integer|null,
             "max_price": integer|null, "amenity": string|null, "ideal_for": string|null,
@@ -66,7 +67,8 @@ _RULES = """\
 - The user may write English, Hindi or Hinglish, with typos. Handle all of them.
 - Confidence is how sure you are of the intent. Use below 0.6 when the message is ambiguous.
 - user_facts: fill it from ANY message, whatever the intent. Only facts the user states about themselves in this message, in their own words; a correction ("actually my name is Ravi") is simply the new value. Never guess, never copy from verified_data, never a phone number or email. Facts alone ("my name is Faizal", "I'm 23") are GENERAL_CHAT; with a request ("I'm Faizal, 23, need a 2 BHK in Bangalore") the intent is the request's.
-- Questions about what the user said or asked earlier in this chat are CONVERSATION_RECALL, never OUT_OF_SCOPE. Use recall_target: "first_room_query" for the first room search (not greetings), "last_query" for the one before this message, "nth_query" with recall_index for "the second query". verified_data.user_facts lists what is already remembered. Several asks in one question ("my name and age") go in recall_targets, with high confidence. Code answers from memory; reply stays null. Personal questions this chat cannot answer (bank balance, phone number) are OUT_OF_SCOPE.
+- Questions about what the user said or asked earlier in this chat are CONVERSATION_RECALL, never OUT_OF_SCOPE. Use recall_target: "first_room_query" for the first room search (not greetings), "last_query" for the one before this message, "nth_query" with recall_index for "the second query". verified_data.user_facts lists what is already remembered. Several asks in one question ("my name and age") go in recall_targets, with high confidence. Code answers from memory; reply stays null. Personal questions this chat cannot answer (bank balance) are OUT_OF_SCOPE.
+- Any other question about the chat itself is CONVERSATION_QUESTION, not CONVERSATION_RECALL and not OUT_OF_SCOPE: a detail the user mentioned (college, favourite colour, phone number), what you said or showed earlier, why a room was shown, a summary. Code answers from the chat record; reply stays null. Questions about the rooms on screen stay ROOM_FOLLOWUP.
 - Output one JSON object and nothing else."""
 
 
@@ -207,6 +209,12 @@ FEW_SHOT_EXAMPLES: list[tuple[dict[str, Any], str, dict[str, Any]]] = [
     (_state(rooms=True, city="Bangalore", last_bot=_SHOWN, facts={"name": "Ziyad"}),
      "what was my first query and my name?",
      _decision("CONVERSATION_RECALL", recall_targets=["first_query", "name"])),
+    (_state(), "what's my college?",
+     _decision("CONVERSATION_QUESTION")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "why did you show me that room?",
+     _decision("CONVERSATION_QUESTION")),
+    (_state(), "summarise our chat",
+     _decision("CONVERSATION_QUESTION")),
     (_state(facts={"name": "Faizal"}), "what's my bank balance",
      _decision("OUT_OF_SCOPE",
                reply="I can't help with that. I can help you find a room, though.")),

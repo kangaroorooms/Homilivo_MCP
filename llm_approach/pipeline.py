@@ -17,6 +17,7 @@ from typing import Any
 
 from llm_approach import (
     config,
+    conversation_answerer,
     extra_security,
     fallback,
     llm_client,
@@ -109,10 +110,12 @@ def _ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000
 
 
-def _log_withheld(store: SessionStore, session_id: str) -> None:
-    """A too-long message still counts as a message the user sent: log a placeholder."""
+def _log_withheld(store: SessionStore, session_id: str, reply: str) -> None:
+    """A too-long message still counts as a message the user sent: log a placeholder (and our reply)."""
     try:
-        store.get_or_create(session_id).record_query(None)
+        state = store.get_or_create(session_id)
+        state.record_query(None)
+        state.record_bot_reply(reply)
     except ValueError:  # not a session id: nothing to log against
         pass
 
@@ -172,7 +175,7 @@ _HANDLERS = {
     Intent.OUT_OF_SCOPE: conversation.handle_out_of_scope,
     Intent.UNCLEAR: clarify.handle_unclear,
     Intent.CONVERSATION_RECALL: recall.handle_recall,
-}
+}  # CONVERSATION_QUESTION is async and is handled in _decide_action
 _THREADED = {Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.PLATFORM_INFO}  # blocking I/O
 
 
@@ -183,6 +186,7 @@ async def _decide_action(
     budget: TurnBudget,
     m: metrics_mod.TurnMetrics,
     stored_facts: dict[str, Any] | None = None,
+    llm_budget: llm_client.LLMBudget | None = None,
 ) -> tuple[ActionResult, dict[str, Any], list[str]]:
     validated, rejected = validators.validate_slots(
         decision.slots,
@@ -203,8 +207,22 @@ async def _decide_action(
     # action asks its own question when it has no target. Safety net: a message with a personal
     # recall cue that the model called UNCLEAR or was unsure about is answered the same way.
     net = None
-    if decision.intent is not Intent.CONVERSATION_RECALL and (low_confidence or decision.intent is Intent.UNCLEAR):
+    ask_chat = decision.intent is Intent.CONVERSATION_QUESTION
+    unsure = low_confidence or decision.intent is Intent.UNCLEAR
+    if decision.intent not in (Intent.CONVERSATION_RECALL, Intent.CONVERSATION_QUESTION) and unsure:
         net = recall.detect_recall_cue(message)
+        if not net and (net == [] or conversation_answerer.detect_chat_cue(message)):
+            net, ask_chat = None, True  # a chat question with no exact recall target: the answerer takes it
+    if ask_chat and llm_budget is not None:
+        if decision.intent is not Intent.CONVERSATION_QUESTION:
+            state.set_last_query_intent(Intent.CONVERSATION_QUESTION.value)
+        outcome = await conversation_answerer.answer_question(message, state, llm_budget)
+        reply = RATE_LIMIT_REPLY if outcome.error_class == "RateLimitError" else outcome.reply
+        return (
+            ActionResult(reply, None, outcome.action, error_class=outcome.error_class),
+            validated,
+            rejected,
+        )
     if decision.intent is Intent.CONVERSATION_RECALL or net is not None:
         if net is not None:
             state.set_last_query_intent(Intent.CONVERSATION_RECALL.value)
@@ -267,7 +285,9 @@ async def _run_turn(
     m.confidence = decision.confidence
     state.set_last_query_intent(m.intent)
     stored_facts = recall.capture_facts(decision.user_facts, message, state)  # side effect on every intent
-    action, validated, rejected = await _decide_action(message, decision, state, budget, m, stored_facts)
+    action, validated, rejected = await _decide_action(message, decision, state, budget, m, stored_facts, llm_budget)
+    m.llm_ms, m.tokens_in, m.tokens_out = llm_budget.latency_ms, llm_budget.tokens_in, llm_budget.tokens_out
+    m.llm_calls, m.llm_call_ms = llm_budget.calls, list(llm_budget.call_ms)  # the answer call, if any, is included
     debug = {
         "intent": m.intent,
         "operation": m.operation,
@@ -298,7 +318,7 @@ async def handle_turn(
             return _result(EMPTY_REPLY, None, m, success=False, started=started)
         if len(text) > config.MAX_USER_MESSAGE_CHARS:
             m.action = "too_long"
-            _log_withheld(store, session_id)
+            _log_withheld(store, session_id, TOO_LONG_REPLY)
             return _result(TOO_LONG_REPLY, None, m, success=False, started=started)
 
         async with store.turn(session_id, user_message=text) as state:
@@ -308,6 +328,7 @@ async def handle_turn(
                 if _input_blocked(text):
                     m.action = "security_block"
                     state.record_query(None)  # placeholder, never the blocked text
+                    state.record_bot_reply(extra_security.REFUSAL)
                     state.record_turn(BLOCKED_PLACEHOLDER, extra_security.REFUSAL)
                     return _result(extra_security.REFUSAL, None, m, success=False, started=started)
 
@@ -326,9 +347,11 @@ async def handle_turn(
                 reply, rooms, debug = ERROR_REPLY, None, None
                 if state.query_count == queries_before:
                     state.record_query(None)
+                state.record_bot_reply(reply)
                 state.record_turn(text, reply)
                 return _result(reply, rooms, m, success=False, started=started)
 
+            state.record_bot_reply(reply, rooms)  # after the output guard
             state.record_turn(text, reply)
             return _result(reply, rooms, m, debug=debug, started=started)
     except Exception as exc:  # bad session id, cancelled store, anything left

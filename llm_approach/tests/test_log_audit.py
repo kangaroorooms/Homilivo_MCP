@@ -23,8 +23,9 @@ from .conftest import dec
 
 GROQ_KEY = "gsk" + "_FAKEKEY1234567890abcdefXYZ"  # fake; split so secret scanners stay quiet
 ROOMS_TOKEN = "FAKEROOMSTOKEN-9f8e7d6c5b4a"
-FACT_MARKS = ["Quillfeather", "astronomer"]  # session-memory facts: must never reach logs, metrics or error replies
-USER_MARKS = ["UMARKalpha", "UMARKbravo", "UMARKcharlie", "UMARKdelta", "UMARKecho", "Zorbaville", *FACT_MARKS]
+FACT_MARKS = ["Quillfeather", "astronomer"]
+CHAT_MARKS = ["BOTMARKzulu", "ANSMARKyankee", "9876501234"]  # transcript: bot replies, answerer output, a phone number  # session-memory facts: must never reach logs, metrics or error replies
+USER_MARKS = ["UMARKalpha", "UMARKbravo", "UMARKcharlie", "UMARKdelta", "UMARKecho", "Zorbaville", *FACT_MARKS, *CHAT_MARKS]
 ROOM_MARK = "ROOMMARKtitle"
 ROOM_LOC_MARK = "ROOMMARKlocation"
 SECRETS = [GROQ_KEY, ROOMS_TOKEN]
@@ -229,3 +230,41 @@ def test_session_memory_never_leaks_into_logs_metrics_or_error_replies(audit):
     # The session state is never serialised into a log or metrics line.
     for line in audit.metrics_file.read_text(encoding="utf-8").splitlines():
         assert not ({"user_facts", "user_queries"} & set(json.loads(line)))
+
+
+def test_conversation_memory_never_leaks_into_logs_metrics_or_error_replies(audit):
+    """The transcript (user text, bot replies, a phone number) and the answerer's output live in the
+    session only; both Groq calls of a conversation question are counted without any text."""
+    class RateLimited(Exception):
+        status_code = 429
+
+    question = json.dumps(dec("CONVERSATION_QUESTION"))
+    audit.fake_groq([
+        json.dumps(dec("GENERAL_CHAT", reply="Nice to meet you BOTMARKzulu")),
+        question,
+        json.dumps({"found": True, "answer": 'You said "my number is 9876501234 UMARKalpha". ANSMARKyankee', "evidence_turns": [1]}),
+        question, Exception(f"boom {GROQ_KEY} 9876501234 ANSMARKyankee UMARKcharlie"),
+        question, RateLimited("429 ANSMARKyankee UMARKdelta"),
+        question, "not json BOTMARKzulu UMARKecho", "still not json 9876501234",
+    ])
+    audit.turn("my number is 9876501234 UMARKalpha")
+    answered = audit.turn("what's my phone number?")
+    assert "ANSMARKyankee" in answered.reply  # the answer itself may hold what the user said
+    assert answered.metrics["llm_calls"] == 2 and len(answered.metrics["llm_call_ms"]) == 2
+    assert answered.metrics["tokens_in"] == 200 and answered.metrics["tokens_out"] == 40  # two calls of 100 / 20
+
+    errors = {
+        "groq_error": audit.turn("what's my phone number? UMARKcharlie").reply,
+        "rate_limit": audit.turn("what's my phone number? UMARKdelta").reply,
+        "invalid_json": audit.turn("what's my phone number? UMARKecho").reply,
+    }
+    assert errors["rate_limit"] == pipeline.RATE_LIMIT_REPLY
+    for name, text in errors.items():
+        _assert_clean(text, what=f"the {name} reply")
+    state = audit.store.peek(audit.sid)
+    assert any("9876501234" in e["text"] for e in state.transcript)  # it is in the session, and only there
+    _assert_clean(audit.caplog.text, what="the log output")
+    metrics_text = audit.metrics_file.read_text(encoding="utf-8")
+    _assert_clean(metrics_text, what="the metrics file")
+    for line in metrics_text.splitlines():
+        assert "transcript" not in json.loads(line)

@@ -13,6 +13,12 @@ TEMPERATURE = 0
 REASONING_EFFORT: str | None = "low"  # gpt-oss: keeps reasoning from eating max_tokens
 MAX_LLM_CALLS_PER_TURN = 2
 MAX_TOOL_CALLS_PER_TURN = 1
+ANSWERER_MAX_CALLS = 2  # CONVERSATION_QUESTION: the answer call and one retry, on top of the decision calls
+ANSWERER_MAX_TOKENS = 500
+ANSWERER_CONTEXT_CHARS = 24000  # about 6,000 tokens of chat record per answer call
+ANSWERER_HEAD_TURNS = 20  # beyond ANSWERER_TURN_LIMIT turns: keep this many oldest ...
+ANSWERER_TAIL_TURNS = 100  # ... and this many newest
+ANSWERER_TURN_LIMIT = 120
 HISTORY_TURNS_IN_PROMPT = 6  # one turn = user message + bot reply
 MAX_ROOMS_IN_PROMPT = 10
 MAX_USER_MESSAGE_CHARS = 500

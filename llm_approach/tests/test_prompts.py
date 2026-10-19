@@ -22,7 +22,7 @@ def test_system_prompt_contents():
 
 def test_few_shot_count_and_coverage():
     examples = prompts.FEW_SHOT_EXAMPLES
-    assert 15 <= len(examples) <= 33  # 25 originals + 8 session-memory examples
+    assert 15 <= len(examples) <= 36  # 25 originals + 8 session-memory examples + 3 conversation-question examples
     assert {d["intent"] for _, _, d in examples} == {i.value for i in Intent}
     messages = {m for _, m, _ in examples}
     for known in ("in udupi", "find me a room", "something in a different area",

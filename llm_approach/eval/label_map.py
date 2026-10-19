@@ -43,11 +43,11 @@ POC_TO_NEW: dict[str, tuple[str, str | None]] = {
 }
 
 # Intents the new decision layer has that no POC label maps to (the POC label set was frozen
-# before session memory). No gold label is ever CONVERSATION_RECALL, so the baseline comparison
+# before session memory). No gold label is ever CONVERSATION_RECALL or CONVERSATION_QUESTION, so the baseline comparison
 # is unchanged: the 186 evaluation items contain no recall question, and a prediction of this
 # intent for a POC item is simply counted as a wrong intent. The old router has no equivalent
 # ("what is my name" went to OUT_OF_SCOPE), so there is nothing to map it to.
-NEW_ONLY_INTENTS = frozenset({"CONVERSATION_RECALL"})
+NEW_ONLY_INTENTS = frozenset({"CONVERSATION_RECALL", "CONVERSATION_QUESTION"})
 
 assert all(i in Intent.__members__ for i, _ in POC_TO_NEW.values())
 assert NEW_ONLY_INTENTS <= set(Intent.__members__)

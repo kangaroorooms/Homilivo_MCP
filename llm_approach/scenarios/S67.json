@@ -1,0 +1,32 @@
+{
+  "id": "S67",
+  "title": "Conversation question in a brand-new session sees nothing from the old one",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "my college is VIT",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "what's my college?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "new_session": true,
+      "expect": {
+        "reply_contains": [
+          "I don't have that in this chat."
+        ],
+        "answer_called": false,
+        "action": "conversation_not_found",
+        "queries_logged": 1
+      }
+    }
+  ]
+}

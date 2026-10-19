@@ -58,3 +58,14 @@ Legend: `[ ]` open, `[x]` done.
 - [ ] Product decision: should `preferred_city` and `budget` become search defaults? Today they are remembered and recalled but never used for a search
 - [ ] Privacy note for the team lead: facts (name, age, occupation, gender) and the user's own messages are kept in memory for the session (TTL 3600 s), sent to Groq only as `user_facts` in the state summary, never logged, never written to disk, never sent to the rooms API
 - [ ] Recall fixes (2026-10-19): re-run the live transcript (name and age together, then "yes" twice) against the real model; the stub proves the code paths, not what the model returns for "what's my name and age ?"
+
+
+## Conversation memory (added 2026-10-19)
+
+- [ ] Run the live evaluation and the scenarios live on this version (S53 to S69 are stub-only today): the prompt, schema and validators changed again (prompt 17,344 -> 18,570 characters, 12 intents)
+- [ ] Check with the real model that "what's my college", "why did you show me that room", "summarise our chat" and "what did you say about the second room" are labelled CONVERSATION_QUESTION (not OUT_OF_SCOPE, not CONVERSATION_RECALL), and that its answers are grounded
+- [ ] Decision for the team lead: phone numbers and e-mail addresses. They are refused as facts but stay in the in-session transcript and can be quoted back to the same session. Keep, or refuse them in the transcript too?
+- [ ] Decision for the team lead: the model now writes the text of a conversation answer (the one exception to "the model never writes the reply"). The checks verify grounding, not meaning
+- [ ] A conversation-memory evaluation set (questions with gold answers, wrong-answer and injection cases) needs the team lead's approval before it is made
+- [ ] Cost: a conversation question is two Groq calls, about 5,300 to 11,000 tokens (about 4,800 for a normal turn); on the free tier a long chat can hit the per-minute limit. Consider a smaller model or a shorter record for the answer call
+- [ ] Privacy note for the team lead: the whole transcript (both roles, up to 200 messages) is kept in memory for the session (TTL 3600 s) and sent to Groq only in the answer call of a conversation question; never logged, never in metrics, never written to disk, never sent to the rooms API

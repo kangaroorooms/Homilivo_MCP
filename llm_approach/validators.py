@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import difflib
+import json
 import re
 import unicodedata
 from typing import Any
 
 from llm_approach import extra_security, reuse
+from llm_approach.sanitize import neutralize
 from llm_approach.schema import FACT_KEYS, Slots
 
 BHK_MIN, BHK_MAX = 1, 5
@@ -391,3 +393,130 @@ def validate_user_facts(raw: Any, message: str | None = None) -> tuple[dict[str,
             continue
         clean[key] = checked
     return clean, rejected
+
+
+# ---- conversation answers (CONVERSATION_QUESTION) --------------------------------------
+#
+# The answerer model returns {"found", "answer", "evidence_turns"}. Nothing it says reaches the
+# user until this code has checked it against the transcript it was given.
+
+NOT_IN_CHAT = "I don't have that in this chat."
+ANSWER_MAX_CHARS = 400
+ANSWER_MAX_SENTENCES = 3
+
+_BOT_QUESTION = re.compile(
+    r"\b(?:what|why|when|how|where)\s+(?:did|do|have|were|are)\s+you\b|\byou\s+(?:said|told|showed|mentioned|replied|suggested|recommended|answered)\b"
+    r"|\byour\s+(?:reply|replies|answer|message|response|suggestion|recommendation)\b|\bwhy\s+(?:was|is)\s+(?:that|this|it)\b",
+    re.IGNORECASE,
+)
+_USER_QUESTION = re.compile(r"\b(?:my|i|me|mine|i'm|i've|myself)\b", re.IGNORECASE)
+_QUOTED = re.compile(r"[\"“”]([^\"“”]{3,})[\"“”]")
+_PHONE_RUN = re.compile(r"\+?\d[\d\s().-]{5,}\d")
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def parse_answer_json(raw: Any) -> dict[str, Any] | None:
+    """The answerer's JSON as {"found": bool, "answer": str, "evidence_turns": [int]}, or None when
+    it is not a JSON object of that shape (a code fence around it is tolerated)."""
+    data = None
+    if isinstance(raw, dict):
+        data = raw
+    elif isinstance(raw, str):
+        text = raw.strip()
+        fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+        try:
+            data = json.loads(fenced.group(1) if fenced else text)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(data, dict) or not isinstance(data.get("found"), bool):
+        return None
+    answer = data.get("answer")
+    if answer is None:
+        answer = ""
+    if not isinstance(answer, str):
+        return None
+    evidence = data.get("evidence_turns", [])
+    if evidence is None:
+        evidence = []
+    if not isinstance(evidence, list) or any(isinstance(e, bool) or not isinstance(e, int) for e in evidence):
+        return None
+    return {"found": data["found"], "answer": answer, "evidence_turns": list(dict.fromkeys(evidence))}
+
+
+def _flat(text: str) -> str:
+    return re.sub(r"\s+", " ", text.lower().replace("’", "'")).strip()
+
+
+def _digits(text: str) -> str:
+    return re.sub(r"\D", "", text)
+
+
+def _cap_answer(text: str) -> str:
+    """At most 3 sentences and 400 characters, cut at a sentence or word end."""
+    parts = _SENTENCE_END.split(text.strip())
+    text = " ".join(parts[:ANSWER_MAX_SENTENCES])
+    if len(text) > ANSWER_MAX_CHARS:
+        cut = text[:ANSWER_MAX_CHARS]
+        end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+        if end >= ANSWER_MAX_CHARS // 2:
+            cut = cut[: end + 1]
+        else:
+            cut = cut[: cut.rfind(" ")] if " " in cut else cut
+            cut = cut.rstrip(",;:- ") + "..."
+        text = cut
+    return text
+
+
+def validate_conversation_answer(
+    parsed: dict[str, Any] | None,
+    transcript: list[dict[str, Any]],
+    question: str,
+    *,
+    facts: dict[str, Any] | None = None,
+    room_titles: list[str] | None = None,
+) -> str:
+    """The reply to show: the model's answer if every check passes, else ``NOT_IN_CHAT``.
+
+    ``transcript`` is the list of turns the model was shown ({turn, role, text}). Checks, in order:
+    found is true; the answer is not empty; at least one cited turn and every cited turn exists;
+    a question about the bot's reply cites a bot turn, any other question cites a user turn
+    (a question about neither, such as a summary, cites any turn); quoted text, phone-like numbers
+    and e-mail addresses in the answer appear in the cited turns (or in the stored facts / room
+    titles); the answer is cleaned by ``sanitize.neutralize``, cut to 3 sentences / 400 characters
+    and must not match the injection filter."""
+    if parsed is None or not parsed["found"]:
+        return NOT_IN_CHAT
+    by_id = {t["turn"]: t for t in transcript}
+    cited = parsed["evidence_turns"]
+    if not cited or any(c not in by_id for c in cited):
+        return NOT_IN_CHAT
+    roles = {by_id[c]["role"] for c in cited}
+    if _BOT_QUESTION.search(question):
+        if "bot" not in roles:
+            return NOT_IN_CHAT
+    elif _USER_QUESTION.search(question) and "user" not in roles:
+        return NOT_IN_CHAT
+
+    answer = re.sub(r"\s+", " ", neutralize(parsed["answer"])).strip()
+    if not answer:
+        return NOT_IN_CHAT
+    answer = _cap_answer(answer)
+    if extra_security.is_extra_blocked(answer)[0]:
+        return NOT_IN_CHAT
+
+    source_text = " ".join(by_id[c]["text"] for c in cited)
+    extra = list((facts or {}).values()) + list(room_titles or [])
+    haystack = _flat(source_text + " " + " ".join(str(v) for v in extra))
+    digit_haystack = _digits(source_text + " " + " ".join(str(v) for v in extra))
+    for quoted in _QUOTED.findall(answer):
+        if _flat(quoted) not in haystack:
+            return NOT_IN_CHAT
+    for run in _PHONE_RUN.findall(answer):
+        digits = _digits(run)
+        if len(digits) >= 7 and digits not in digit_haystack:
+            return NOT_IN_CHAT
+    for email in _EMAIL.findall(answer):
+        if email.lower() not in haystack:
+            return NOT_IN_CHAT
+    return answer

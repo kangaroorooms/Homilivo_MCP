@@ -66,6 +66,13 @@ QUERY_BLOCKED = "BLOCKED"  # intent stored for messages that were blocked, too l
 QUERY_PLACEHOLDER = "[message withheld]"  # stored instead of the text of such messages
 USER_FACT_KEYS = frozenset(FACT_KEYS)
 
+# Full transcript (conversation memory): every message of both roles, in memory only.
+TRANSCRIPT_MAX_TURNS = 200
+TRANSCRIPT_USER_MAX_CHARS = 1000
+TRANSCRIPT_BOT_MAX_CHARS = 800
+TRANSCRIPT_ROOM_TITLES_MAX = 10
+TRANSCRIPT_TITLE_MAX_CHARS = 80
+
 SEARCH_FIELDS = ("city", "area", "bhk", "min_price", "max_price", "room_types", "ideal_for", "amenity")
 PENDING_TYPES = ("city", "clarify", "reject")
 
@@ -113,6 +120,11 @@ class LLMConversationState:
     user_queries: list[dict[str, Any]] = field(default_factory=list)
     query_count: int = 0
     user_facts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Conversation memory: every message of both roles, {turn, role "user"|"bot", text, intent[, rooms]}.
+    # ``turn`` is a running id over all entries (user and bot alike); it keeps counting when the
+    # oldest entries are dropped. Never logged, never sent anywhere, gone with the session.
+    transcript: list[dict[str, Any]] = field(default_factory=list)
+    transcript_seq: int = 0
 
     # ---- search / rooms ------------------------------------------------
 
@@ -214,12 +226,45 @@ class LLMConversationState:
         )
         if len(self.user_queries) > QUERY_LOG_MAX:
             del self.user_queries[: len(self.user_queries) - QUERY_LOG_MAX]
+        self._add_transcript("user", str(text)[:TRANSCRIPT_USER_MAX_CHARS], intent)
         return self.query_count
 
     def set_last_query_intent(self, intent: str) -> None:
         """Set the intent of the latest logged message (known only after the decision)."""
         if self.user_queries and self.user_queries[-1]["intent"] != QUERY_BLOCKED:
             self.user_queries[-1]["intent"] = intent
+            last = self.last_transcript_entry("user")
+            if last is not None:
+                last["intent"] = intent
+
+    # ---- conversation memory (transcript) --------------------------------
+
+    def _add_transcript(self, role: str, text: str, intent: str, rooms: list[str] | None = None) -> None:
+        self.transcript_seq += 1
+        entry: dict[str, Any] = {"turn": self.transcript_seq, "role": role, "text": text, "intent": intent}
+        if rooms:
+            entry["rooms"] = rooms
+        self.transcript.append(entry)
+        if len(self.transcript) > TRANSCRIPT_MAX_TURNS:
+            del self.transcript[: len(self.transcript) - TRANSCRIPT_MAX_TURNS]
+
+    def last_transcript_entry(self, role: str) -> dict[str, Any] | None:
+        for entry in reversed(self.transcript):
+            if entry["role"] == role:
+                return entry
+        return None
+
+    def record_bot_reply(self, text: str, rooms: list[dict[str, Any]] | None = None) -> None:
+        """Log the bot's reply (call after the output guard). ``rooms`` are the cards shown with it;
+        only their titles are kept. The reply takes the intent of the user message it answers."""
+        last_user = self.last_transcript_entry("user")
+        intent = last_user["intent"] if last_user else "UNCLEAR"
+        titles = [
+            str(r.get("title"))[:TRANSCRIPT_TITLE_MAX_CHARS]
+            for r in (rooms or [])[:TRANSCRIPT_ROOM_TITLES_MAX]
+            if isinstance(r, dict) and r.get("title")
+        ]
+        self._add_transcript("bot", str(text)[:TRANSCRIPT_BOT_MAX_CHARS], intent, titles)
 
     def set_fact(self, key: str, value: Any) -> bool:
         """Store (or overwrite) one already validated fact. Unknown keys are refused."""

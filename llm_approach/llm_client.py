@@ -71,12 +71,14 @@ def _get_client() -> Any:
     return _client
 
 
-async def _call_groq(messages: list[dict[str, str]]) -> tuple[str, int, int, int | None]:
+async def _call_groq(
+    messages: list[dict[str, str]], max_tokens: int | None = None
+) -> tuple[str, int, int, int | None]:
     kwargs: dict[str, Any] = dict(
         model=config.groq_model(),
         messages=messages,
         temperature=config.TEMPERATURE,
-        max_tokens=config.LLM_MAX_TOKENS,
+        max_tokens=config.LLM_MAX_TOKENS if max_tokens is None else max_tokens,
         response_format={"type": "json_object"},
     )
     if config.REASONING_EFFORT:
@@ -145,3 +147,35 @@ async def decide(
         if attempt == 1:
             messages = messages + [{"role": "user", "content": RETRY_REMINDER}]
     return None
+
+
+async def generate_json(messages: list[dict[str, str]], budget: LLMBudget) -> str | None:
+    """One more JSON-mode call on the same per-turn budget (used by the conversation answerer).
+
+    Returns the raw model text, or None after a timeout, an API error or an exhausted budget
+    (``budget.error_class`` says which). Parsing and validation are the caller's job. Latency and
+    token totals accumulate on ``budget`` like for ``decide``; logs hold metadata only."""
+    if not budget.try_consume():
+        logger.info("llm_answer skipped: call budget exhausted")
+        return None
+    started = time.perf_counter()
+    try:
+        raw, tokens_in, tokens_out, cached = await _call_groq(messages, config.ANSWERER_MAX_TOKENS)
+    except asyncio.TimeoutError:
+        budget.record_latency((time.perf_counter() - started) * 1000)
+        budget.error_class = "TimeoutError"
+        logger.warning("llm_answer outcome=timeout")
+        return None
+    except Exception as exc:  # network, auth, rate limit: class name only
+        budget.record_latency((time.perf_counter() - started) * 1000)
+        budget.error_class = "RateLimitError" if is_rate_limit_error(exc) else type(exc).__name__
+        logger.warning("llm_answer outcome=error class=%s", type(exc).__name__)
+        return None
+    latency_ms = (time.perf_counter() - started) * 1000
+    budget.record_latency(latency_ms)
+    budget.tokens_in += tokens_in
+    budget.tokens_out += tokens_out
+    if cached is not None:
+        budget.cached_tokens = (budget.cached_tokens or 0) + cached
+    logger.info("llm_answer latency_ms=%.0f tokens_in=%d tokens_out=%d", latency_ms, tokens_in, tokens_out)
+    return raw

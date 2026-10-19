@@ -93,6 +93,9 @@ class PipeEnv:
 
         self.script: list = []
         self.llm_calls = 0
+        self.answers: list = []  # scripted replies of the conversation answerer (second call)
+        self.answer_calls = 0
+        self.answer_messages: list = []  # the messages each answer call was given
         self.searches: list[dict] = []
         self.security_calls: list[str] = []
         self.output_calls: list[str] = []
@@ -101,15 +104,17 @@ class PipeEnv:
         self.store = SessionStore()
         self.sid = str(uuid.uuid4())
 
-    async def turn_async(self, message: str, llm=None):
+    async def turn_async(self, message: str, llm=None, answer=None):
         from llm_approach import pipeline
 
         if llm != "never":  # "never": the LLM must not be asked, so nothing is scripted
             self.script.append(llm)
+        if answer is not None:
+            self.answers.append(answer)
         return await pipeline.handle_turn(self.sid, message, store=self.store)
 
-    def turn(self, message: str, llm=None):
-        return asyncio.run(self.turn_async(message, llm))
+    def turn(self, message: str, llm=None, answer=None):
+        return asyncio.run(self.turn_async(message, llm, answer))
 
     @property
     def state(self):
@@ -132,6 +137,24 @@ def pipe(monkeypatch):
             item = await item()
         return parse_decision(item) if isinstance(item, dict) else None
 
+    async def fake_generate_json(messages, budget):
+        """The answerer's call: a str is the raw model text, a dict is dumped to JSON, "rate_limit" / "timeout"
+        set the budget's error class like the real client, an exception is raised."""
+        env.answer_calls += 1
+        env.answer_messages.append(messages)
+        if not budget.try_consume():
+            return None
+        budget.record_latency(2.0)
+        item = env.answers.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        if item in ("rate_limit", "timeout"):
+            budget.error_class = "RateLimitError" if item == "rate_limit" else "TimeoutError"
+            return None
+        budget.tokens_in += 300
+        budget.tokens_out += 40
+        return json.dumps(item) if isinstance(item, dict) else item
+
     def security(message):
         env.security_calls.append(message)
         return (message in env.app_blocks, "refused" if message in env.app_blocks else "")
@@ -147,6 +170,7 @@ def pipe(monkeypatch):
         return real_search(search, budget, **kw)
 
     monkeypatch.setattr(llm_client, "decide", fake_decide)
+    monkeypatch.setattr(llm_client, "generate_json", fake_generate_json)
     monkeypatch.setattr(reuse, "get_is_security_blocked", lambda: security)
     monkeypatch.setattr(reuse, "get_output_guardrail", lambda: output)
     monkeypatch.setattr(reuse, "get_answer_platform_question",

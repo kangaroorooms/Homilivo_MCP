@@ -20,11 +20,11 @@ Everything below ran with no Groq call and no rooms-API call (stub LLM, offline 
 
 | Check | Result |
 |---|---|
-| `python -m pytest llm_approach/tests -q` | **1000 passed** (843 before session memory, plus 157), about 12 s, no network, no torch |
+| `python -m pytest llm_approach/tests -q` | **1088 passed** (1000 before conversation memory), about 25 s, no network, no torch |
 | `run_safety` (real guardrail loaded) | **43/43 attacks blocked**; **0/144 false positives** on general messages; **room-text injection 6/6** neutralised |
 | `run_robustness` | **7/7 clean** (Groq timeout, invalid JSON twice, 429, rooms API 500 with a Prisma message, rooms timeout, empty results, failing output guardrail): consistent history, no raw error text, rooms kept where required |
-| `run_scenarios --stub` | **182/182 turns pass** across 52 scenarios (S1 to S52; S29 to S52 are session memory) |
-| `run_eval --dry-run --dataset all` | 186 calls, about 886K tokens (688K before session memory), about 93 min at 30 s spacing. Estimate only |
+| `run_scenarios --stub` | **300/300 turns pass** across 69 scenarios (S1 to S69; S29 to S52 are session memory, S53 to S69 conversation memory) |
+| `run_eval --dry-run --dataset all` | 186 calls, about 943K tokens (886K before conversation memory: the decision prompt grew by 1,226 characters), about 93 min at 30 s spacing. Estimate only |
 | Website test, checklist items 1 to 10 (PLAN section 10) | Run by hand against port 8001 by the project owner and reported as done. The per-item replies are not stored in this folder |
 
 Added in this phase (Phase 7, offline):
@@ -187,3 +187,16 @@ To switch the real backend to this pipeline later, these would be needed. Every 
 9. Approval for sending user messages to Groq, a data-retention check, and log review (this pipeline logs no message text).
 10. Add `/feedback`, `/metrics` and `/knowledge/health` if the frontend or operations use them.
 11. Update the frontend default `mode` or drop the field; the new server accepts and ignores it.
+
+
+---
+
+## 9. Conversation memory (2026-10-19, offline only)
+
+The bot can now answer any question about the current chat ("what's my college", "what did you say about the second room", "why did you show me that room", "summarise our chat"). Details: README, section "Conversation memory".
+
+- **Two-call path.** The decision call labels the question `CONVERSATION_QUESTION`; a second Groq call gets the session transcript, facts, search and rooms on screen and returns `{found, answer, evidence_turns}`. Code validates it against the transcript (cited turns exist and have the right role, quotes, phone numbers and e-mails appear in them, injection filter, 3 sentences, 400 characters) or shows the fixed "I don't have that in this chat." Exact recall (name, age, six facts, first / last / nth / all queries) is unchanged and deterministic. Both calls are counted in `llm_calls` and `llm_call_ms`.
+- **Token cost.** About 5,300 to 11,000 tokens per conversation question (decision about 4,650 in, answer 470 to 6,200 in depending on chat length); the decision prompt grew from 17,344 to 18,570 characters, so every turn costs about 300 tokens more.
+- **Exception to "the model never writes the reply".** The text of a conversation answer is written by the model. The checks verify grounding, not meaning.
+- **For the team lead.** Phone numbers and e-mails are not stored as facts but stay in the in-session transcript and can be quoted back. A conversation-memory evaluation set needs lead approval; none exists, so this feature has no accuracy number, only the stub tests (88 new tests, 17 new scenarios) and the unchanged safety results (43/43, 0/144, 6/6).
+- **Not verified:** the real model's labels and answers (no live run).

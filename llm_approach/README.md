@@ -909,3 +909,43 @@ Live transcript (rooms on screen): "actually my name is ziyad and i'm 20 years o
 
 New `tests/test_recall_fixes.py` (59 tests) and scenarios `S43` to `S52` (transcript replay, name only, age only, both, before given, correction then combined recall, three "yes", recall with and without rooms, safety net). `pytest llm_approach/tests -q`: **1000 passed** (931 before). `run_scenarios --stub`: **182/182 turns, 52 scenarios**. `run_safety`: 43/43, 0/144, 6/6. `run_robustness`: 7/7. `run_eval --dry-run --dataset all`: 186 calls, about 886K tokens (846K before). Prompt, schema and validators are frozen again.
 
+
+
+# Conversation memory: CONVERSATION_QUESTION (2026-10-19)
+
+Team lead request: everything said in a session is remembered and the bot can answer any question about the conversation, not only the six stored facts.
+
+## How it works
+
+- **Transcript (`state.py`).** `LLMConversationState.transcript` keeps every message of both roles: `{turn, role: "user"|"bot", text, intent}`, plus `rooms` (the titles shown) on bot entries. `turn` is one running id over all entries and keeps counting when old ones are dropped. Cap 200 entries; user text 1000 characters, bot text 800. A blocked, security-refused or too-long user message is stored as `[message withheld]` (intent `BLOCKED`). The bot reply is stored after the output guard, so a replaced reply is stored as the replacement. In memory only: gone with the session (TTL, LRU eviction, reset), never logged, never in metrics, never sent to the rooms API, never written to disk.
+- **New intent `CONVERSATION_QUESTION`.** The decision prompt got one intent line, one rule and 3 short examples ("what's my college?", "why did you show me that room?", "summarise our chat"). The decision call still gets only the recent history window and `user_facts`, never the transcript.
+- **Second call (`conversation_answerer.py`).** Its own system prompt (928 characters). The context pack is JSON inside `<verified_data>` (the existing fence, so the existing neutraliser covers it): the sanitised transcript without the current question, `user_facts`, `current_search`, `rooms_on_screen` (index, title, price, type, location, city, ideal_for, amenities, availability only; no description, owner, contact or id), `rejected_room_ids`, and a `note` when turns were left out. Over 120 turns: the 20 oldest and the 100 newest, and the note says so. If the pack is still over 24,000 characters the oldest turns after the first 20 go first, so the newest are always kept. The model returns `{"found", "answer", "evidence_turns"}`.
+- **Validation in code (`validators.validate_conversation_answer`).** The reply is the model's answer only if all of these hold, otherwise the fixed "I don't have that in this chat.": valid JSON (one retry on invalid JSON, then the fixed reply); `found` is true; evidence is not empty and every cited turn exists; a question about the bot's reply (what did you say / why did you show) cites a bot turn, any other question about the user cites a user turn, a summary cites any turn; text in quotes, phone-like numbers (7+ digits) and e-mail addresses in the answer must appear in the cited turns (or in the facts or room titles); the answer goes through `sanitize.neutralize`, is cut to 3 sentences and 400 characters and must not trip `extra_security`. The pipeline's output guard (`validate_ai_response`) then runs on every reply as before.
+- **Budget and errors.** Same `LLMBudget`: `llm_calls`, `llm_call_ms`, tokens and latency cover both calls (the answerer adds `ANSWERER_MAX_CALLS = 2` on top of the decision calls, so a turn can use up to 4). A 429 on the second call gives the existing rate-limit reply. A timeout or API error gives "Sorry, I couldn't check that just now. Please try again." (error class in metrics). A first message with an empty transcript answers "I don't have that in this chat." without a call.
+- **Routing.** A model-labelled `CONVERSATION_RECALL` stays deterministic (name, age, the six facts, first / last / nth / all queries). The safety net (model said UNCLEAR or was unsure) tries the exact recall cue first; with no deterministic target ("what did I say", "what's my college", "summarise our chat", "what did you say", "why did you show...") it goes to `CONVERSATION_QUESTION`. If the model itself labels a question `CONVERSATION_QUESTION`, the answerer takes it, even when an exact recall cue is also present. `last_query` and `all_queries` skip `CONVERSATION_QUESTION` turns like recall turns.
+- **Phone numbers and e-mails.** `user_facts` still refuses them (they are never a fact). They stay in the in-session transcript and can be quoted back to the same session. This is a decision for the team lead (PENDING.md).
+
+## Exception to "the model never writes the reply"
+
+Until now the model only classified and extracted; code wrote every reply (the `reply` field of chat intents is the one old exception). For `CONVERSATION_QUESTION` a model writes the answer text. It is bounded by the checks above, but they check grounding (cited turns exist and have the right role, quotes and numbers appear in them), not meaning. A paraphrase that is wrong but cites a real turn can pass.
+
+## Changes to prompts.py, schema.py, validators.py
+
+- `prompts.py`: intent line `CONVERSATION_QUESTION`; "one of the 12 intents"; the old sentence "Personal questions this chat cannot answer (bank balance, phone number) are OUT_OF_SCOPE" now says "(bank balance)"; one new rule (any other question about the chat itself); 3 few-shot examples. System prompt **17,344 -> 18,570 characters** (about 4,336 -> 4,642 tokens); 36 examples.
+- `schema.py`: `Intent.CONVERSATION_QUESTION`.
+- `validators.py`: `parse_answer_json`, `validate_conversation_answer`, `NOT_IN_CHAT` and helpers appended; the existing functions are unchanged (plus `import json` and the `sanitize.neutralize` import).
+- Also touched (inside `llm_approach/`): `state.py`, `pipeline.py`, `llm_client.py` (`generate_json`; `_call_groq` takes an optional `max_tokens`), `config.py`, `actions/recall.py` (`META_INTENTS`), new `conversation_answerer.py`, `eval/run_scenarios.py` (answerer stub, `answer_called`), `eval/label_map.py` (`CONVERSATION_QUESTION` is a new-only intent like `CONVERSATION_RECALL`), tests.
+
+## Token cost of one conversation question
+
+Estimated at 4 characters per token. Decision call: about 4,650 tokens in (18,570-character prompt plus state) and about 100 out. Answer call: the record plus 230 tokens of instructions: about 470 tokens for a 6-turn chat, 930 for 20 turns, 2,900 for 80 turns, 4,200 for 150 turns, at most about 6,200 (the 24,000-character cap). So one conversation question costs about **5,300 to 11,000 tokens** (a normal turn is about 4,800). On the Groq free tier (about 8,000 tokens a minute) a long chat can hit the per-minute limit on its own.
+
+## Tests and checks
+
+New `tests/test_conversation_memory.py` (70 tests: transcript caps, order, roles, withheld placeholder, isolation and eviction, schema, the decision prompt without the transcript, every answerer failure mode, routing, 150-turn trimming, planted injections, cross-session leak, benign / eval no-hit proof) and one more case in `tests/test_log_audit.py` (transcript, bot replies, answerer output, a phone number; both calls counted). Scenarios `S53` to `S69`. `pytest llm_approach/tests -q`: **1088 passed** (1000 before). `run_scenarios --stub`: **300/300 turns, 69 scenarios** (182 before). `run_safety`: 43/43, 0/144, 6/6 (unchanged). `run_robustness`: 7/7. `run_eval --dry-run --dataset all`: 186 calls, about 943K tokens (886K before: the longer decision prompt). The chat cue (`conversation_answerer.detect_chat_cue`) fires on **0** of the 146 general messages (144 benign safety messages included) and the 186 eval items, so the safety net routes none of them to the answerer. Which of them the real model would label `CONVERSATION_QUESTION` is not known offline (needs a live run).
+
+## Not done / open
+
+- No live run: the real model's labels and answers are unverified. The stub proves the code paths only.
+- A conversation-memory evaluation set (questions with gold answers) does not exist; making one needs the team lead's approval.
+- A grounded but wrong paraphrase can pass validation (see the exception above).

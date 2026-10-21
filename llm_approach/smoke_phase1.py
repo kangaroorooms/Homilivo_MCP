@@ -1,7 +1,8 @@
-"""Live smoke test for the Phase 1 decision layer: exactly 3 Groq calls.
+"""Live smoke test for the Phase 1 decision layer: exactly 3 LLM calls (the active provider).
 
 Run from the repo root:  python -m llm_approach.smoke_phase1
-Needs GROQ_API_KEY in the environment (or in .env, which is loaded here).
+Needs the active provider's key (GEMINI_API_KEY, or GROQ_API_KEY with LLM_APPROACH_PROVIDER=groq)
+in the environment or in .env, which is loaded here.
 Prints input, intent, operation, city, confidence, latency and tokens only.
 """
 
@@ -9,11 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 
-from llm_approach import prompts
+from llm_approach import config, prompts
 from llm_approach.llm_client import LLMBudget, decide
 from llm_approach.validators import validate_city
 
@@ -40,16 +40,18 @@ async def main() -> int:
         load_dotenv()
     except ImportError:
         pass
-    if not os.environ.get("GROQ_API_KEY"):
-        print("GROQ_API_KEY is not set; nothing was called.")
+    problem = config.setup_problem()
+    if problem:
+        print(f"{problem} Nothing was called.")
         return 2
+    spacing = SPACING_S if config.provider() == "groq" else config.spacing_s()
 
     rooms = _load_rooms()
     failures = 0
     print(f"{'input':<30} {'intent':<15} {'operation':<10} {'city':<10} {'conf':<5} {'ms':<6} {'tokens'}")
     for n, (message, with_rooms, search, want_intent, want_city) in enumerate(CASES):
         if n:
-            await asyncio.sleep(SPACING_S)  # stay under Groq's tokens-per-minute limit
+            await asyncio.sleep(spacing)  # Groq: stay under its tokens-per-minute limit; Gemini: from the environment
         state = {
             "current_search": search,
             "last_bot_message": "Here are the rooms I found." if with_rooms else None,

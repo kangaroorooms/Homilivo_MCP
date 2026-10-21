@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from llm_approach import llm_client
+from llm_approach import llm_client, providers
 from llm_approach.eval import datasets, metrics, run_eval
 
 SECRET = "gsk_TEST_SECRET_VALUE_123"
@@ -48,6 +48,7 @@ class Sleeps:
 def run(names, tmp_path, decide, **kw):
     kw.setdefault("spacing", 30.0)
     kw.setdefault("today", "2026-01-01")
+    kw.setdefault("daily_budget", 150_000)  # the budget is per provider now; Gemini's has no default
     sleeps = kw.pop("sleep", None) or Sleeps()
     summary = asyncio.run(run_eval.run_eval(names, results_dir=tmp_path, decide=decide, sleep=sleeps,
                                             out=lambda *_: None, **kw))
@@ -145,14 +146,16 @@ def test_budget_stop_and_next_day_resume(tmp_path):
     assert len(records(tmp_path, "golden")) == 2
 
 
-def test_resume_command_is_exact():
+def test_resume_command_is_exact(monkeypatch):
     args = run_eval.parse_args(["--dataset", "fresh", "--runs", "3", "--sample", "30", "--spacing", "30",
                                 "--daily-token-budget", "200000"])
     assert run_eval.resume_command(args) == (
         "python -m llm_approach.eval.run_eval --dataset fresh --runs 3 --sample 30 --spacing 30 "
-        "--daily-token-budget 200000")
+        "--daily-token-budget 200000 --resume")
     defaults = run_eval.parse_args([])
-    assert defaults.spacing == 30.0 and defaults.daily_token_budget == 150_000 and defaults.runs == 1
+    assert defaults.runs == 1 and defaults.spacing is None and defaults.daily_token_budget is None
+    monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")  # Groq's values are unchanged
+    assert run_eval.resolve_limits(defaults) == (30.0, 150_000)
 
 
 # ---- rate limits ---------------------------------------------------------------------
@@ -277,7 +280,8 @@ def _client(usage):
     (SimpleNamespace(cached_tokens="many"), None),
 ])
 def test_cached_tokens_from_usage(monkeypatch, details, expected):
-    monkeypatch.setattr(llm_client, "_get_client", lambda: _client(_Usage(details)))
+    monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")  # the usage shape here is Groq's
+    monkeypatch.setattr(providers, "_get_groq_client", lambda: _client(_Usage(details)))
     budget = llm_client.LLMBudget()
     decision = asyncio.run(llm_client.decide("hi", {}, budget))
     assert decision is not None and budget.calls == 1

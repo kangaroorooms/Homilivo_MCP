@@ -177,7 +177,7 @@ def test_live_record_has_no_text():
     r = run_scenarios.TurnReport("S1", 1, "find me a room", intent="NEW_SEARCH", action="asked", tokens=4000)
     r.checks = [run_scenarios.Check("intent", False, "expected X, got Y with some reply text")]
     rec = run_scenarios.live_record(r)
-    assert rec == {"scenario": "S1", "turn": 1, "status": "fail", "intent": "NEW_SEARCH", "action": "asked",
+    assert rec == {"provider": "gemini", "model": "gemini-3.5-flash-lite", "scenario": "S1", "turn": 1, "status": "fail", "intent": "NEW_SEARCH", "action": "asked",
                    "failed_checks": ["intent"], "tokens": 4000, "latency_ms": 0.0}
     assert "find me a room" not in json.dumps(rec)
 

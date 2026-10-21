@@ -1,14 +1,16 @@
 # LLM approach: evaluation and comparison
 
-> **PARTIAL RESULTS: 0 of 186 items evaluated.** Every number below covers only the items done so far.
+**provider gemini, model gemini-3.5-flash-lite.** One provider/model pair per report; results of different pairs are never merged or compared in one table.
 
 | Dataset | Items done | Total | Rate-limit misses |
 |---|---|---|---|
-| ctxY | 0 | 33 | 0 |
-| matrix55 | 0 | 54 | 0 |
-| fresh | 0 | 59 | 0 |
-| golden | 0 | 20 | 0 |
-| golden_slots | 0 | 20 | 0 |
+| ctxY | 33 | 33 | 0 |
+| matrix55 | 54 | 54 | 0 |
+| fresh | 59 | 59 | 0 |
+| golden | 20 | 20 | 0 |
+| golden_slots | 20 | 20 | 0 |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 ## What is compared, and how
 
@@ -26,52 +28,90 @@
 
 | Set | Strict | Lenient |
 |---|---|---|
-| ctxY | n/a | n/a |
-| matrix55 | n/a | n/a |
-| fresh | n/a | n/a |
-| golden | n/a | n/a |
-| pooled_133 | n/a | n/a |
-| pooled_166 | n/a | n/a |
+| ctxY | 30.3% [17.4-47.3] (10/33) | 30.3% [17.4-47.3] (10/33) |
+| matrix55 | 85.2% [73.4-92.3] (46/54) | 96.3% [87.5-99.0] (52/54) |
+| fresh | 91.5% [81.6-96.3] (54/59) | 94.9% [86.1-98.3] (56/59) |
+| golden | 100.0% [83.9-100.0] (20/20) | 100.0% [83.9-100.0] (20/20) |
+| pooled_133 | 90.2% [84.0-94.2] (120/133) | 96.2% [91.5-98.4] (128/133) |
+| pooled_166 | 78.3% [71.4-83.9] (130/166) | 83.1% [76.7-88.1] (138/166) |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 ### Paired comparison with the old router (same items, intent level, strict)
 
 | Set | n | New | Old | New right, old wrong | New wrong, old right | Both right | Both wrong |
 |---|---|---|---|---|---|---|---|
-| ctxY | 0 | - | - | - | - | - | - |
-| matrix55 | 0 | - | - | - | - | - | - |
-| fresh | 0 | - | - | - | - | - | - |
-| golden | 0 | - | - | - | - | - | - |
-| pooled_133 | 0 | - | - | - | - | - | - |
-| pooled_166 | 0 | - | - | - | - | - | - |
+| ctxY | 33 | 30.3% [17.4-47.3] (10/33) | 27.3% [15.1-44.2] (9/33) | 5 | 4 | 5 | 19 |
+| matrix55 | 54 | 85.2% [73.4-92.3] (46/54) | 61.1% [47.8-73.0] (33/54) | 17 | 4 | 29 | 4 |
+| fresh | 59 | 91.5% [81.6-96.3] (54/59) | 54.2% [41.7-66.3] (32/59) | 24 | 2 | 30 | 3 |
+| golden | 20 | 100.0% [83.9-100.0] (20/20) | 95.0% [76.4-99.1] (19/20) | 1 | 0 | 19 | 0 |
+| pooled_133 | 133 | 90.2% [84.0-94.2] (120/133) | 63.2% [54.7-70.9] (84/133) | 42 | 6 | 78 | 7 |
+| pooled_166 | 166 | 78.3% [71.4-83.9] (130/166) | 56.0% [48.4-63.4] (93/166) | 47 | 10 | 83 | 26 |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 Lenient version (pooled sets):
 
-_no data yet_
+| Set | n | New | Old | New right, old wrong | New wrong, old right | Both right | Both wrong |
+|---|---|---|---|---|---|---|---|
+| pooled_133 | 133 | 96.2% [91.5-98.4] (128/133) | 66.9% [58.5-74.3] (89/133) | 42 | 3 | 86 | 2 |
+| pooled_166 | 166 | 83.1% [76.7-88.1] (138/166) | 59.0% [51.4-66.2] (98/166) | 47 | 7 | 91 | 21 |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 ### Rooms on screen versus none (pooled 166, strict)
 
 | Category | Accuracy |
 |---|---|
-| - | n/a |
+| ctxN | 92.9% [84.3-96.9] (65/70) |
+| ctxY | 67.7% [57.8-76.2] (65/96) |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 ### By gold label (pooled 166, strict)
 
 | Gold label | Accuracy |
 |---|---|
-| - | n/a |
+| ACKNOWLEDGMENT | 75.0% [30.1-95.4] (3/4) |
+| AMENITY | 100.0% [43.8-100.0] (3/3) |
+| CLOSING | 100.0% [43.8-100.0] (3/3) |
+| COMPARE_ROOMS | 100.0% [43.8-100.0] (3/3) |
+| FAMILY_SUITABILITY | 50.0% [9.5-90.5] (1/2) |
+| GREETING | 100.0% [43.8-100.0] (3/3) |
+| HIGHEST_PRICE | 100.0% [20.7-100.0] (1/1) |
+| LOCATION | 100.0% [34.2-100.0] (2/2) |
+| LOWEST_PRICE | 100.0% [43.8-100.0] (3/3) |
+| NEW_SEARCH | 70.6% [60.2-79.2] (60/85) |
+| OUT_OF_SCOPE | 100.0% [43.8-100.0] (3/3) |
+| PLATFORM_INFO | 100.0% [43.8-100.0] (3/3) |
+| PROFESSIONAL_SUITABILITY | 100.0% [20.7-100.0] (1/1) |
+| REFINEMENT | 87.5% [52.9-97.8] (7/8) |
+| REJECT_CURRENT | 100.0% [43.8-100.0] (3/3) |
+| ROOM_DETAILS | 100.0% [51.0-100.0] (4/4) |
+| ROOM_PRICE | 100.0% [43.8-100.0] (3/3) |
+| ROOM_TABLE | 0.0% [0.0-65.8] (0/2) |
+| ROOM_TYPE | 100.0% [20.7-100.0] (1/1) |
+| SHOW_MORE_OPTIONS | 100.0% [70.1-100.0] (9/9) |
+| STUDENT_SUITABILITY | 100.0% [34.2-100.0] (2/2) |
+| UNCLEAR | 60.0% [35.7-80.2] (9/15) |
+| UNSUPPORTED_ACTION | 100.0% [43.8-100.0] (3/3) |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 ## Operation, clarification, validity
 
 | Metric | Value |
 |---|---|
-| Operation accuracy, ROOM_FOLLOWUP items (pooled 166, strict) | n/a |
-| Operation accuracy (lenient) | n/a |
-| Clarification precision (gold ask = UNCLEAR) | n/a |
-| Clarification recall | n/a |
-| Invalid-slot rate (search intents, validators rejected a slot) | n/a |
-| Invalid-search rate (a search would carry a rejected slot; target 0) | n/a |
-| No usable decision (invalid JSON twice, timeout, API error) | n/a |
+| Operation accuracy, ROOM_FOLLOWUP items (pooled 166, strict) | 85.2% [67.5-94.1] (23/27) |
+| Operation accuracy (lenient) | 85.2% [67.5-94.1] (23/27) |
+| Clarification precision (gold ask = UNCLEAR) | 36.4% [22.2-53.4] (12/33) |
+| Clarification recall | 80.0% [54.8-93.0] (12/15) |
+| Invalid-slot rate (search intents, validators rejected a slot) | 5.5% [2.5-11.5] (6/109) |
+| Invalid-search rate (a search would carry a rejected slot; target 0) | 0.0% [0.0-3.4] (0/109) |
+| No usable decision (invalid JSON twice, timeout, API error) | 0.0% [0.0-2.0] (0/186) |
 | Consistency across runs (items with 2+ runs, identical decision) | n/a |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 The clarification gold is only the UNCLEAR label; the sets have no other 'should ask' labels, so read these as a proxy. The invalid-search rate is evaluated with the pipeline's own rule (a rejected city, BHK or price makes it ask instead of searching); the end-to-end check of that rule is in the pipeline tests and the robustness report.
 
@@ -79,22 +119,38 @@ The clarification gold is only the UNCLEAR label; the sets have no other 'should
 
 | Confidence | Accuracy |
 |---|---|
-| 0.0-0.6 | n/a |
-| 0.6-0.8 | n/a |
-| 0.8-0.9 | n/a |
-| 0.9-1.0 | n/a |
+| 0.0-0.6 | 81.8% [52.3-94.9] (9/11) |
+| 0.6-0.8 | 0.0% [0.0-79.3] (0/1) |
+| 0.8-0.9 | 80.0% [60.9-91.1] (20/25) |
+| 0.9-1.0 | 78.3% [70.4-84.5] (101/129) |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 ## Cost
 
 | Metric | Value |
 |---|---|
-| Latency p50 / p95 (LLM call incl. retry) | n/a / n/a (n=0) |
-| Tokens in / out per call | n/a |
-| Cached tokens per call | not reported |
+| Latency p50 / p95 (LLM call incl. retry) | 1748 ms / 3310 ms (n=186) |
+| Tokens in / out per call | 5766 / 199 |
+| Cached tokens per call | 2012 |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 ## Slot accuracy (`golden_slots`, reported separately from intent accuracy)
 
-_no data yet_
+| Field | Accuracy |
+|---|---|
+| city | 94.1% [73.0-99.0] (16/17) |
+| bhk | 88.2% [65.7-96.7] (15/17) |
+| min_price | 100.0% [81.6-100.0] (17/17) |
+| max_price | 94.1% [73.0-99.0] (16/17) |
+| ideal_for | 100.0% [81.6-100.0] (17/17) |
+| overall | 95.3% [88.5-98.2] (81/85) |
+| exact | 76.5% [52.7-90.4] (13/17) |
+
+_provider gemini, model gemini-3.5-flash-lite_
+
+Over the 17 search items that have slot gold (`tests/golden_set.jsonl`, `expected_args`). Compared on the validated slots; no gold value means the field must be empty. Gold `room_types` other than N-BHK (PG, Single, 1RK) is not a slot of the decision schema, and gold cities such as 'HSR Layout' are localities (the model returns them as `area`), so those items lose city accuracy by construction. There is no paired comparison for this set.
 
 ## Items that could not be represented faithfully
 
@@ -111,7 +167,9 @@ They were still run. The data records only a yes/no flag for rooms on screen, so
 | fresh | 6 | short reply: gold may assume a pending bot question or selected room that the data does not record |
 | fresh | 19 | gold written against the old harness's rooms; fixture rooms used |
 
-Intent accuracy on rooms-on-screen items: flagged n/a; not flagged n/a. A large gap means part of the result depends on the missing context rather than on the model.
+_provider gemini, model gemini-3.5-flash-lite_
+
+Intent accuracy on rooms-on-screen items: flagged 93.8% [83.2-97.9] (45/48); not flagged 41.7% [28.8-55.7] (20/48). A large gap means part of the result depends on the missing context rather than on the model.
 
 ## Scenario pass/fail (live, `scenarios_live.jsonl`)
 
@@ -127,6 +185,8 @@ _no live scenario results yet_
 | s7 (payment request, not a security block) | not blocked (handled as UNSUPPORTED_ACTION) |
 | False positives on general messages | 0/144  |
 | Room-text injection neutralised | 6/6 |
+
+_offline mocks, no LLM call_
 
 The prompt keeps only index, title, price, type and location of a room. 'neutralised' means the room text cannot add or close a <verified_data>/<user_message> fence; instruction-like words inside a title or location can still appear as data (the system prompt tells the model it is data).
 
@@ -144,16 +204,20 @@ The prompt keeps only index, title, price, type and location of a room. 'neutral
 | empty_results | new_search | yes | yes | no |
 | output_guardrail_blocks | output_blocked | yes | yes | no |
 
+_offline mocks, no LLM call_
+
 ## Proposed targets (PLAN section 8.3)
 
 | Metric | Proposed target | Current |
 |---|---|---|
 | Safety block rate | 100% | 43/43 |
-| Invalid-search rate | 0 | n/a |
+| Invalid-search rate | 0 | 0.0% [0.0-3.4] (0/109) |
 | E1 scenario pass rate | 100% of turns, or each failure explained | not run live |
-| Intent accuracy, E2 pooled (133) | clearly above the current pipeline's 53.4% (harness: 57.9%) | n/a |
-| Intent accuracy, E2 ctxY | clearly above 21.2% (harness: 27.3%) | n/a |
+| Intent accuracy, E2 pooled (133) | clearly above the current pipeline's 53.4% (harness: 57.9%) | 90.2% [84.0-94.2] (120/133) |
+| Intent accuracy, E2 ctxY | clearly above 21.2% (harness: 27.3%) | 30.3% [17.4-47.3] (10/33) |
 | Consistency across 3 runs | >= 95% identical decisions | n/a |
-| p95 LLM latency | <= 3 s (rooms API excluded) | n/a |
+| p95 LLM latency | <= 3 s (rooms API excluded) | 3310 ms |
+
+_provider gemini, model gemini-3.5-flash-lite_
 
 Robustness: 7/7 cases clean.

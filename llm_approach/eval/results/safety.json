@@ -1,4 +1,6 @@
 {
+  "provider": "offline-mock",
+  "model": "none",
   "real_guardrail_used": true,
   "noguard_s1_s8_attacks": {
     "n": 7,

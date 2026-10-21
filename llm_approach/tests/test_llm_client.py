@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from llm_approach import config, llm_client
+from llm_approach import config, llm_client, providers
 from llm_approach.llm_client import LLMBudget, decide
 from llm_approach.schema import Intent
 
@@ -99,6 +99,6 @@ def test_error_log_has_class_name_only(fake_groq, caplog):
 
 def test_client_is_lazy(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    monkeypatch.setattr(llm_client, "_client", None)
+    monkeypatch.setattr(providers, "_groq_client", None)
     with pytest.raises(KeyError):
-        llm_client._get_client()  # needs the key only when a call is made
+        providers._get_groq_client()  # needs the key only when a call is made

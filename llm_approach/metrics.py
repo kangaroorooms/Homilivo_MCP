@@ -31,9 +31,9 @@ class TurnMetrics:
     slots_rejected: list[str] = field(default_factory=list)  # slot names only
     action: str | None = None
     tool_called: bool = False
-    llm_ms: float = 0.0  # all Groq calls of the turn together
+    llm_ms: float = 0.0  # all LLM calls of the turn together
     llm_calls: int = 0
-    llm_call_ms: list[float] = field(default_factory=list)  # each Groq call, in order
+    llm_call_ms: list[float] = field(default_factory=list)  # each LLM call, in order
     api_ms: float = 0.0
     total_ms: float = 0.0
     tokens_in: int = 0
@@ -64,7 +64,10 @@ def record(metrics: TurnMetrics) -> None:
     """Append one JSON line when enabled. Never raises."""
     if not enabled():
         return
-    line = {"ts": round(time.time(), 3), **metrics.to_dict()}
+    from llm_approach import config  # provider and model names only, never a key
+
+    provider, model = config.label()
+    line = {"ts": round(time.time(), 3), "provider": provider, "model": model, **metrics.to_dict()}
     try:
         path = metrics_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,8 +96,9 @@ def _stats(values: list[float]) -> dict[str, Any]:
 def summarize(path: Path | None = None) -> dict[str, Any]:
     """p50 and p95 of the latency fields in the metrics file (numbers only, no text).
 
-    ``per_groq_call_ms``: every individual Groq call. ``llm_ms``: the Groq time of a turn
-    (retries included). ``total_ms``: the whole turn. Unreadable lines are skipped."""
+    ``per_llm_call_ms`` (also kept as ``per_groq_call_ms``): every individual LLM call. ``llm_ms``: the
+    LLM time of a turn (retries included). ``providers``: the (provider, model) pairs found; rows
+    written before the provider switch count as Groq. ``total_ms``: the whole turn. Unreadable lines are skipped."""
     path = path or metrics_path()
     turns: list[dict[str, Any]] = []
     try:
@@ -114,11 +118,17 @@ def summarize(path: Path | None = None) -> dict[str, Any]:
 
     llm_rows = [r for r in turns if numbers("llm_ms", [r]) and r["llm_ms"] > 0]
     calls = [float(v) for r in turns for v in (r.get("llm_call_ms") or []) if isinstance(v, (int, float))]
+    from llm_approach import config
+
+    pairs = sorted({(str(r.get("provider") or config.LEGACY_PROVIDER), str(r.get("model") or config.LEGACY_MODEL))
+                    for r in turns})
     return {
+        "providers": [{"provider": p, "model": m} for p, m in pairs],
         "turns": len(turns),
         "total_ms": _stats(numbers("total_ms", turns)),
         "llm_ms": _stats(numbers("llm_ms", llm_rows)),
-        "per_groq_call_ms": _stats(calls),
+        "per_llm_call_ms": _stats(calls),
+        "per_groq_call_ms": _stats(calls),  # old name, same numbers
         "fallback_turns": sum(1 for r in turns if r.get("fallback_used") is True),
         "error_turns": sum(1 for r in turns if r.get("error_class")),
     }

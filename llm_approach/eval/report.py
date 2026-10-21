@@ -4,7 +4,12 @@ Works on partial results: the coverage banner at the top says how many items of 
 are done. Inputs (all optional): ``<dataset>.jsonl`` (run_eval), ``scenarios_live.jsonl``,
 ``safety.json``, ``robustness.json`` and ``baseline_current.json``.
 
-    python -m llm_approach.eval.report
+    python -m llm_approach.eval.report [--provider gemini] [--model gemini-3.5-flash-lite]
+
+Every result record carries the provider and model that made it (records from before the provider
+switch count as groq / openai/gpt-oss-20b). One report covers ONE provider/model pair and every table
+says which: when the results hold several pairs, the report refuses to merge them and asks for
+``--provider`` / ``--model``.
 
 No key, token, message text or model reasoning is read or written: records hold ids,
 labels, numbers and verdicts only.
@@ -22,7 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from llm_approach.eval import datasets, label_map, metrics  # noqa: E402
+from llm_approach import config  # noqa: E402
+from llm_approach.eval import datasets, label_map, metrics, runs as runs_mod  # noqa: E402
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 BASELINE = "baseline_current.json"
@@ -41,6 +47,34 @@ TARGETS = [  # PLAN.md section 8.3
 
 
 # ---- helpers ---------------------------------------------------------------------
+
+
+class MixedProvidersError(ValueError):
+    """The results hold records of more than one provider/model pair (or none of the one asked for)."""
+
+
+OFFLINE_LABEL = "offline mocks, no LLM call"
+_label = ""  # caption printed under every table; set by ``render``
+
+
+def pair_text(provider: str | None, model: str | None) -> str:
+    return f"provider {provider}, model {model}" if provider else "no LLM results yet"
+
+
+def select_pair(pairs: set[tuple[str, str]], provider: str | None, model: str | None) -> tuple[str, str] | None:
+    """The one (provider, model) pair a report covers. Several pairs are never merged."""
+    wanted = {p for p in pairs if (provider is None or p[0] == provider) and (model is None or p[1] == model)}
+    if len(wanted) > 1:
+        found = "; ".join(f"{p} / {m}" for p, m in sorted(wanted))
+        raise MixedProvidersError(
+            f"The results mix several provider/model pairs ({found}). One report covers one pair: "
+            "pass --provider and --model to choose.")
+    if not wanted:
+        if pairs:
+            found = "; ".join(f"{p} / {m}" for p, m in sorted(pairs))
+            raise MixedProvidersError(f"No results for the requested provider/model. Found: {found}.")
+        return None
+    return next(iter(wanted))
 
 
 def pct(p: dict[str, Any] | None) -> str:
@@ -66,10 +100,11 @@ def load_results(results_dir: Path) -> dict[str, list[dict]]:
     return {name: read_jsonl(results_dir / f"{name}.jsonl") for name in datasets.DATASETS}
 
 
-def table(headers: list[str], rows: list[list[Any]]) -> str:
+def table(headers: list[str], rows: list[list[Any]], label: str | None = None) -> str:
     out = ["| " + " | ".join(headers) + " |", "|" + "|".join("---" for _ in headers) + "|"]
     out += ["| " + " | ".join(str(c) for c in row) + " |" for row in rows]
-    return "\n".join(out)
+    caption = _label if label is None else label
+    return "\n".join(out) + (f"\n\n_{caption}_" if caption else "")
 
 
 def ms(v: float | None) -> str:
@@ -94,8 +129,15 @@ def scenario_summary(records: list[dict]) -> dict[str, Any]:
     return {"per_scenario": per, "turns_run": ran, "turns_passed": sum(d["pass"] for d in per.values())}
 
 
-def build_data(results_dir: Path) -> dict[str, Any]:
+def build_data(results_dir: Path, provider: str | None = None, model: str | None = None) -> dict[str, Any]:
     by_ds = load_results(results_dir)
+    scenario_records = read_jsonl(results_dir / "scenarios_live.jsonl")
+    pairs = {config.record_label(r) for recs in by_ds.values() for r in recs}
+    pairs |= {config.record_label(r) for r in scenario_records}
+    chosen = select_pair(pairs, provider, model)  # raises MixedProvidersError rather than merge pairs
+    if chosen is not None:
+        by_ds = {n: [r for r in recs if config.record_label(r) == chosen] for n, recs in by_ds.items()}
+        scenario_records = [r for r in scenario_records if config.record_label(r) == chosen]
     all_items = {n: datasets.load_dataset(n) for n in datasets.DATASETS}
     totals = {n: len(v) for n, v in all_items.items()}
     flat = [r for recs in by_ds.values() for r in recs]
@@ -106,7 +148,8 @@ def build_data(results_dir: Path) -> dict[str, Any]:
     def pooled(names: list[str]) -> list[dict]:
         return [r for n in names for r in by_ds[n]]
 
-    data: dict[str, Any] = {"coverage": metrics.coverage(flat, totals), "baseline_loaded": bool(base_rows)}
+    data: dict[str, Any] = {"provider": chosen[0] if chosen else None, "model": chosen[1] if chosen else None,
+                            "coverage": metrics.coverage(flat, totals), "baseline_loaded": bool(base_rows)}
 
     acc: dict[str, Any] = {}
     for label, names in [(n, [n]) for n in INTENT_SETS] + [("pooled_133", POOLED_133), ("pooled_166", POOLED_166)]:
@@ -161,7 +204,7 @@ def build_data(results_dir: Path) -> dict[str, Any]:
         "evaluate_py_ctxY_strict_pct": (e2.get("ctxY twins (NEW_SEARCH, ctx=Y)") or {}).get("strict_pct"),
     }
 
-    data["scenarios"] = scenario_summary(read_jsonl(results_dir / "scenarios_live.jsonl"))
+    data["scenarios"] = scenario_summary(scenario_records)
     data["safety"] = load_json(results_dir / "safety.json")
     data["robustness"] = load_json(results_dir / "robustness.json")
     return data
@@ -173,7 +216,9 @@ def build_data(results_dir: Path) -> dict[str, Any]:
 def banner(data: dict[str, Any]) -> list[str]:
     cov = data["coverage"]
     done, total = sum(c["done"] for c in cov.values()), sum(c["total"] for c in cov.values())
-    lines = ["# LLM approach: evaluation and comparison", ""]
+    lines = ["# LLM approach: evaluation and comparison", "",
+             f"**{pair_text(data['provider'], data['model'])}.** One provider/model pair per report; results of "
+             "different pairs are never merged or compared in one table.", ""]
     if done < total:
         lines += [f"> **PARTIAL RESULTS: {done} of {total} items evaluated.** Every number below covers only the items done so far.", ""]
     lines += [table(["Dataset", "Items done", "Total", "Rate-limit misses"],
@@ -321,7 +366,7 @@ def safety_section(data: dict[str, Any]) -> list[str]:
         ["s7 (payment request, not a security block)", "blocked" if s["s7_payment_request"]["blocked_either"] else "not blocked (handled as UNSUPPORTED_ACTION)"],
         ["False positives on general messages", f"{fp['blocked_either']}/{fp['n']} {fp['blocked_ids'] or ''}"],
         ["Room-text injection neutralised", f"{inj['neutralised']}/{inj['n']}"],
-    ]), ""]
+    ], OFFLINE_LABEL), ""]
     bad = [r["payload"] for r in inj["rows"] if not r["neutralised"]]
     if bad:
         lines += ["**Not neutralised** (the room sanitiser leaves these fence-breaking payloads in the prompt):", ""] + [f"- `{p!r}`" for p in bad] + [""]
@@ -337,7 +382,8 @@ def robustness_section(data: dict[str, Any]) -> list[str]:
     rows = [[x["case"], x["reply_kind"], "yes" if x["history_consistent"] else "NO",
              "yes" if x["state_unchanged_where_required"] else "NO", "LEAK" if x["raw_error_leaked"] else "no"] for x in r["rows"]]
     return lines + [f"{r['clean']} of {r['n']} cases clean.", "",
-                    table(["Case", "Reply type", "History consistent", "State kept where required", "Raw error leaked"], rows), ""]
+                    table(["Case", "Reply type", "History consistent", "State kept where required", "Raw error leaked"],
+                          rows, OFFLINE_LABEL), ""]
 
 
 def targets_section(data: dict[str, Any]) -> list[str]:
@@ -361,24 +407,84 @@ def targets_section(data: dict[str, Any]) -> list[str]:
 
 
 def render(data: dict[str, Any]) -> str:
+    global _label
+    _label = f"{pair_text(data.get('provider'), data.get('model'))}" if data.get("provider") else ""
     parts = banner(data) + method_notes(data) + accuracy_section(data) + other_metrics_section(data) + \
         faithfulness_section(data) + scenario_section(data) + safety_section(data) + robustness_section(data) + targets_section(data)
     return "\n".join(parts).rstrip() + "\n"
 
 
-def build_report(results_dir: Path = RESULTS_DIR) -> tuple[str, dict[str, Any]]:
-    data = build_data(results_dir)
+MAX_LISTED_MISSING = 20
+
+
+def missing_prompts(results_dir: Path, entry: dict) -> list[str]:
+    """Ids of the prompts an unfinished run (an entry of run_state.json) still has to do."""
+    from llm_approach.eval import run_eval
+
+    sig = entry["signature"]
+    label = (str(sig.get("provider")), str(sig.get("model")))
+    dataset = str(sig.get("dataset"))
+    if sig.get("tool") == "run_eval":
+        names = datasets.DATASETS if dataset == "all" else [dataset]
+        todo = run_eval.plan_items(names, int(sig.get("runs") or 1), sig.get("sample"), results_dir,
+                                   only_missing=True, label=label)
+        return [f"{it['item']} (run {run})" for it, run in todo]
+    only = {x.strip().upper() for x in dataset.removeprefix("scenarios:").split(",") if x.strip() and x != "all"}
+    seen: dict[str, set[int]] = {}
+    for rec in read_jsonl(results_dir / "scenarios_live.jsonl"):
+        if config.record_label(rec) == label:
+            seen.setdefault(rec["scenario"], set()).add(int(rec["turn"]))
+    missing = []
+    for path in sorted((Path(__file__).resolve().parents[1] / "scenarios").glob("S*.json"),
+                       key=lambda p: int(p.stem.split("_")[0][1:]) if p.stem.split("_")[0][1:].isdigit() else 0):
+        sc = json.loads(path.read_text(encoding="utf-8"))
+        if sc.get("stub_only") or (only and sc["id"].upper() not in only):
+            continue
+        if len(seen.get(sc["id"], ())) < len(sc["turns"]):
+            missing.append(sc["id"])
+    return missing
+
+
+def check_complete(results_dir: Path, provider: str | None = None, model: str | None = None) -> None:
+    """Raise ``IncompleteRunError`` when an unfinished live run (run_state.json) matches the requested
+    provider/model and still has prompts to do. A comparison is only built from a finished run."""
+    for entry in runs_mod.unfinished_runs(results_dir):
+        sig = entry.get("signature") or {}
+        if (provider and sig.get("provider") != provider) or (model and sig.get("model") != model):
+            continue
+        missing = missing_prompts(results_dir, entry)
+        if not missing:
+            continue
+        shown = ", ".join(missing[:MAX_LISTED_MISSING]) + (
+            f" and {len(missing) - MAX_LISTED_MISSING} more" if len(missing) > MAX_LISTED_MISSING else "")
+        raise runs_mod.IncompleteRunError(
+            f"No comparison from an incomplete run ({sig.get('tool')}, dataset {sig.get('dataset')}, provider "
+            f"{sig.get('provider')}, model {sig.get('model')}): {len(missing)} prompts are missing: {shown}. "
+            "Finish it with the same command plus --resume, then run the report again.")
+
+
+def build_report(
+    results_dir: Path = RESULTS_DIR, provider: str | None = None, model: str | None = None
+) -> tuple[str, dict[str, Any]]:
+    check_complete(results_dir, provider, model)
+    data = build_data(results_dir, provider, model)
     return render(data), data
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m llm_approach.eval.report")
     p.add_argument("--results-dir", default=str(RESULTS_DIR))
+    p.add_argument("--provider", default=None, help="report only this provider (required if the results mix several)")
+    p.add_argument("--model", default=None, help="report only this model (required if the results mix several)")
     args = p.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     rd = Path(args.results_dir)
-    md, data = build_report(rd)
+    try:
+        md, data = build_report(rd, args.provider, args.model)
+    except (MixedProvidersError, runs_mod.IncompleteRunError) as exc:
+        print(exc)
+        return 2
     (rd / "comparison.md").write_text(md, encoding="utf-8")
     (rd / "comparison.json").write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     done = sum(c["done"] for c in data["coverage"].values())

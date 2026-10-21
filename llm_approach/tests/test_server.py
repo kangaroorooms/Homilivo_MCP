@@ -83,22 +83,24 @@ def test_health(client):
 
 
 def test_ready_not_ready_until_preloaded(client, monkeypatch):
+    monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")
     monkeypatch.setenv("GROQ_API_KEY", "gsk_value_must_not_appear")
     monkeypatch.setattr(server_app, "_readiness", {"guardrails": False, "knowledge_base": False})
     r = client.get("/ready")
     assert r.status_code == 503 and r.json()["checks"] == {
-        "groq_key_present": True, "kangaroo_token_present": True, "knowledge_base": False, "guardrails": False,
+        "llm_key_present": True, "kangaroo_token_present": True, "knowledge_base": False, "guardrails": False,
     }
 
 
 def test_ready_ok_reports_booleans_only(client, monkeypatch):
+    monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")
     monkeypatch.setenv("GROQ_API_KEY", "gsk_value_must_not_appear")
     monkeypatch.setattr(server_app, "_readiness", {"guardrails": True, "knowledge_base": True})
     r = client.get("/ready")
     assert r.status_code == 200 and r.json()["status"] == "ready"
     assert "gsk_value_must_not_appear" not in r.text
     monkeypatch.delenv("GROQ_API_KEY")
-    assert client.get("/ready").json()["checks"]["groq_key_present"] is False
+    assert client.get("/ready").json()["checks"]["llm_key_present"] is False
 
 
 def test_demo_token_issued_and_distinct_from_credential(client):
@@ -568,6 +570,7 @@ def test_default_env_path_is_the_repo_root_like_cli():
 
 def test_ready_booleans_only_and_no_secret_in_logs_or_responses(client, monkeypatch, tmp_path, caplog):
     caplog.set_level(logging.DEBUG)
+    monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")
     _clean_env(monkeypatch, "GROQ_API_KEY", "KANGAROO_TOKEN")
     env = tmp_path / ".env"
     env.write_text(f"GROQ_API_KEY={DOTENV_SECRET}-groq\nKANGAROO_TOKEN={DOTENV_SECRET}-rooms\n", encoding="utf-8")
@@ -577,7 +580,7 @@ def test_ready_booleans_only_and_no_secret_in_logs_or_responses(client, monkeypa
 
     ready = client.get("/ready")
     assert ready.json()["checks"] == {
-        "groq_key_present": True, "kangaroo_token_present": True, "knowledge_base": True, "guardrails": True,
+        "llm_key_present": True, "kangaroo_token_present": True, "knowledge_base": True, "guardrails": True,
     }
     token = client.get("/chat-ui/demo-token")
     chat = client.post("/chat", json={"message": "hi"}, headers={"Authorization": f"Bearer {token.json()['token']}"})

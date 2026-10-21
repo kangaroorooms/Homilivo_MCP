@@ -1,6 +1,6 @@
 # Pending work (LLM approach)
 
-One-page checklist of everything still open. Last updated 2026-10-19 (session memory added). See [PLAN.md](PLAN.md) section 15 for the reason and the resume commands.
+One-page checklist of everything still open. Last updated 2026-10-19 (session memory added; Gemini provider switch added, see the last section). See [PLAN.md](PLAN.md) section 15 for the reason and the resume commands.
 
 Legend: `[ ]` open, `[x]` done.
 
@@ -69,3 +69,22 @@ Legend: `[ ]` open, `[x]` done.
 - [ ] A conversation-memory evaluation set (questions with gold answers, wrong-answer and injection cases) needs the team lead's approval before it is made
 - [ ] Cost: a conversation question is two Groq calls, about 5,300 to 11,000 tokens (about 4,800 for a normal turn); on the free tier a long chat can hit the per-minute limit. Consider a smaller model or a shorter record for the answer call
 - [ ] Privacy note for the team lead: the whole transcript (both roles, up to 200 messages) is kept in memory for the session (TTL 3600 s) and sent to Groq only in the answer call of a conversation question; never logged, never in metrics, never written to disk, never sent to the rooms API
+
+
+## Gemini provider switch (added 2026-10-19)
+
+The default provider is now Gemini `gemini-3.5-flash-lite` (the team lead approved it for the live evaluation); Groq stays available with `LLM_APPROACH_PROVIDER=groq`. Items above that say "Groq" now apply to the active provider; the items about Groq's quota apply only when Groq is selected.
+
+- [ ] Install the SDK and run the live smoke test once: `pip install -r llm_approach/requirements-gemini.txt`, `GEMINI_API_KEY` in `.env`, then `python -m llm_approach.smoke_gemini`. Confirm it prints `OK`, a valid decision and token counts (this also confirms the live model accepts the thinking setting for its family: `thinking_level=LOW` on `gemini-3.x`)
+- [ ] Add to `.env`: `LLM_APPROACH_GEMINI_SPACING_S=5` and `LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET=2000000` (our own cap: Google lists no daily token limit). Without the budget `run_eval` and `run_scenarios --live` refuse to start. Limits of `gemini-3.5-flash-lite` on the free tier: 15 requests/min, 250K tokens/min, 500 requests/day (the binding one). The code keeps a Pacific-day request counter (`LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET`, default 450), a 12 requests / 200K tokens per 60 s window and a 5 s spacing (minimum 4 s)
+- [ ] Plan the days first: `python -m llm_approach.eval.plan` (estimated requests and minutes per dataset, suggested order per day). `python -m llm_approach.llm_info` shows requests used today. A live run prints its own plan and refuses to start if the worst case does not fit in what is left today
+- [ ] If a run prints `STOPPED EARLY ... Resume with: <command>`, run exactly that command (it ends in `--resume`; only the same provider, model and dataset can be resumed). The report refuses to compare an unfinished run
+- [ ] The first real prompt of a live run is the connectivity check; a wrong key, model or quota stops the run after one call with a clear message
+- [ ] Run the live evaluation on Gemini (same order and commands as above); regenerate the report with `python -m llm_approach.eval.report --provider gemini --model gemini-3.5-flash-lite`. Old Groq results, if any, stay in the same files and are never merged into a Gemini table
+- [ ] Phase 7: the prompt was written for `gpt-oss-20b` and may need tuning on Gemini after the first live results. Prompts, schema and validators stay frozen during the evaluation
+- [ ] Check whether Gemini reports cached tokens for the 18K-character system prompt (`cached_content_token_count`; the report says "not reported" if absent) and measure real tokens per call (the dry run is an estimate; tokenizers differ)
+- [ ] Check the real Gemini error shapes: a 429 must give the "lot of requests" reply, a blocked or empty reply must retry once and fall back (tested with fakes shaped like the SDK's `ClientError`, not live)
+- [ ] Privacy: free-tier content may be used by Google under its terms (check the current terms); the evaluation data is synthetic. Do not send real user messages through a free-tier key
+- [ ] Check whether the frontend or any dashboard reads `/ready` -> `checks.groq_key_present`; it is now `checks.llm_key_present` (with `provider` and `model` at the top level)
+- [ ] `eval/results/comparison.md` and `comparison.json` were generated before the labels existed and have not been regenerated
+- [ ] Thinking `LOW` (default on `gemini-3.x`) may add latency and output tokens, and the 1024 output cap is a guess. The live results will show the real cost (check the `thinking` token count in the smoke test and the latency/token tables); adjust with `LLM_APPROACH_GEMINI_THINKING` (`level:MINIMAL`, `none`) and `LLM_APPROACH_GEMINI_MAX_OUTPUT_TOKENS` if needed

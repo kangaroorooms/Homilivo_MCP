@@ -139,7 +139,7 @@ def test_parse_args_flags():
 def main_env(monkeypatch):
     """main() with .env loading, the chat loop and the guardrail load mocked."""
     monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
-    monkeypatch.setenv("GROQ_API_KEY", "sk-test-secret-value-123")
+    monkeypatch.setenv("GEMINI_API_KEY", "sk-test-secret-value-123")  # Gemini is the default provider
     monkeypatch.setenv(config.OFFLINE_ROOMS_ENV, "")  # so the test's env is restored afterwards
     ran = SimpleNamespace(preload=0, chat=None, configured=None)
     monkeypatch.setattr(pipeline, "preload", lambda: setattr(ran, "preload", ran.preload + 1))
@@ -171,6 +171,6 @@ def test_main_skip_flag_warns_and_does_not_preload(main_env, capsys):
 
 def test_main_without_a_key_exits_and_prints_no_values(monkeypatch, capsys):
     monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert cli.main([]) == 2
-    assert "GROQ_API_KEY is not set" in capsys.readouterr().out
+    assert "GEMINI_API_KEY is not set" in capsys.readouterr().out

@@ -282,7 +282,7 @@ See the table in the report that accompanied this phase. **Only the first of the
 7. `HISTORY_TURNS_IN_PROMPT = 6` is read as 6 user and bot pairs, so up to 12 messages. Each is cut to 200 characters.
 8. `Slots.bhk`, `min_price`, `max_price` keep raw strings such as `"15k"` after parsing; `validators` converts them.
 9. The smoke script loads `.env` with `python-dotenv` (only inside the script) when the key is not already in the environment.
-10. The 8 s timeout is enforced with `asyncio.wait_for`. A timeout is not retried; only an invalid reply is.
+10. The timeout (8 s for Groq; 20 s for Gemini, set by `LLM_APPROACH_GEMINI_TIMEOUT_S`, minimum 10 s because Gemini rejects shorter deadlines) is enforced with `asyncio.wait_for`. A timeout is not retried; only an invalid reply is.
 
 ## Open points
 
@@ -724,7 +724,7 @@ At 150,000 tokens per day that is about 5 days, plus 2 to 3 days for the 3-run c
 
 ## Resume
 
-Results append to `eval/results/<dataset>.jsonl`; a finished (dataset, item, run) is skipped on the next start. Tokens used today are tracked in `eval/results/usage.jsonl` (all runners share it), so two commands on one day share the 150,000 budget. When the budget stops a run, it prints the exact command to repeat tomorrow. The same applies to `run_scenarios --live` (it resumes by whole scenario).
+Results append to `eval/results/<dataset>.jsonl`; a finished (dataset, item, run) is skipped on the next start. Tokens used today are tracked in `eval/results/usage.jsonl` (all runners share it), so two commands on one day share the 150,000 budget. When a run stops early (token budget, request cap, daily quota, five failures in a row) its last line is `STOPPED EARLY: X of Y done. Reason: ... Resume with: <exact command>` (the command ends in `--resume`). The same applies to `run_scenarios --live` (it resumes by whole scenario; every turn is written as it finishes). See "Gemini free-tier limits" for the request cap, the planner and `python -m llm_approach.eval.plan`.
 
 ## Reading the report
 
@@ -949,3 +949,116 @@ New `tests/test_conversation_memory.py` (70 tests: transcript caps, order, roles
 - No live run: the real model's labels and answers are unverified. The stub proves the code paths only.
 - A conversation-memory evaluation set (questions with gold answers) does not exist; making one needs the team lead's approval.
 - A grounded but wrong paraphrase can pass validation (see the exception above).
+
+
+# Gemini provider (provider switch)
+
+**Gemini (`gemini-3.5-flash-lite`) is now the default LLM provider, replacing Groq.** The team lead approved Gemini for the live evaluation. Groq is still available and behaves exactly as before. Nothing in this section was run against Gemini, Groq or the rooms API: all tests use fakes, the live smoke test is yours to run.
+
+## What changed (and what did not)
+
+- New `providers.py` is the only module that knows which provider is active. `llm_client.decide` and the conversation answerer call one function, `providers.complete(messages, max_tokens)`, and get text plus token usage back. Same messages, same retries, same budget, same logging for both providers.
+- **Not changed:** the system prompt, the few-shot examples, `schema.py`, `validators.py` (`git diff` on `prompts.py`, `schema.py`, `validators.py` is empty). Parsing and validation are identical for both providers.
+- Groq request, as before: temperature 0, `max_tokens` 500, `response_format` JSON object, `reasoning_effort="low"`, 8 s timeout (Groq only), `max_retries=0`, one JSON retry in our code. A test pins these parameters.
+
+## Setup
+
+```powershell
+pip install -r llm_approach/requirements-gemini.txt      # google-genai, needed only for Gemini
+# in .env at the repo root (the server already loads it with override=False):
+#   GEMINI_API_KEY=...
+python -m llm_approach.smoke_gemini                      # ONE live request, see below
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LLM_APPROACH_PROVIDER` | `gemini` | `gemini` or `groq`; anything else is rejected without echoing the value |
+| `LLM_APPROACH_GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini model name |
+| `LLM_APPROACH_GEMINI_THINKING` | unset (by model family) | override: `level:LOW`, `level:MINIMAL`, `level:MEDIUM`, `level:HIGH`, `budget:<int>` or `none`. Anything else stops with an error naming these values |
+| `LLM_APPROACH_GEMINI_MAX_OUTPUT_TOKENS` | `1024` | output cap on the Gemini path (thinking tokens count toward it). Groq stays at 500 |
+| `GEMINI_API_KEY` | none | read from the environment only; a missing or blank key raises the same non-secret `KeyError("GEMINI_API_KEY")` as Groq, before any request |
+| `LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET` | unset | **our own safety cap** (Google lists no daily token limit) in tokens per day for the live evaluation; **unset means `run_eval --dataset ...` and `run_scenarios --live` refuse to start** and name this variable |
+| `LLM_APPROACH_GEMINI_SPACING_S` | `5` (minimum `4`) | seconds between live evaluation calls |
+| `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET` | `450` | Gemini requests per Pacific day, shared by the server, the CLI and the eval runners |
+
+Groq keeps its values (30 s spacing, 150,000 tokens a day) and is not touched by the Gemini limiter. `--spacing` and `--daily-token-budget` override either. The Gemini limits are explained in the next section.
+
+## Gemini free-tier limits (gemini-3.5-flash-lite)
+
+From AI Studio: **15 requests per minute (RPM), 250K tokens per minute (TPM), 500 requests per day (RPD)**, and no daily token limit. Requests per day is the binding limit. Enforced in `gemini_limits.py` for every Gemini request, live chat and the eval runners alike:
+
+| Guard | Setting | Behaviour |
+|---|---|---|
+| Spacing | `LLM_APPROACH_GEMINI_SPACING_S`, default **5 s**, minimum **4 s** (a lower value is raised to 4 with one warning) | seconds between prompts in `run_eval` / `run_scenarios --live` |
+| Daily request cap | `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET`, default **450** (500 minus a margin) | counter file `eval/results/gemini_requests.json` (git-ignored; only a date and a count). The day ends at **midnight US Pacific time**. Every request counts, retries and failed calls included. At the cap no Gemini call starts and the pipeline gives its normal rate-limit reply (same path as a 429); an eval run stops with `STOPPED EARLY` |
+| Daily token budget | `LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET`, unset = live evals refuse | **our own safety cap**: Google lists no daily token limit |
+| Sliding window | fixed: **12 requests and 200K tokens per 60 s** (20% under 15 and 250K) | waits before a call that could exceed either. The next call's token estimate is the previous call's count, or the prompt-size estimate before the first call. On top of the spacing |
+| 429 | | reads the retry delay from the error (at most 60 s; 60 s when it names none), waits, retries the same call **once**. A 429 that says the **daily quota** is used up is not retried: the run stops cleanly and the remaining prompts are "not run" |
+
+Lines to add to `.env` yourself:
+
+```
+LLM_APPROACH_GEMINI_SPACING_S=5
+LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET=2000000
+```
+
+**Before a live run** (`run_eval`, `run_scenarios --live`) the runner prints the plan: prompts x worst-case calls per prompt (3 for a dataset prompt: two decision calls plus one rate-limit retry; 5 for a scenario turn, which can add the answerer's two calls), the requests used today, the remaining budget and the estimated time at the current spacing. It **refuses to start** when the worst case exceeds the remaining requests (no override flag). The first real prompt is the connectivity check: a wrong key, model or quota stops the run after that one call with a clear message. Five failures in a row (network error, 5xx, timeout, rate-limit miss) stop it too.
+
+**Checkpoint and resume.** Every prompt is written to its results file (with provider and model, no keys) before the next call. A run that stops early prints, as its last line:
+
+```
+STOPPED EARLY: X of Y done. Reason: ... Resume with: python -m llm_approach.eval.run_eval --dataset golden --runs 1 --spacing 5 --daily-token-budget 2000000 --resume
+```
+
+`--resume` continues the unfinished run: finished prompts are skipped, failed ones are retried. Only a run with the same provider, model and dataset (and `--runs` / `--sample`) can be resumed; anything else is refused, as is starting the same command again without `--resume`. The record is `eval/results/run_state.json` (git-ignored). The report generator refuses to build a comparison from an unfinished run and lists the missing prompts.
+
+**Plan the days:** `python -m llm_approach.eval.plan` prints the estimated requests and minutes for ctxY, golden, golden_slots, matrix55, fresh and the live scenarios, and a suggested order that keeps each day under the request budget (or says everything fits in one day). `python -m llm_approach.llm_info` also shows the requests used today, the request budget, the spacing and the token budget.
+
+
+## Switching providers
+
+```powershell
+$env:LLM_APPROACH_PROVIDER = "groq"      # back to Groq (needs GROQ_API_KEY)
+$env:LLM_APPROACH_PROVIDER = "gemini"    # or remove the variable: Gemini is the default
+python -m llm_approach.llm_info           # prints provider, model, and whether the key is "set" or "missing"
+```
+
+Or put `LLM_APPROACH_PROVIDER=groq` in `.env`. `scripts/start-server.ps1` runs `llm_info` before starting and prints the provider, the model and `set` / `missing` for the matching key, never the key. `/ready` reports `llm_key_present` (the active provider's key) plus `provider` and `model`; it replaces `groq_key_present`.
+
+## How the Gemini call works
+
+- Messages are mapped from the OpenAI style: `system` becomes the system instruction, `user` stays `user`, `assistant` becomes `model`; order is kept. The retry reminder is one more `user` content.
+- Temperature 0, `response_mime_type="application/json"`, output cap `LLM_APPROACH_GEMINI_MAX_OUTPUT_TOKENS` (default 1024, for decisions and the answerer alike; thinking tokens count toward it, so 500 can truncate the JSON).
+- **Thinking config depends on the model family** (a live check showed `gemini-3.5-flash-lite` rejects `thinking_budget=0` with 400 INVALID_ARGUMENT and accepts `thinking_level="LOW"`):
+  - model id starts with `gemini-3`: `ThinkingConfig(thinking_level="LOW")`
+  - model id starts with `gemini-2.5`: `ThinkingConfig(thinking_budget=0)`
+  - any other model id: no thinking config is sent
+  - `LLM_APPROACH_GEMINI_THINKING` overrides all of this (values in the table above); an invalid value is reported by `setup_problem()` and the smoke test and names the allowed values.
+- **Default model is now `gemini-3.5-flash-lite`** because `gemini-2.5-flash-lite` and `gemini-2.5-flash` return 404 NOT_FOUND for new projects.
+- 20 s timeout (our `asyncio.wait_for` plus the SDK's own, in ms), default from `LLM_APPROACH_GEMINI_TIMEOUT_S`, clamped to at least 10 s with one warning: Gemini answered `400 INVALID_ARGUMENT` "Manually set deadline 8s is too short. Minimum allowed deadline is 10s." to the old 8 s value. Groq keeps 8 s. SDK retries disabled (`attempts=1`): our code owns the one JSON retry.
+- Worst case per message (calls are sequential; a timeout is never retried): Groq 4 calls x 8 s = 32 s (2 decision calls, plus 2 answerer calls on a chat question). Gemini: no new call starts once the turn's calls have used 25 s, so at most 25 s + 20 s = 45 s (instead of 4 x 20 = 80 s).
+- Token usage: prompt tokens, output tokens **including thinking tokens** (`thoughts_token_count`) and cached tokens go into `LLMBudget` and the metrics.
+- HTTP 429 / `RESOURCE_EXHAUSTED` is mapped to the existing rate-limit handling: `RATE_LIMIT_REPLY`, no fallback search. Timeouts and other API errors behave like Groq's: no raw exception text anywhere, class name only in logs and metrics.
+- An empty or blocked reply, or one that stopped at the output cap (finish reason `MAX_TOKENS`), is treated like invalid JSON: one retry, then the existing fallback.
+- The SDK is imported lazily, on the first Gemini call; the offline tests and the Groq path never import it (tested in a subprocess).
+
+## Smoke test
+
+`python -m llm_approach.smoke_gemini` sends ONE tiny request (no retry) through the real `decide()` and prints only: provider, model, the thinking setting (for example `thinking:  level LOW`), `OK` or the error class, whether the reply parsed as a valid decision, the finish reason, token usage with thinking tokens, and latency in ms. It never prints the key, the prompt or the reply, and refuses to run when `GEMINI_API_KEY` is unset. It tests Gemini whatever `LLM_APPROACH_PROVIDER` says.
+
+## Labels, budgets and the report
+
+- Every eval result record (`<dataset>.jsonl`, `scenarios_live.jsonl`, the daily token ledger), every metrics line (numbers only) and `safety.json` / `robustness.json` carries `provider` and `model`. Records written before the switch have none and are read as `groq` / `openai/gpt-oss-20b` (no file was rewritten).
+- Resume logic and the daily token ledger are per provider and model: a Gemini run does not skip items finished with Groq, and Groq's tokens do not count against Gemini's budget.
+- `eval/report.py` covers **one** provider/model pair per report and says which, in the header and under every table. If the results hold several pairs it refuses (exit code 2) and asks for `--provider` / `--model`. Offline tables (safety, robustness) are labelled "offline mocks, no LLM call".
+- `run_eval --dry-run` stays provider-neutral (no key needed) and says that token counts are estimated from prompt size and that tokenizers differ between providers.
+
+## Read before the first live results
+
+- **The prompt was written and sized for `openai/gpt-oss-20b`.** It may need tuning on Gemini after the first live results (Phase 7). Prompts, schema and validators stay **frozen during the evaluation**: tune only between evaluation rounds, and re-run the affected sets after each change.
+- Free-tier Gemini content may be used by Google under its terms; check the current terms before running. The evaluation data is **synthetic** (the POC test sets and fixtures); real users' messages should not be sent on a free-tier key.
+- Groq-specific wording elsewhere in this README (for example "Groq JSON mode", per-minute token limits) describes the Groq path and is unchanged.
+
+## Tests
+
+`python -m pytest llm_approach/tests -q`: **1230 passed** (1088 before, 142 new). New files: `test_gemini_provider.py` (39: fake Gemini client, mapping, thinking, errors, keys, lazy import, log audit, `smoke_gemini`), `test_provider_parity.py` (74: all 69 stub scenarios, 300 turns, through a fake Groq and a fake Gemini client with identical replies, state and metrics; plus the Groq request parameters) and `test_provider_labels.py` (29: labels, per-provider budgets and ledger, the report refusing to mix, live runners refusing an unset Gemini budget, `llm_info`, the start script, `/ready`). Existing tests that assumed Groq was the default were updated; they are listed in RESULTS.md section 10.

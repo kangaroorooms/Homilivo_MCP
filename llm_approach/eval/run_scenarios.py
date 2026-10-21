@@ -4,7 +4,7 @@ Two modes:
 
 * ``--stub``: scripted decisions, fake guardrails/knowledge base, offline rooms.
   No network, no torch. This is what pytest uses.
-* ``--live``: real Groq (``GROQ_API_KEY`` from ``.env``) with the offline rooms
+* ``--live``: the real LLM provider (Gemini by default; the key comes from ``.env``) with the offline rooms
   fixture and the real guardrails. Never run by pytest. ``--spacing`` waits
   between LLM calls to respect the tokens-per-minute limit.
 
@@ -39,7 +39,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from llm_approach import config, llm_client, pipeline, reuse, rooms_client  # noqa: E402
-from llm_approach.eval import run_eval  # noqa: E402
+from llm_approach import gemini_limits  # noqa: E402
+from llm_approach.eval import run_eval, runs as runs_mod  # noqa: E402
 from llm_approach.schema import parse_decision  # noqa: E402
 from llm_approach.state import SessionStore  # noqa: E402
 
@@ -71,10 +72,45 @@ class TurnReport:
     action: str | None = None
     tokens: int = 0
     latency_ms: float = 0.0
+    llm_calls: int = 0
 
     @property
     def passed(self) -> bool:
         return self.skipped is None and all(c.ok for c in self.checks)
+
+
+class ScenarioStop(Exception):
+    """A live run must stop cleanly now (daily quota or request cap reached, repeated failures)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class LiveGuard:
+    """Stop rules of a live run. ``before_turn`` / ``hard_stop`` stop without recording the turn (Gemini quota
+    or local cap: the turn counts as not run); ``soft_stop`` runs after the turn is recorded (five failed LLM
+    turns in a row, a failed turn being one whose call returned no token usage)."""
+
+    def __init__(self, limiter: gemini_limits.GeminiLimiter | None = None, max_failures: int = runs_mod.MAX_CONSECUTIVE_FAILURES) -> None:
+        self.gemini = config.provider() == "gemini"
+        self.limiter = limiter or gemini_limits.get_limiter()
+        self.streak = runs_mod.FailureStreak(max_failures)
+
+    def before_turn(self) -> str | None:
+        if self.gemini and runs_mod.request_status()[2] <= 0:
+            return f"the local daily request cap ({config.daily_request_budget()}) is reached"
+        return None
+
+    def hard_stop(self, report: "TurnReport") -> str | None:
+        if self.gemini and self.limiter.quota_exhausted:
+            return "Gemini says the daily request quota is exhausted (429, not retried)"
+        return None
+
+    def soft_stop(self, report: "TurnReport") -> str | None:
+        if report.llm_calls:
+            self.streak.add(report.tokens == 0)
+        return f"{self.streak.count} failed LLM turns in a row" if self.streak.tripped else None
 
 
 def load_scenarios(only: list[str] | None = None) -> list[dict[str, Any]]:
@@ -152,7 +188,7 @@ def runtime(
             async def fake_decide(user_message, state_summary, budget):
                 spy.llm_calls += 1
                 item = script.pop(0)
-                if item == "rate_limit":  # Groq answered 429: the client reports it on the budget
+                if item == "rate_limit":  # the provider answered 429: the client reports it on the budget
                     budget.error_class = "RateLimitError"
                     return None
                 return None if item in (None, "timeout") else parse_decision(item)
@@ -264,7 +300,7 @@ def _check_turn(
 
 
 async def run_scenario(
-    scenario: dict[str, Any], mode: str = "stub", *, spacing: float = 0.0, log=None
+    scenario: dict[str, Any], mode: str = "stub", *, spacing: float = 0.0, log=None, guard: LiveGuard | None = None
 ) -> list[TurnReport]:
     """Run one scenario in a fresh session. Returns one report per turn."""
     reports: list[TurnReport] = []
@@ -292,6 +328,8 @@ async def run_scenario(
                 wait = spacing - (time.monotonic() - last_llm_turn_at)
                 if wait > 0:
                     await asyncio.sleep(wait)
+            if guard and (reason := guard.before_turn()):
+                raise ScenarioStop(reason)
             calls_before, searches_before, answers_before = spy.llm_calls, len(spy.searches), spy.answer_calls
             result = await pipeline.handle_turn(session_id, turn["user"], store=store)
             spy.llm_calls_this_turn = spy.llm_calls - calls_before
@@ -303,6 +341,7 @@ async def run_scenario(
                 intent=result.metrics.get("intent"), action=result.metrics.get("action"),
                 tokens=int(result.metrics.get("tokens_in", 0) or 0) + int(result.metrics.get("tokens_out", 0) or 0),
                 latency_ms=float(result.metrics.get("total_ms", 0.0) or 0.0),
+                llm_calls=int(result.metrics.get("llm_calls", 0) or 0),
             )
             report.checks = _check_turn(
                 turn.get("expect", {}), result, store.peek(session_id), spy, searches_before, mode
@@ -311,9 +350,13 @@ async def run_scenario(
                 report.checks.append(
                     Check("llm never called", spy.llm_calls_this_turn == 0, "the LLM was called for a blocked turn")
                 )
+            if guard and (reason := guard.hard_stop(report)):
+                raise ScenarioStop(reason)
             reports.append(report)
             if log:
                 log(report)
+            if guard and (reason := guard.soft_stop(report)):
+                raise ScenarioStop(reason)
     return reports
 
 
@@ -322,7 +365,9 @@ async def run_scenario(
 
 def live_record(report: TurnReport) -> dict[str, Any]:
     """One line of scenarios_live.jsonl: ids, verdicts and check names only. No message text, no reply."""
+    provider, model = config.label()
     return {
+        "provider": provider, "model": model,
         "scenario": report.scenario, "turn": report.index,
         "status": "skipped" if report.skipped else ("pass" if report.passed else "fail"),
         "intent": report.intent, "action": report.action,
@@ -342,15 +387,36 @@ def format_report(report: TurnReport) -> str:
     return line
 
 
+def finished_scenarios(wanted: dict[str, int], label: tuple[str, str] | None = None) -> set[str]:
+    """Ids of scenarios whose every turn is recorded in scenarios_live.jsonl for the (provider, model) pair."""
+    label = label or config.label()
+    seen: dict[str, set[int]] = {}
+    for rec in run_eval.read_records(LIVE_RESULTS):
+        if config.record_label(rec) == label:  # only turns recorded with this provider and model
+            seen.setdefault(rec["scenario"], set()).add(int(rec["turn"]))
+    return {sid for sid, turns in seen.items() if sid in wanted and len(turns) >= wanted[sid]}
+
+
+def resume_command(args: argparse.Namespace) -> str:
+    only_arg = f" --only {args.only}" if args.only else ""
+    return (f"python -m llm_approach.eval.run_scenarios --live{only_arg} --spacing {args.spacing:g} "
+            f"--daily-token-budget {args.daily_token_budget} --resume")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m llm_approach.eval.run_scenarios")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--stub", action="store_true", help="scripted decisions, offline (used by pytest)")
-    mode.add_argument("--live", action="store_true", help="real Groq; offline rooms; real guardrails")
+    mode.add_argument("--live", action="store_true", help="real LLM provider; offline rooms; real guardrails")
     parser.add_argument("--only", default="", help="comma-separated ids, e.g. S1,S4")
-    parser.add_argument("--spacing", type=float, default=30.0, help="seconds between LLM calls in --live (default 30)")
-    parser.add_argument("--daily-token-budget", type=int, default=150_000,
-                        help="--live: stop between scenarios when today's tokens would pass this (default 150000)")
+    parser.add_argument("--spacing", type=float, default=None,
+                        help="seconds between LLM calls in --live (default: the provider's setting; Groq 30, Gemini 5)")
+    parser.add_argument("--daily-token-budget", type=int, default=None,
+                        help="--live: stop between scenarios when today's tokens would pass this "
+                             "(default: the provider's setting; Groq 150000, Gemini from the environment)")
+    parser.add_argument("--resume", action="store_true",
+                        help="--live: continue the unfinished run (same provider, model and dataset); "
+                             "scenarios already fully recorded are skipped")
     args = parser.parse_args(argv)
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -360,27 +426,58 @@ def main(argv: list[str] | None = None) -> int:
     if not scenarios:
         print("No scenarios matched.")
         return 2
+    if args.resume and not args.live:
+        print("--resume only applies to --live.")
+        return 2
 
     run_mode = "live" if args.live else "stub"
     today = dt.date.today().isoformat()
     finished: set[str] = set()
-    used = [run_eval.tokens_used_today(LIVE_RESULTS.parent, today)] if run_mode == "live" else [0]
-    stopped: list[str] = []
-    if run_mode == "live":
-        wanted = {s["id"]: len(s["turns"]) for s in scenarios}
-        seen: dict[str, set[int]] = {}
-        for rec in run_eval.read_records(LIVE_RESULTS):
-            seen.setdefault(rec["scenario"], set()).add(int(rec["turn"]))
-        finished = {sid for sid, turns in seen.items() if sid in wanted and len(turns) >= wanted[sid]}
+    stop_reason: list[str] = []
+    sig: dict[str, Any] = {}
+    live_total = 0
     if run_mode == "live":
         from dotenv import load_dotenv
 
         load_dotenv(REPO_ROOT / ".env")
-        if not os.getenv("GROQ_API_KEY"):
-            print("GROQ_API_KEY is not set. Put it in .env at the repo root.")
+        problem = config.setup_problem()
+        if problem:
+            print(problem)
             return 2
+        args.spacing, args.daily_token_budget = run_eval.resolve_limits(args)
+        if args.daily_token_budget is None:
+            print(run_eval.budget_missing_message())
+            return 2
+        sig = runs_mod.signature("run_scenarios", "scenarios:" + (",".join(s.strip().upper() for s in only) or "all"))
+        refusal = runs_mod.begin(run_eval.RESULTS_DIR, sig, args.resume)
+        if refusal:
+            print(refusal)
+            return 2
+        wanted = {s["id"]: len(s["turns"]) for s in scenarios}
+        finished = finished_scenarios(wanted)
+        live = [s for s in scenarios if not s.get("stub_only")]
+        live_total = len(live)
+        todo_turns = sum(1 for s in live if s["id"] not in finished for t in s["turns"] if t["llm"] != "never")
+        if config.provider() == "gemini":
+            allowed, lines = runs_mod.preflight(todo_turns, runs_mod.WORST_CASE_CALLS_PER_SCENARIO_TURN, args.spacing)
+            print("\n".join(lines))
+            if not allowed:
+                return 2
+        print("LLM: {} ({})".format(*config.label()))
+        runs_mod.save_entry(run_eval.RESULTS_DIR, sig, "running",
+                            sum(1 for s in live if s["id"] in finished), live_total)
         print("Loading guardrails (can take ~40 s)...", flush=True)
         pipeline.preload()
+    used = [run_eval.tokens_used_today(LIVE_RESULTS.parent, today)] if run_mode == "live" else [0]
+    guard = LiveGuard() if run_mode == "live" else None
+
+    def checkpoint(report: TurnReport) -> None:
+        """Print the turn and, live, write its record and usage at once (a checkpoint after every turn)."""
+        print(format_report(report), flush=True)
+        if run_mode == "live":
+            run_eval.append_record(LIVE_RESULTS, live_record(report))
+            used[0] += report.tokens
+            run_eval.add_usage(LIVE_RESULTS.parent, today, report.tokens)
 
     async def run_all() -> list[TurnReport]:
         every: list[TurnReport] = []
@@ -391,18 +488,17 @@ def main(argv: list[str] | None = None) -> int:
                     continue
                 need = EST_TOKENS_PER_TURN * sum(1 for t in scenario["turns"] if t["llm"] != "never")
                 if used[0] + need > args.daily_token_budget:
-                    stopped.append(scenario["id"])
+                    stop_reason.append("daily token budget reached")
                     break
             print(f"\n{scenario['id']}: {scenario['title']}")
-            reports = await run_scenario(
-                scenario, run_mode, spacing=args.spacing, log=lambda r: print(format_report(r), flush=True)
-            )
-            if run_mode == "live":
-                for r in reports:
-                    run_eval.append_record(LIVE_RESULTS, live_record(r))
-                spent = sum(r.tokens for r in reports)
-                used[0] += spent
-                run_eval.add_usage(LIVE_RESULTS.parent, today, spent)
+            try:
+                reports = await run_scenario(
+                    scenario, run_mode, spacing=args.spacing or 0.0, log=checkpoint, guard=guard
+                )
+            except ScenarioStop as exc:
+                stop_reason.append(exc.reason)
+                print(f"Stopping: {exc.reason}.")
+                break
             every += reports
         return every
 
@@ -410,11 +506,16 @@ def main(argv: list[str] | None = None) -> int:
     ran = [r for r in reports if not r.skipped]
     failed = [r for r in ran if not r.passed]
     print(f"\n{len(ran) - len(failed)}/{len(ran)} turns passed, {len(reports) - len(ran)} skipped ({run_mode} mode)")
-    if stopped:
-        only_arg = f" --only {args.only}" if args.only else ""
-        print(f"Daily token budget reached before {stopped[0]}. Resume tomorrow with exactly:\n  "
-              f"python -m llm_approach.eval.run_scenarios --live{only_arg} --spacing {args.spacing:g} "
-              f"--daily-token-budget {args.daily_token_budget}")
+    if run_mode == "live":
+        now_done = finished_scenarios({s["id"]: len(s["turns"]) for s in scenarios})
+        done = sum(1 for s in scenarios if not s.get("stub_only") and s["id"] in now_done)
+        reason = stop_reason[0] if stop_reason else None
+        runs_mod.save_entry(run_eval.RESULTS_DIR, sig, "stopped" if reason else "complete", done, live_total, reason)
+        if reason:
+            not_run = [s["id"] for s in scenarios if not s.get("stub_only") and s["id"] not in now_done]
+            print(f"Not run: {', '.join(not_run)}")
+            print(runs_mod.stopped_line(done, live_total, reason, resume_command(args)))
+            return 3
     return 1 if failed else 0
 
 

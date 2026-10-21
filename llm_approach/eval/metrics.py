@@ -69,7 +69,7 @@ def coverage(results: Iterable[dict], totals: dict[str, int]) -> dict[str, dict[
     done: dict[str, set] = defaultdict(set)
     misses: dict[str, int] = defaultdict(int)
     for r in results:
-        if r.get("status") == "rate_limit_miss":
+        if r.get("status") in ("rate_limit_miss", "error"):  # no answer was obtained: not done
             misses[r["dataset"]] += 1
         else:
             done[r["dataset"]].add(r["item"])

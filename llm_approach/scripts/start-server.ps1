@@ -5,4 +5,6 @@
 # (/ws/chat?token=...) and uvicorn's access log would write it to the console.
 $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $root
+# Which provider and model will answer, and whether its key is set or missing (never the value).
+python -m llm_approach.llm_info
 python -m uvicorn llm_approach.server_app:app --port 8001 --no-access-log

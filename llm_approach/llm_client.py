@@ -1,4 +1,4 @@
-"""One Groq call per decision, JSON mode, one retry, per-turn budget.
+"""One LLM call per decision (Gemini or Groq, see providers.py), JSON mode, one retry, per-turn budget.
 
 Logs metadata only (latency, tokens, intent, confidence, valid/invalid). The
 user message and the raw model output are never logged.
@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from llm_approach import config, prompts
+from llm_approach import config, gemini_limits, prompts, providers
 from llm_approach.schema import Decision, parse_decision
 
 logger = logging.getLogger(__name__)
@@ -34,8 +33,14 @@ class LLMBudget:
     tokens_out: int = 0
     cached_tokens: int | None = None  # None: the usage object never reported cached tokens
     latency_ms: float = 0.0
-    call_ms: list[float] = field(default_factory=list)  # latency of each Groq call, in order
-    error_class: str | None = None  # "RateLimitError" when Groq answered 429, else the last error class
+    call_ms: list[float] = field(default_factory=list)  # latency of each LLM call, in order
+    error_class: str | None = None  # "RateLimitError" when the provider answered 429, else the last error class
+    thinking_tokens: int = 0  # Gemini thinking tokens; already part of tokens_out
+    finish_reason: str | None = None  # finish reason of the last reply (Gemini only)
+    error_code: int | None = None  # HTTP code of the last API error (Gemini), e.g. 400
+    error_status: str | None = None  # its status string, e.g. "INVALID_ARGUMENT"
+    error_kind: str | None = None  # Gemini limits: "request_cap", "daily_quota" or "rate_limit_retried" (see gemini_limits)
+    error_message: str | None = None  # redacted, cut to 200 chars; for the smoke test only, never logged
 
     def record_latency(self, ms: float) -> None:
         self.latency_ms += ms
@@ -44,58 +49,51 @@ class LLMBudget:
     def try_consume(self) -> bool:
         if self.calls >= self.max_calls:
             return False
+        # Gemini calls can take 20 s each: once a turn's calls have used the time budget, no further call
+        # (the JSON retry or the answerer's second call). Groq keeps its call-count-only limit.
+        if self.calls and config.provider() == "gemini" and self.latency_ms >= config.GEMINI_TURN_LLM_BUDGET_S * 1000:
+            return False
         self.calls += 1
         return True
 
 
 def is_rate_limit_error(exc: BaseException) -> bool:
-    """Groq RateLimitError, or any error carrying HTTP status 429."""
+    """Groq RateLimitError, or any error carrying HTTP status 429 (Gemini: ``code`` 429 / RESOURCE_EXHAUSTED)."""
     if type(exc).__name__ == "RateLimitError":
         return True
-    return getattr(exc, "status_code", None) == 429 or getattr(getattr(exc, "response", None), "status_code", None) == 429
+    if getattr(exc, "status_code", None) == 429 or getattr(getattr(exc, "response", None), "status_code", None) == 429:
+        return True
+    return getattr(exc, "code", None) == 429 or getattr(exc, "status", None) == "RESOURCE_EXHAUSTED"
 
 
-_client: Any = None
+def _record_error(budget: LLMBudget, exc: BaseException) -> None:
+    budget.error_class = "RateLimitError" if is_rate_limit_error(exc) else type(exc).__name__
+    budget.error_code, budget.error_status = providers.error_details(exc)
+    budget.error_message = providers.redact(str(exc))
+    budget.error_kind = getattr(exc, "kind", None) if isinstance(exc, gemini_limits.GeminiLimitError) else None
 
 
-def _get_client() -> Any:
-    """Create the async Groq client on first use; the key comes from the environment."""
-    global _client
-    if _client is None:
-        from groq import AsyncGroq
-
-        key = os.environ.get("GROQ_API_KEY", "").strip()
-        if not key:  # missing or blank: fail here, before any request is made
-            raise KeyError("GROQ_API_KEY")  # same error as before for a missing key
-        _client = AsyncGroq(api_key=key, max_retries=0)  # fail fast; we retry once ourselves
-    return _client
+def _error_log(exc: BaseException) -> str:
+    code, status = providers.error_details(exc)
+    return f"class={type(exc).__name__} code={code} status={status}"
 
 
-async def _call_groq(
+async def _complete(
     messages: list[dict[str, str]], max_tokens: int | None = None
-) -> tuple[str, int, int, int | None]:
-    kwargs: dict[str, Any] = dict(
-        model=config.groq_model(),
-        messages=messages,
-        temperature=config.TEMPERATURE,
-        max_tokens=config.LLM_MAX_TOKENS if max_tokens is None else max_tokens,
-        response_format={"type": "json_object"},
-    )
-    if config.REASONING_EFFORT:
-        kwargs["reasoning_effort"] = config.REASONING_EFFORT
-    response = await asyncio.wait_for(
-        _get_client().chat.completions.create(**kwargs), timeout=config.LLM_TIMEOUT_S
-    )
-    usage = getattr(response, "usage", None)
-    details = getattr(usage, "prompt_tokens_details", None)
-    cached = getattr(details, "cached_tokens", None)
-    cached = cached if isinstance(cached, int) and not isinstance(cached, bool) else None
-    return (
-        response.choices[0].message.content or "",
-        int(getattr(usage, "prompt_tokens", 0) or 0),
-        int(getattr(usage, "completion_tokens", 0) or 0),
-        cached,
-    )
+) -> tuple[str, int, int, int | None, providers.Completion]:
+    """The one provider call: (text, tokens in, tokens out, cached tokens, the full Completion).
+    A reply cut off by the output cap (or blocked) comes back with empty text: it is retried like invalid JSON."""
+    c = await providers.complete(messages, max_tokens)
+    return c.text, c.tokens_in, c.tokens_out, c.cached, c
+
+
+def _add_usage(budget: LLMBudget, tokens_in: int, tokens_out: int, cached: int | None, c: providers.Completion) -> None:
+    budget.tokens_in += tokens_in
+    budget.tokens_out += tokens_out  # includes Gemini thinking tokens
+    budget.thinking_tokens += c.thinking_tokens
+    budget.finish_reason = c.finish_reason
+    if cached is not None:
+        budget.cached_tokens = (budget.cached_tokens or 0) + cached
 
 
 async def decide(
@@ -113,7 +111,7 @@ async def decide(
             return None
         started = time.perf_counter()
         try:
-            raw, tokens_in, tokens_out, cached = await _call_groq(messages)
+            raw, tokens_in, tokens_out, cached, completion = await _complete(messages)
         except asyncio.TimeoutError:
             budget.record_latency((time.perf_counter() - started) * 1000)
             budget.error_class = "TimeoutError"
@@ -121,16 +119,13 @@ async def decide(
             return None
         except Exception as exc:  # network, auth, rate limit: class name only
             budget.record_latency((time.perf_counter() - started) * 1000)
-            budget.error_class = "RateLimitError" if is_rate_limit_error(exc) else type(exc).__name__
-            logger.warning("llm_decision attempt=%d outcome=error class=%s", attempt, type(exc).__name__)
+            _record_error(budget, exc)
+            logger.warning("llm_decision attempt=%d outcome=error %s", attempt, _error_log(exc))
             return None
 
         latency_ms = (time.perf_counter() - started) * 1000
         budget.record_latency(latency_ms)
-        budget.tokens_in += tokens_in
-        budget.tokens_out += tokens_out
-        if cached is not None:
-            budget.cached_tokens = (budget.cached_tokens or 0) + cached
+        _add_usage(budget, tokens_in, tokens_out, cached, completion)
 
         decision = parse_decision(raw)
         if decision is not None:
@@ -160,7 +155,7 @@ async def generate_json(messages: list[dict[str, str]], budget: LLMBudget) -> st
         return None
     started = time.perf_counter()
     try:
-        raw, tokens_in, tokens_out, cached = await _call_groq(messages, config.ANSWERER_MAX_TOKENS)
+        raw, tokens_in, tokens_out, cached, completion = await _complete(messages, config.ANSWERER_MAX_TOKENS)
     except asyncio.TimeoutError:
         budget.record_latency((time.perf_counter() - started) * 1000)
         budget.error_class = "TimeoutError"
@@ -168,14 +163,11 @@ async def generate_json(messages: list[dict[str, str]], budget: LLMBudget) -> st
         return None
     except Exception as exc:  # network, auth, rate limit: class name only
         budget.record_latency((time.perf_counter() - started) * 1000)
-        budget.error_class = "RateLimitError" if is_rate_limit_error(exc) else type(exc).__name__
-        logger.warning("llm_answer outcome=error class=%s", type(exc).__name__)
+        _record_error(budget, exc)
+        logger.warning("llm_answer outcome=error %s", _error_log(exc))
         return None
     latency_ms = (time.perf_counter() - started) * 1000
     budget.record_latency(latency_ms)
-    budget.tokens_in += tokens_in
-    budget.tokens_out += tokens_out
-    if cached is not None:
-        budget.cached_tokens = (budget.cached_tokens or 0) + cached
+    _add_usage(budget, tokens_in, tokens_out, cached, completion)
     logger.info("llm_answer latency_ms=%.0f tokens_in=%d tokens_out=%d", latency_ms, tokens_in, tokens_out)
     return raw

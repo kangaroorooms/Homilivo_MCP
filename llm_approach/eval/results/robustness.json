@@ -1,4 +1,6 @@
 {
+  "provider": "offline-mock",
+  "model": "none",
   "n": 7,
   "clean": 7,
   "rows": [

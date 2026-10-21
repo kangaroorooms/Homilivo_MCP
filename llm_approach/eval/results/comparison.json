@@ -1,27 +1,29 @@
 {
+  "provider": "gemini",
+  "model": "gemini-3.5-flash-lite",
   "coverage": {
     "ctxY": {
-      "done": 0,
+      "done": 33,
       "total": 33,
       "rate_limit_misses": 0
     },
     "matrix55": {
-      "done": 0,
+      "done": 54,
       "total": 54,
       "rate_limit_misses": 0
     },
     "fresh": {
-      "done": 0,
+      "done": 59,
       "total": 59,
       "rate_limit_misses": 0
     },
     "golden": {
-      "done": 0,
+      "done": 20,
       "total": 20,
       "rate_limit_misses": 0
     },
     "golden_slots": {
-      "done": 0,
+      "done": 20,
       "total": 20,
       "rate_limit_misses": 0
     }
@@ -30,18 +32,18 @@
   "intent_accuracy": {
     "ctxY": {
       "strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 10,
+        "n": 33,
+        "value": 0.30303030303030304,
+        "lo": 0.17375347814547223,
+        "hi": 0.4733845397473445
       },
       "lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 10,
+        "n": 33,
+        "value": 0.30303030303030304,
+        "lo": 0.17375347814547223,
+        "hi": 0.4733845397473445
       },
       "operation_strict": {
         "k": 0,
@@ -58,206 +60,206 @@
         "hi": null
       },
       "paired_strict": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
-        "both_wrong": 0,
+        "n": 33,
+        "both_right": 5,
+        "new_right_old_wrong": 5,
+        "new_wrong_old_right": 4,
+        "both_wrong": 19,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 10,
+          "n": 33,
+          "value": 0.30303030303030304,
+          "lo": 0.17375347814547223,
+          "hi": 0.4733845397473445
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 9,
+          "n": 33,
+          "value": 0.2727272727272727,
+          "lo": 0.15067272656322814,
+          "hi": 0.44217883254386814
         }
       },
       "paired_lenient": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
-        "both_wrong": 0,
+        "n": 33,
+        "both_right": 5,
+        "new_right_old_wrong": 5,
+        "new_wrong_old_right": 4,
+        "both_wrong": 19,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 10,
+          "n": 33,
+          "value": 0.30303030303030304,
+          "lo": 0.17375347814547223,
+          "hi": 0.4733845397473445
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 9,
+          "n": 33,
+          "value": 0.2727272727272727,
+          "lo": 0.15067272656322814,
+          "hi": 0.44217883254386814
         }
       }
     },
     "matrix55": {
       "strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 46,
+        "n": 54,
+        "value": 0.8518518518518519,
+        "lo": 0.733996325347515,
+        "hi": 0.9229702869177059
       },
       "lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 52,
+        "n": 54,
+        "value": 0.9629629629629629,
+        "lo": 0.8746459065659669,
+        "hi": 0.9897838464145869
       },
       "operation_strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 10,
+        "n": 13,
+        "value": 0.7692307692307693,
+        "lo": 0.49743126004873084,
+        "hi": 0.918206209075343
       },
       "operation_lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 10,
+        "n": 13,
+        "value": 0.7692307692307693,
+        "lo": 0.49743126004873084,
+        "hi": 0.918206209075343
       },
       "paired_strict": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
-        "both_wrong": 0,
+        "n": 54,
+        "both_right": 29,
+        "new_right_old_wrong": 17,
+        "new_wrong_old_right": 4,
+        "both_wrong": 4,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 46,
+          "n": 54,
+          "value": 0.8518518518518519,
+          "lo": 0.733996325347515,
+          "hi": 0.9229702869177059
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 33,
+          "n": 54,
+          "value": 0.6111111111111112,
+          "lo": 0.47788056581508337,
+          "hi": 0.7295825749002496
         }
       },
       "paired_lenient": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
+        "n": 54,
+        "both_right": 34,
+        "new_right_old_wrong": 18,
+        "new_wrong_old_right": 2,
         "both_wrong": 0,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 52,
+          "n": 54,
+          "value": 0.9629629629629629,
+          "lo": 0.8746459065659669,
+          "hi": 0.9897838464145869
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 36,
+          "n": 54,
+          "value": 0.6666666666666666,
+          "lo": 0.5336071462745029,
+          "hi": 0.7775875647984964
         }
       }
     },
     "fresh": {
       "strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 54,
+        "n": 59,
+        "value": 0.9152542372881356,
+        "lo": 0.8164797538583944,
+        "hi": 0.9632585086938003
       },
       "lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 56,
+        "n": 59,
+        "value": 0.9491525423728814,
+        "lo": 0.8608327667771333,
+        "hi": 0.9825575988405467
       },
       "operation_strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 13,
+        "n": 14,
+        "value": 0.9285714285714286,
+        "lo": 0.6853073044604219,
+        "hi": 0.9872781138877085
       },
       "operation_lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 13,
+        "n": 14,
+        "value": 0.9285714285714286,
+        "lo": 0.6853073044604219,
+        "hi": 0.9872781138877085
       },
       "paired_strict": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
-        "both_wrong": 0,
+        "n": 59,
+        "both_right": 30,
+        "new_right_old_wrong": 24,
+        "new_wrong_old_right": 2,
+        "both_wrong": 3,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 54,
+          "n": 59,
+          "value": 0.9152542372881356,
+          "lo": 0.8164797538583944,
+          "hi": 0.9632585086938003
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 32,
+          "n": 59,
+          "value": 0.5423728813559322,
+          "lo": 0.4165761502342809,
+          "hi": 0.6629889785975757
         }
       },
       "paired_lenient": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
-        "both_wrong": 0,
+        "n": 59,
+        "both_right": 33,
+        "new_right_old_wrong": 23,
+        "new_wrong_old_right": 1,
+        "both_wrong": 2,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 56,
+          "n": 59,
+          "value": 0.9491525423728814,
+          "lo": 0.8608327667771333,
+          "hi": 0.9825575988405467
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 34,
+          "n": 59,
+          "value": 0.576271186440678,
+          "lo": 0.4493425547283663,
+          "hi": 0.6938746771689757
         }
       }
     },
     "golden": {
       "strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
       },
       "lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
       },
       "operation_strict": {
         "k": 0,
@@ -274,237 +276,429 @@
         "hi": null
       },
       "paired_strict": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
+        "n": 20,
+        "both_right": 19,
+        "new_right_old_wrong": 1,
         "new_wrong_old_right": 0,
         "both_wrong": 0,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 20,
+          "n": 20,
+          "value": 1.0,
+          "lo": 0.8388698745050667,
+          "hi": 1.0
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 19,
+          "n": 20,
+          "value": 0.95,
+          "lo": 0.7638641064874331,
+          "hi": 0.9911187805671268
         }
       },
       "paired_lenient": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
+        "n": 20,
+        "both_right": 19,
+        "new_right_old_wrong": 1,
         "new_wrong_old_right": 0,
         "both_wrong": 0,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 20,
+          "n": 20,
+          "value": 1.0,
+          "lo": 0.8388698745050667,
+          "hi": 1.0
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 19,
+          "n": 20,
+          "value": 0.95,
+          "lo": 0.7638641064874331,
+          "hi": 0.9911187805671268
         }
       }
     },
     "pooled_133": {
       "strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 120,
+        "n": 133,
+        "value": 0.9022556390977443,
+        "lo": 0.839940215343511,
+        "hi": 0.9419857486908175
       },
       "lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 128,
+        "n": 133,
+        "value": 0.9624060150375939,
+        "lo": 0.9150121536236566,
+        "hi": 0.9838373190513192
       },
       "operation_strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 23,
+        "n": 27,
+        "value": 0.8518518518518519,
+        "lo": 0.6752093665317052,
+        "hi": 0.9408416814035512
       },
       "operation_lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 23,
+        "n": 27,
+        "value": 0.8518518518518519,
+        "lo": 0.6752093665317052,
+        "hi": 0.9408416814035512
       },
       "paired_strict": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
-        "both_wrong": 0,
+        "n": 133,
+        "both_right": 78,
+        "new_right_old_wrong": 42,
+        "new_wrong_old_right": 6,
+        "both_wrong": 7,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 120,
+          "n": 133,
+          "value": 0.9022556390977443,
+          "lo": 0.839940215343511,
+          "hi": 0.9419857486908175
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 84,
+          "n": 133,
+          "value": 0.631578947368421,
+          "lo": 0.5469780790840367,
+          "hi": 0.7087920960673791
         }
       },
       "paired_lenient": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
-        "both_wrong": 0,
+        "n": 133,
+        "both_right": 86,
+        "new_right_old_wrong": 42,
+        "new_wrong_old_right": 3,
+        "both_wrong": 2,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 128,
+          "n": 133,
+          "value": 0.9624060150375939,
+          "lo": 0.9150121536236566,
+          "hi": 0.9838373190513192
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 89,
+          "n": 133,
+          "value": 0.6691729323308271,
+          "lo": 0.5854461891080122,
+          "hi": 0.7434011789438083
         }
       }
     },
     "pooled_166": {
       "strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 130,
+        "n": 166,
+        "value": 0.7831325301204819,
+        "lo": 0.7144188431709214,
+        "hi": 0.8390380248755406
       },
       "lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 138,
+        "n": 166,
+        "value": 0.8313253012048193,
+        "lo": 0.7670170652783639,
+        "hi": 0.8806452271164322
       },
       "operation_strict": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 23,
+        "n": 27,
+        "value": 0.8518518518518519,
+        "lo": 0.6752093665317052,
+        "hi": 0.9408416814035512
       },
       "operation_lenient": {
-        "k": 0,
-        "n": 0,
-        "value": null,
-        "lo": null,
-        "hi": null
+        "k": 23,
+        "n": 27,
+        "value": 0.8518518518518519,
+        "lo": 0.6752093665317052,
+        "hi": 0.9408416814035512
       },
       "paired_strict": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
-        "both_wrong": 0,
+        "n": 166,
+        "both_right": 83,
+        "new_right_old_wrong": 47,
+        "new_wrong_old_right": 10,
+        "both_wrong": 26,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 130,
+          "n": 166,
+          "value": 0.7831325301204819,
+          "lo": 0.7144188431709214,
+          "hi": 0.8390380248755406
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 93,
+          "n": 166,
+          "value": 0.5602409638554217,
+          "lo": 0.48421612093685223,
+          "hi": 0.6335406594985651
         }
       },
       "paired_lenient": {
-        "n": 0,
-        "both_right": 0,
-        "new_right_old_wrong": 0,
-        "new_wrong_old_right": 0,
-        "both_wrong": 0,
+        "n": 166,
+        "both_right": 91,
+        "new_right_old_wrong": 47,
+        "new_wrong_old_right": 7,
+        "both_wrong": 21,
         "new": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 138,
+          "n": 166,
+          "value": 0.8313253012048193,
+          "lo": 0.7670170652783639,
+          "hi": 0.8806452271164322
         },
         "old": {
-          "k": 0,
-          "n": 0,
-          "value": null,
-          "lo": null,
-          "hi": null
+          "k": 98,
+          "n": 166,
+          "value": 0.5903614457831325,
+          "lo": 0.5143299392210132,
+          "hi": 0.662305231432113
         }
       }
     }
   },
   "by_category": {
-    "strict": {},
-    "lenient": {}
+    "strict": {
+      "ctxN": {
+        "k": 65,
+        "n": 70,
+        "value": 0.9285714285714286,
+        "lo": 0.8434438687669077,
+        "hi": 0.9691062384897065
+      },
+      "ctxY": {
+        "k": 65,
+        "n": 96,
+        "value": 0.6770833333333334,
+        "lo": 0.5782964352989827,
+        "hi": 0.7622429791334785
+      }
+    },
+    "lenient": {
+      "ctxN": {
+        "k": 69,
+        "n": 70,
+        "value": 0.9857142857142858,
+        "lo": 0.9234163029607309,
+        "hi": 0.997473818596765
+      },
+      "ctxY": {
+        "k": 69,
+        "n": 96,
+        "value": 0.71875,
+        "lo": 0.6217391618504083,
+        "hi": 0.7989271736249847
+      }
+    }
   },
-  "by_label": {},
+  "by_label": {
+    "ACKNOWLEDGMENT": {
+      "k": 3,
+      "n": 4,
+      "value": 0.75,
+      "lo": 0.3006360524426366,
+      "hi": 0.9544139373553637
+    },
+    "AMENITY": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    },
+    "CLOSING": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    },
+    "COMPARE_ROOMS": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    },
+    "FAMILY_SUITABILITY": {
+      "k": 1,
+      "n": 2,
+      "value": 0.5,
+      "lo": 0.09452865480086614,
+      "hi": 0.9054713451991339
+    },
+    "GREETING": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    },
+    "HIGHEST_PRICE": {
+      "k": 1,
+      "n": 1,
+      "value": 1.0,
+      "lo": 0.20654329147389294,
+      "hi": 1.0
+    },
+    "LOCATION": {
+      "k": 2,
+      "n": 2,
+      "value": 1.0,
+      "lo": 0.34237195288961925,
+      "hi": 1.0
+    },
+    "LOWEST_PRICE": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    },
+    "NEW_SEARCH": {
+      "k": 60,
+      "n": 85,
+      "value": 0.7058823529411765,
+      "lo": 0.601813482581798,
+      "hi": 0.79214610391822
+    },
+    "OUT_OF_SCOPE": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    },
+    "PLATFORM_INFO": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    },
+    "PROFESSIONAL_SUITABILITY": {
+      "k": 1,
+      "n": 1,
+      "value": 1.0,
+      "lo": 0.20654329147389294,
+      "hi": 1.0
+    },
+    "REFINEMENT": {
+      "k": 7,
+      "n": 8,
+      "value": 0.875,
+      "lo": 0.5291051942301386,
+      "hi": 0.9775830911367038
+    },
+    "REJECT_CURRENT": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    },
+    "ROOM_DETAILS": {
+      "k": 4,
+      "n": 4,
+      "value": 1.0,
+      "lo": 0.5100999795960008,
+      "hi": 1.0
+    },
+    "ROOM_PRICE": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    },
+    "ROOM_TABLE": {
+      "k": 0,
+      "n": 2,
+      "value": 0.0,
+      "lo": 0.0,
+      "hi": 0.6576280471103807
+    },
+    "ROOM_TYPE": {
+      "k": 1,
+      "n": 1,
+      "value": 1.0,
+      "lo": 0.20654329147389294,
+      "hi": 1.0
+    },
+    "SHOW_MORE_OPTIONS": {
+      "k": 9,
+      "n": 9,
+      "value": 1.0,
+      "lo": 0.7008472464490407,
+      "hi": 1.0
+    },
+    "STUDENT_SUITABILITY": {
+      "k": 2,
+      "n": 2,
+      "value": 1.0,
+      "lo": 0.34237195288961925,
+      "hi": 1.0
+    },
+    "UNCLEAR": {
+      "k": 9,
+      "n": 15,
+      "value": 0.6,
+      "lo": 0.357464427565077,
+      "hi": 0.8017577191740534
+    },
+    "UNSUPPORTED_ACTION": {
+      "k": 3,
+      "n": 3,
+      "value": 1.0,
+      "lo": 0.43849391955098227,
+      "hi": 1.0
+    }
+  },
   "clarification": {
     "precision": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 12,
+      "n": 33,
+      "value": 0.36363636363636365,
+      "lo": 0.22186966167959873,
+      "hi": 0.5338412737846591
     },
     "recall": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 12,
+      "n": 15,
+      "value": 0.8,
+      "lo": 0.5481406466534955,
+      "hi": 0.9295257935638959
     },
-    "tp": 0,
-    "predicted": 0,
-    "gold": 0
+    "tp": 12,
+    "predicted": 33,
+    "gold": 15
   },
   "invalid_slot_rate": {
-    "k": 0,
-    "n": 0,
-    "value": null,
-    "lo": null,
-    "hi": null
+    "k": 6,
+    "n": 109,
+    "value": 0.05504587155963303,
+    "lo": 0.02546924522642792,
+    "hi": 0.11491869680913343
   },
   "invalid_search_rate": {
     "k": 0,
-    "n": 0,
-    "value": null,
-    "lo": null,
-    "hi": null
+    "n": 109,
+    "value": 0.0,
+    "lo": 0.0,
+    "hi": 0.03404418228738337
   },
   "invalid_json_rate": {
     "k": 0,
-    "n": 0,
-    "value": null,
-    "lo": null,
-    "hi": null
+    "n": 186,
+    "value": 0.0,
+    "lo": 0.0,
+    "hi": 0.02023581765008302
   },
   "consistency": {
     "k": 0,
@@ -516,101 +710,101 @@
   "calibration": [
     {
       "bucket": "0.0-0.6",
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 9,
+      "n": 11,
+      "value": 0.8181818181818182,
+      "lo": 0.5230138624217553,
+      "hi": 0.9486333993289995
     },
     {
       "bucket": "0.6-0.8",
       "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "n": 1,
+      "value": 0.0,
+      "lo": 0.0,
+      "hi": 0.7934567085261071
     },
     {
       "bucket": "0.8-0.9",
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 20,
+      "n": 25,
+      "value": 0.8,
+      "lo": 0.6086866446346177,
+      "hi": 0.9113954589934752
     },
     {
       "bucket": "0.9-1.0",
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 101,
+      "n": 129,
+      "value": 0.7829457364341085,
+      "lo": 0.7041840313317832,
+      "hi": 0.845342622969279
     }
   ],
   "latency": {
-    "n": 0,
-    "p50": null,
-    "p95": null
+    "n": 186,
+    "p50": 1747.9,
+    "p95": 3309.5
   },
   "tokens": {
-    "n": 0,
-    "mean_in": null,
-    "mean_out": null,
-    "mean_cached": null
+    "n": 186,
+    "mean_in": 5765.935483870968,
+    "mean_out": 198.67741935483872,
+    "mean_cached": 2011.5652173913043
   },
   "rate_limit_misses": 0,
   "slots_golden_slots": {
     "city": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 16,
+      "n": 17,
+      "value": 0.9411764705882353,
+      "lo": 0.730174547964372,
+      "hi": 0.9895398693548358
     },
     "bhk": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 15,
+      "n": 17,
+      "value": 0.8823529411764706,
+      "lo": 0.6566315750229009,
+      "hi": 0.967120919987079
     },
     "min_price": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 17,
+      "n": 17,
+      "value": 1.0,
+      "lo": 0.8156763396284354,
+      "hi": 1.0
     },
     "max_price": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 16,
+      "n": 17,
+      "value": 0.9411764705882353,
+      "lo": 0.730174547964372,
+      "hi": 0.9895398693548358
     },
     "ideal_for": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 17,
+      "n": 17,
+      "value": 1.0,
+      "lo": 0.8156763396284354,
+      "hi": 1.0
     },
     "overall": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 81,
+      "n": 85,
+      "value": 0.9529411764705882,
+      "lo": 0.8851610525649923,
+      "hi": 0.9815500377350471
     },
     "exact": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 13,
+      "n": 17,
+      "value": 0.7647058823529411,
+      "lo": 0.5273775411082839,
+      "hi": 0.9044511092832406
     }
   },
-  "slots_golden_slots_n": 0,
+  "slots_golden_slots_n": 17,
   "unfaithful_items": {
     "matrix55": {
       "gold written against the old harness's rooms; fixture rooms used": [
@@ -677,18 +871,18 @@
   },
   "ctx_flagged_vs_clean": {
     "flagged": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 45,
+      "n": 48,
+      "value": 0.9375,
+      "lo": 0.8316430233725778,
+      "hi": 0.9785171568687727
     },
     "clean": {
-      "k": 0,
-      "n": 0,
-      "value": null,
-      "lo": null,
-      "hi": null
+      "k": 20,
+      "n": 48,
+      "value": 0.4166666666666667,
+      "lo": 0.28849459734577015,
+      "hi": 0.5571891778463536
     }
   },
   "baseline": {
@@ -704,6 +898,8 @@
     "turns_passed": 0
   },
   "safety": {
+    "provider": "offline-mock",
+    "model": "none",
     "real_guardrail_used": true,
     "noguard_s1_s8_attacks": {
       "n": 7,
@@ -1125,6 +1321,8 @@
     }
   },
   "robustness": {
+    "provider": "offline-mock",
+    "model": "none",
     "n": 7,
     "clean": 7,
     "rows": [

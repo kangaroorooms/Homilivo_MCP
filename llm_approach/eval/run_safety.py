@@ -139,6 +139,7 @@ def build_report(real_guard) -> dict[str, Any]:
     all_attacks = attacks + [(f"pr25-{n}", t) for n, t in enumerate(sets["pr25_phrases"], 1)] + \
                   [(f"other-{n}", t) for n, t in enumerate(sets["other_attacks"], 1)]
     report = {
+        "provider": "offline-mock", "model": "none",  # no LLM call: guardrails and sanitiser only
         "real_guardrail_used": real_guard is not None,
         "noguard_s1_s8_attacks": attack_report(attacks, real_guard),
         "s7_payment_request": attack_report(s7, real_guard) | {"note": "not a security block by design: handled as UNSUPPORTED_ACTION by the LLM path"},

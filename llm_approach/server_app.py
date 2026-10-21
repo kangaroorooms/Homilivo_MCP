@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 
 from pathlib import Path
 
-from llm_approach import pipeline, responder, reuse
+from llm_approach import config, pipeline, responder, reuse
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ def load_env(path: Path | str | None = None) -> bool:
         return False
 
 
-# Before anything below reads the environment (rate limiter, demo auth, Groq, rooms client).
+# Before anything below reads the environment (rate limiter, demo auth, LLM provider, rooms client).
 load_env()
 
 _rl = reuse.get_rate_limit_module()
@@ -83,6 +83,18 @@ class _RedactTokenFilter(logging.Filter):
         if "token=" in text.lower():
             record.msg, record.args = _TOKEN_IN_TEXT.sub(r"\1REDACTED", text), ()
         return True
+
+
+def _llm_key_present() -> bool:
+    try:
+        return config.key_present()
+    except ValueError:  # bad LLM_APPROACH_PROVIDER: not ready
+        return False
+
+
+def _llm_label() -> dict[str, str]:
+    provider, model = config.label()
+    return {"provider": provider, "model": model}
 
 
 def _env_flag(name: str) -> bool:
@@ -106,6 +118,8 @@ def _preload_blocking() -> None:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     logging.getLogger("uvicorn.access").addFilter(_RedactTokenFilter())
+    provider, model = config.label()
+    logger.info("llm provider=%s model=%s key_present=%s", provider, model, _llm_key_present())  # never the key
     if _env_flag(SKIP_PRELOAD_ENV):
         logger.info("startup preload skipped by %s", SKIP_PRELOAD_ENV)
     else:
@@ -236,7 +250,7 @@ def create_app() -> FastAPI:
     @app.get("/ready")
     def ready():
         checks = {
-            "groq_key_present": bool(os.getenv("GROQ_API_KEY")),  # booleans only, never values
+            "llm_key_present": _llm_key_present(),  # the active provider's key; booleans only, never values
             "kangaroo_token_present": bool(os.getenv("KANGAROO_TOKEN")),
             "knowledge_base": _readiness["knowledge_base"],
             "guardrails": _readiness["guardrails"],
@@ -245,7 +259,7 @@ def create_app() -> FastAPI:
         is_ready = all(v for k, v in checks.items() if k != "kangaroo_token_present")
         return JSONResponse(
             status_code=200 if is_ready else 503,
-            content={"status": "ready" if is_ready else "not_ready", "checks": checks},
+            content={"status": "ready" if is_ready else "not_ready", "checks": checks, **_llm_label()},
         )
 
     @app.get("/chat-ui/demo-token")

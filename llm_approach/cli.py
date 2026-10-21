@@ -1,6 +1,6 @@
 """Terminal chat: ``python -m llm_approach.cli``.
 
-Uses real Groq (``GROQ_API_KEY`` from ``.env``). Commands: /state, /reset,
+Uses the real LLM provider (Gemini by default, or Groq with ``LLM_APPROACH_PROVIDER=groq``; the key comes from ``.env``). Commands: /state, /reset,
 /debug on|off, /quit. Never prints the key or any ``.env`` value.
 """
 
@@ -141,9 +141,11 @@ def main(argv: list[str] | None = None) -> int:
     from dotenv import load_dotenv
 
     load_dotenv(REPO_ROOT / ".env")
-    if not os.getenv("GROQ_API_KEY"):
-        print("GROQ_API_KEY is not set. Put it in .env at the repo root.")
+    problem = config.setup_problem()
+    if problem:
+        print(problem)
         return 2
+    print("LLM: {} ({})".format(*config.label()))
     if args.offline_rooms:
         os.environ[config.OFFLINE_ROOMS_ENV] = "1"
         print("Rooms: offline fixture (Bangalore only).")

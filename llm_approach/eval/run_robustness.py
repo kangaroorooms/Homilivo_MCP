@@ -1,6 +1,6 @@
 """Offline robustness report: failures injected with mocks, run through ``pipeline.handle_turn``.
 
-No Groq call, no rooms API call, no torch (fake guardrails). Each case runs two turns in one
+No Groq or Gemini call, no rooms API call, no torch (fake guardrails). Each case runs two turns in one
 session: turn 1 is a normal Bangalore search (rooms on screen), turn 2 has the failure.
 For each case the report lists the reply kind, whether history and state stayed
 consistent and whether any raw error text leaked into the reply.
@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from llm_approach import config, llm_client, pipeline, reuse, rooms_client  # noqa: E402
+from llm_approach import config, pipeline, providers, reuse, rooms_client  # noqa: E402
 from llm_approach import state as state_mod  # noqa: E402
 from llm_approach.state import SessionStore  # noqa: E402
 
@@ -120,7 +120,7 @@ async def run_case(case: dict[str, Any]) -> dict[str, Any]:
     store, sid = SessionStore(), str(uuid.uuid4())
     client = _FakeGroq([GOOD_SEARCH] + case["groq"])
     patches = [
-        mock.patch.object(llm_client, "_get_client", lambda: client),
+        mock.patch.object(providers, "_get_groq_client", lambda: client),
         mock.patch.object(reuse, "get_is_security_blocked", lambda: (lambda m: (False, ""))),
         mock.patch.object(reuse, "get_output_guardrail",
                           lambda: (lambda t: (True, t)) if case.get("output_ok", True) else (lambda t: (False, "blocked"))),
@@ -134,7 +134,7 @@ async def run_case(case: dict[str, Any]) -> dict[str, Any]:
             raise httpx.ReadTimeout("read timed out")
         patches.append(mock.patch.object(rooms_client, "_httpx_get", boom))
 
-    with contextlib.ExitStack() as stack, _env(LLM_APPROACH_METRICS=None):
+    with contextlib.ExitStack() as stack, _env(LLM_APPROACH_METRICS=None, **{config.PROVIDER_ENV: "groq"}):
         for p in patches:
             stack.enter_context(p)
         pipeline.configure(full_guardrails=True)
@@ -171,7 +171,7 @@ def run_all() -> dict[str, Any]:
 
     rows = asyncio.run(go())
     ok = [r for r in rows if r["history_consistent"] and r["state_unchanged_where_required"] and not r["raw_error_leaked"]]
-    return {"n": len(rows), "clean": len(ok), "rows": rows,
+    return {"provider": "offline-mock", "model": "none", "n": len(rows), "clean": len(ok), "rows": rows,
             "note": "Mocks only: fake Groq client (through the real llm_client), fake rooms HTTP, fake guardrails. "
                     "Reply text is not stored; only its kind, length and leak check."}
 

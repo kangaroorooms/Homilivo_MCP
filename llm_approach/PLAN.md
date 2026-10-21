@@ -292,7 +292,7 @@ Exit criteria:
 Files: `config.py`, `schema.py`, `prompts.py`, `llm_client.py`, `validators.py`.
 
 Tasks:
-1. `config.py`: `GROQ_MODEL` (imported), `CONFIDENCE_THRESHOLD = 0.6`, `LLM_TIMEOUT_S = 8`, `LLM_MAX_TOKENS = 500`, `TEMPERATURE = 0`, `MAX_LLM_CALLS_PER_TURN = 2`, `MAX_TOOL_CALLS_PER_TURN = 1`, `HISTORY_TURNS_IN_PROMPT = 6`, `MAX_ROOMS_IN_PROMPT = 10`, debug flags.
+1. `config.py`: `GROQ_MODEL` (imported), `CONFIDENCE_THRESHOLD = 0.6`, `LLM_TIMEOUT_S = 8` (Groq; Gemini uses `LLM_APPROACH_GEMINI_TIMEOUT_S`, default 20 s, minimum 10 s), `LLM_MAX_TOKENS = 500`, `TEMPERATURE = 0`, `MAX_LLM_CALLS_PER_TURN = 2`, `MAX_TOOL_CALLS_PER_TURN = 1`, `HISTORY_TURNS_IN_PROMPT = 6`, `MAX_ROOMS_IN_PROMPT = 10`, debug flags.
 2. `schema.py`: pydantic `Decision`, `Slots`, enums for intents and operations, a `parse_decision(raw) -> Decision | None` that coerces and rejects invalid output.
 3. `prompts.py`:
    - System prompt: role, the schema, the 10 intents with one-line definitions, rules (classify and extract only; never state room or platform facts; `reply` only for chat/out-of-scope/unsupported; prices in rupees as integers, "15k" → 15000; Hindi and Hinglish allowed), `FACT_GROUNDING_RULE`.

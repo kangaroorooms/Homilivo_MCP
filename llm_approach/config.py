@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 from llm_approach import reuse
 
+logger = logging.getLogger(__name__)
+
 CONFIDENCE_THRESHOLD = 0.6
-LLM_TIMEOUT_S = 8
+LLM_TIMEOUT_S = 8  # Groq only; Gemini has its own timeout below
+GEMINI_TIMEOUT_ENV = "LLM_APPROACH_GEMINI_TIMEOUT_S"
+GEMINI_DEFAULT_TIMEOUT_S = 20.0
+GEMINI_MIN_TIMEOUT_S = 10.0  # Gemini rejects a request deadline under 10 s (400 INVALID_ARGUMENT)
+GEMINI_TURN_LLM_BUDGET_S = 25.0  # Gemini: no further call in a turn once its calls have used this much time
 LLM_MAX_TOKENS = 500
 TEMPERATURE = 0
 REASONING_EFFORT: str | None = "low"  # gpt-oss: keeps reasoning from eating max_tokens
@@ -60,3 +67,197 @@ OFFLINE_ROOMS_ENV = "LLM_APPROACH_OFFLINE_ROOMS"  # "1" -> fixtures/rooms_bangal
 def groq_model() -> str:
     """Model name, read lazily from the app's own constant."""
     return reuse.get_groq_model()
+
+
+# ---- LLM provider ---------------------------------------------------------------
+# Only llm_approach/providers.py acts on these; every other module sends the same messages and
+# gets text plus token usage back. Keys come from the environment only and are never printed.
+
+PROVIDER_ENV = "LLM_APPROACH_PROVIDER"
+PROVIDERS = ("gemini", "groq")
+DEFAULT_PROVIDER = "gemini"
+GEMINI_MODEL_ENV = "LLM_APPROACH_GEMINI_MODEL"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"  # gemini-2.5-flash(-lite) return 404 NOT_FOUND for new projects
+GEMINI_THINKING_ENV = "LLM_APPROACH_GEMINI_THINKING"
+GEMINI_THINKING_LEVELS = ("LOW", "MINIMAL", "MEDIUM", "HIGH")
+GEMINI_THINKING_ALLOWED = "level:LOW, level:MINIMAL, level:MEDIUM, level:HIGH, budget:<int> or none"
+DEFAULT_GEMINI_THINKING_LEVEL = "LOW"  # gemini-3.x family
+GEMINI_MAX_OUTPUT_ENV = "LLM_APPROACH_GEMINI_MAX_OUTPUT_TOKENS"
+DEFAULT_GEMINI_MAX_OUTPUT_TOKENS = 1024  # thinking tokens count toward the cap, so 500 can truncate the JSON
+KEY_ENV = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY"}
+
+# Daily token budget and call spacing are per provider. Groq: the values the eval runners always had.
+# Gemini: read from the environment on purpose, no limit numbers are hard-coded here.
+GROQ_DEFAULT_SPACING_S = 30.0
+GROQ_DEFAULT_DAILY_TOKEN_BUDGET = 150_000
+GEMINI_SPACING_ENV = "LLM_APPROACH_GEMINI_SPACING_S"  # seconds between live calls
+GEMINI_DEFAULT_SPACING_S = 5.0  # free tier is 15 requests per minute: 4 s would do, 5 s leaves room
+GEMINI_MIN_SPACING_S = 4.0  # never below this (15 RPM)
+# Our own safety cap: Google lists NO daily token limit for the free tier. Unset = live evals refuse.
+GEMINI_DAILY_BUDGET_ENV = "LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET"
+# Requests per day is the binding Gemini limit (500 on the free tier); the default leaves a safety margin.
+GEMINI_REQUEST_BUDGET_ENV = "LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET"
+GEMINI_DEFAULT_REQUEST_BUDGET = 450
+
+# What result files written before the provider switch were produced with.
+LEGACY_PROVIDER = "groq"
+LEGACY_MODEL = "openai/gpt-oss-20b"
+
+
+def provider() -> str:
+    """The active provider: ``LLM_APPROACH_PROVIDER`` (gemini or groq), default gemini.
+    Anything else raises ValueError (the bad value is not echoed)."""
+    value = os.getenv(PROVIDER_ENV, "").strip().lower() or DEFAULT_PROVIDER
+    if value not in PROVIDERS:
+        raise ValueError(f"{PROVIDER_ENV} must be one of: {', '.join(PROVIDERS)}")
+    return value
+
+
+def model(name: str | None = None) -> str:
+    """Model name of ``name`` (default: the active provider)."""
+    name = name or provider()
+    if name == "groq":
+        return groq_model()
+    return os.getenv(GEMINI_MODEL_ENV, "").strip() or DEFAULT_GEMINI_MODEL
+
+
+def gemini_thinking(model_id: str | None = None) -> dict | None:
+    """The ``thinking_config`` to send, or None for no thinking config at all.
+
+    ``LLM_APPROACH_GEMINI_THINKING`` wins when set. Otherwise by model family: ``gemini-3*`` gets
+    ``thinking_level`` LOW, ``gemini-2.5*`` gets ``thinking_budget`` 0, any other model gets nothing.
+    An invalid override raises ValueError that names the allowed values (the bad value is not echoed)."""
+    override = os.getenv(GEMINI_THINKING_ENV, "").strip()
+    if override:
+        low = override.lower()
+        if low == "none":
+            return None
+        kind, _, arg = override.partition(":")
+        if kind.lower() == "level" and arg.strip().upper() in GEMINI_THINKING_LEVELS:
+            return {"thinking_level": arg.strip().upper()}
+        if kind.lower() == "budget":
+            try:
+                return {"thinking_budget": int(arg.strip())}
+            except ValueError:
+                pass
+        raise ValueError(f"{GEMINI_THINKING_ENV} must be one of: {GEMINI_THINKING_ALLOWED}")
+    model_id = model_id if model_id is not None else model("gemini")
+    if model_id.startswith("gemini-3"):
+        return {"thinking_level": DEFAULT_GEMINI_THINKING_LEVEL}
+    if model_id.startswith("gemini-2.5"):
+        return {"thinking_budget": 0}
+    return None
+
+
+def gemini_thinking_label(model_id: str | None = None) -> str:
+    """Human-readable form of ``gemini_thinking`` for the smoke test, e.g. ``level LOW``."""
+    cfg = gemini_thinking(model_id)
+    if not cfg:
+        return "none (no thinking config sent)"
+    (key, value), = cfg.items()
+    return f"{key.removeprefix('thinking_')} {value}"
+
+
+def gemini_max_output_tokens() -> int:
+    return _int_env(GEMINI_MAX_OUTPUT_ENV, DEFAULT_GEMINI_MAX_OUTPUT_TOKENS)
+
+
+def key_env(name: str | None = None) -> str:
+    """Name of the environment variable that holds the key (never the key itself)."""
+    return KEY_ENV[name or provider()]
+
+
+def key_present(name: str | None = None) -> bool:
+    return bool(os.environ.get(key_env(name), "").strip())
+
+
+def label() -> tuple[str, str]:
+    """(provider, model) for result files and metrics. Never raises: a bad provider setting is
+    labelled ``invalid`` (the entry points reject it before any call)."""
+    try:
+        return provider(), model()
+    except Exception:  # noqa: BLE001 - labelling must not break a metrics write
+        return "invalid", ""
+
+
+def record_label(record: dict) -> tuple[str, str]:
+    """(provider, model) a result record was produced with; records written before the provider
+    switch carry neither field and count as Groq / gpt-oss-20b."""
+    return str(record.get("provider") or LEGACY_PROVIDER), str(record.get("model") or LEGACY_MODEL)
+
+
+def setup_problem() -> str | None:
+    """A one-line, secret-free message when the active provider cannot be used (bad provider
+    setting or missing/blank key); None when it is ready."""
+    try:
+        name = provider()
+    except ValueError as exc:
+        return str(exc)
+    if not key_present(name):
+        return f"{key_env(name)} is not set. Put it in .env at the repo root."
+    if name == "gemini":
+        try:
+            gemini_thinking()
+        except ValueError as exc:
+            return str(exc)
+    return None
+
+
+def gemini_timeout_s() -> float:
+    """Seconds for one Gemini call: ``LLM_APPROACH_GEMINI_TIMEOUT_S``, default 20, never below 10.
+    A smaller (or unusable) env value is raised to 10 with one warning that names no value but the minimum."""
+    raw = os.getenv(GEMINI_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return GEMINI_DEFAULT_TIMEOUT_S
+    try:
+        value = float(raw)
+    except ValueError:
+        return GEMINI_DEFAULT_TIMEOUT_S
+    if value < GEMINI_MIN_TIMEOUT_S:
+        logger.warning("%s is below the Gemini minimum; using %g s", GEMINI_TIMEOUT_ENV, GEMINI_MIN_TIMEOUT_S)
+        return GEMINI_MIN_TIMEOUT_S
+    return value
+
+
+def _positive_float_env(name: str) -> float | None:
+    try:
+        value = float(os.getenv(name, "").strip())
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+_spacing_warned = False
+
+
+def spacing_s(name: str | None = None) -> float:
+    """Seconds between live calls for a provider. Gemini: ``LLM_APPROACH_GEMINI_SPACING_S``, default 5, never
+    below 4 (a lower value is raised to 4 with one warning)."""
+    global _spacing_warned
+    name = name or provider()
+    if name == "groq":
+        return GROQ_DEFAULT_SPACING_S
+    value = _positive_float_env(GEMINI_SPACING_ENV)
+    if value is None:
+        return GEMINI_DEFAULT_SPACING_S
+    if value < GEMINI_MIN_SPACING_S:
+        if not _spacing_warned:
+            _spacing_warned = True
+            logger.warning("%s is below the 15-requests-per-minute minimum; using %g s",
+                           GEMINI_SPACING_ENV, GEMINI_MIN_SPACING_S)
+        return GEMINI_MIN_SPACING_S
+    return value
+
+
+def daily_request_budget() -> int:
+    """Gemini requests allowed per (Pacific) day: ``LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET``, default 450."""
+    return _int_env(GEMINI_REQUEST_BUDGET_ENV, GEMINI_DEFAULT_REQUEST_BUDGET)
+
+
+def daily_token_budget(name: str | None = None) -> int | None:
+    """Tokens per day for a provider; None when it is not configured (Gemini only)."""
+    name = name or provider()
+    if name == "groq":
+        return GROQ_DEFAULT_DAILY_TOKEN_BUDGET
+    value = _positive_float_env(GEMINI_DAILY_BUDGET_ENV)
+    return int(value) if value else None

@@ -37,7 +37,8 @@ def test_one_line_per_turn_with_the_expected_fields(pipe, tmp_path, monkeypatch)
     pipe.turn("which one is cheapest", dec("ROOM_FOLLOWUP", op="LOWEST_PRICE"))
     lines = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
     assert len(lines) == 2
-    assert set(lines[0]) == FIELDS | {"ts"}
+    assert set(lines[0]) == FIELDS | {"ts", "provider", "model"}  # the labels added by the provider switch
+    assert (lines[0]["provider"], lines[0]["model"]) == ("gemini", "gemini-3.5-flash-lite")
     first, second = lines
     assert first["intent"] == "NEW_SEARCH" and first["action"] == "new_search" and first["tool_called"] is True
     assert first["slots_valid"] == ["city", "max_price"] and first["slots_rejected"] == []

@@ -22,7 +22,7 @@ def test_system_prompt_contents():
 
 def test_few_shot_count_and_coverage():
     examples = prompts.FEW_SHOT_EXAMPLES
-    assert 15 <= len(examples) <= 36  # 25 originals + 8 session-memory examples + 3 conversation-question examples
+    assert 15 <= len(examples) <= 40  # 25 originals + 8 session-memory + 3 conversation-question + 4 refinement/new-search boundary
     assert {d["intent"] for _, _, d in examples} == {i.value for i in Intent}
     messages = {m for _, m, _ in examples}
     for known in ("in udupi", "find me a room", "something in a different area",
@@ -51,6 +51,42 @@ def test_known_failure_examples_are_right():
     assert by_msg[("none of these are good", True)]["intent"] == "REJECT_CURRENT"
     diff = by_msg[("something in a different area", True)]
     assert diff["slots"]["city"] is None and diff["needs_clarification"]
+
+
+def test_refinement_vs_new_search_guidance_with_rooms_on_screen():
+    text = prompts.system_prompt()
+    assert "SHORT change" in text and "full request that stands on its own is NEW_SEARCH" in text
+    assert "A FULL standalone request is NEW_SEARCH" in text and "use UNCLEAR and ask" in text
+    assert "another city" in text  # a short city change is still a refinement
+    on_screen = [(m, d) for s, m, d in prompts.FEW_SHOT_EXAMPLES if s["rooms_on_screen"]]
+    short = {m: d for m, d in on_screen if d["intent"] == "REFINEMENT"}
+    full = {m: d for m, d in on_screen if d["intent"] == "NEW_SEARCH"}
+    # both sides of the boundary are shown, and the two existing refinement examples are kept
+    assert {"in udupi", "under 15k in indiranagar", "in pune"} <= set(short)
+    assert short["in pune"]["slots"]["city"] == "Pune"
+    named = [d for d in full.values() if d["slots"]["city"] and d["slots"]["city"] != "Bangalore"]
+    assert len(named) >= 3  # a different-city full request, a Hinglish one, a several-criteria one
+    assert any("kochi me" in m for m in full)  # Hinglish
+    assert any(sum(d["slots"][k] is not None for k in ("bhk", "max_price", "ideal_for")) >= 3 for d in full.values())
+
+
+def test_boundary_examples_do_not_copy_an_eval_item():
+    """The prompt must not teach the evaluation answers: no new example equals or nearly equals an eval item."""
+    import difflib
+    import re
+
+    from llm_approach.eval import datasets
+
+    def norm(t):
+        return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", t.lower())).strip()
+
+    boundary = {"in pune", "need a 1bhk flat in jaipur under 12k", "kochi me 2bhk dhundh raha hu 18k tak",
+                "family friendly 3bhk in chennai below 30k"}
+    assert boundary <= {m for _, m, _ in prompts.FEW_SHOT_EXAMPLES}
+    evals = [norm(it["text"]) for name in datasets.DATASETS for it in datasets.load_dataset(name)]
+    for message in boundary:
+        for other in evals:
+            assert difflib.SequenceMatcher(None, norm(message), other).ratio() <= 0.9, (message, other)
 
 
 def test_state_summary_shape_and_allowed_room_fields(rooms):

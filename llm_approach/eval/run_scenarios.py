@@ -39,7 +39,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from llm_approach import config, llm_client, pipeline, reuse, rooms_client  # noqa: E402
-from llm_approach import gemini_limits  # noqa: E402
+from llm_approach import gemini_limits, prompt_fingerprint  # noqa: E402
 from llm_approach.eval import run_eval, runs as runs_mod  # noqa: E402
 from llm_approach.schema import parse_decision  # noqa: E402
 from llm_approach.state import SessionStore  # noqa: E402
@@ -367,7 +367,7 @@ def live_record(report: TurnReport) -> dict[str, Any]:
     """One line of scenarios_live.jsonl: ids, verdicts and check names only. No message text, no reply."""
     provider, model = config.label()
     return {
-        "provider": provider, "model": model,
+        "provider": provider, "model": model, "prompt_fp": prompt_fingerprint.current(),
         "scenario": report.scenario, "turn": report.index,
         "status": "skipped" if report.skipped else ("pass" if report.passed else "fail"),
         "intent": report.intent, "action": report.action,
@@ -387,12 +387,16 @@ def format_report(report: TurnReport) -> str:
     return line
 
 
-def finished_scenarios(wanted: dict[str, int], label: tuple[str, str] | None = None) -> set[str]:
-    """Ids of scenarios whose every turn is recorded in scenarios_live.jsonl for the (provider, model) pair."""
+def finished_scenarios(
+    wanted: dict[str, int], label: tuple[str, str] | None = None, fp: str | None = None
+) -> set[str]:
+    """Ids of scenarios whose every turn is recorded in scenarios_live.jsonl for the (provider, model) pair
+    and the prompt fingerprint (a turn without one was made with the pre-change prompt)."""
     label = label or config.label()
+    fp = fp or prompt_fingerprint.current()
     seen: dict[str, set[int]] = {}
     for rec in run_eval.read_records(LIVE_RESULTS):
-        if config.record_label(rec) == label:  # only turns recorded with this provider and model
+        if config.record_label(rec) == label and prompt_fingerprint.of_record(rec) == fp:
             seen.setdefault(rec["scenario"], set()).add(int(rec["turn"]))
     return {sid for sid, turns in seen.items() if sid in wanted and len(turns) >= wanted[sid]}
 

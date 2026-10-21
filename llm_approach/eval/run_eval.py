@@ -41,7 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from llm_approach import config  # noqa: E402
+from llm_approach import config, prompt_fingerprint  # noqa: E402
 from llm_approach.eval import datasets, metrics, runs as runs_mod  # noqa: E402
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -78,14 +78,17 @@ def read_records(path: Path) -> list[dict]:
 
 
 def load_done(
-    path: Path, *, only_missing: bool = False, label: tuple[str, str] | None = None
+    path: Path, *, only_missing: bool = False, label: tuple[str, str] | None = None, fp: str | None = None
 ) -> set[tuple[str, str, int]]:
     """(dataset, item, run) keys to skip. By default any record counts, a rate-limit
     miss included; with ``only_missing`` a rate-limit miss does not, so it is retried.
-    With ``label`` (provider, model) only records made with that pair count."""
+    With ``label`` (provider, model) only records made with that pair count; with ``fp`` only
+    records made with that prompt fingerprint count (a record without one is "pre-change")."""
     done = set()
     for r in read_records(path):
         if label is not None and config.record_label(r) != label:
+            continue
+        if fp is not None and prompt_fingerprint.of_record(r) != fp:
             continue
         if only_missing and r.get("status") in ("rate_limit_miss", "error"):
             continue
@@ -127,14 +130,15 @@ def select_items(name: str, sample: int | None, seed: int = SAMPLE_SEED) -> list
 
 def plan_items(
     names: list[str], runs: int, sample: int | None, results_dir: Path = RESULTS_DIR, only_missing: bool = False,
-    label: tuple[str, str] | None = None,
+    label: tuple[str, str] | None = None, fp: str | None = None,
 ) -> list[tuple[dict, int]]:
-    """(item, run) pairs still to do for the active provider and model (or ``label``), in run order:
-    dataset, then run, then item."""
+    """(item, run) pairs still to do for the active provider, model and prompt fingerprint (or ``label``
+    and ``fp``), in run order: dataset, then run, then item. Results made with another prompt do not count."""
     todo = []
     label = label or config.label()
+    fp = fp or prompt_fingerprint.current()
     for name in names:
-        done = load_done(result_path(name, results_dir), only_missing=only_missing, label=label)
+        done = load_done(result_path(name, results_dir), only_missing=only_missing, label=label, fp=fp)
         items = select_items(name, sample)
         for run in range(1, runs + 1):
             todo += [(it, run) for it in items if (name, it["item"], run) not in done]
@@ -174,7 +178,7 @@ def build_record(item: dict, run: int, decision: Any, budget: Any, status: str, 
 
     provider, model = config.label()
     rec: dict[str, Any] = {
-        "provider": provider, "model": model,
+        "provider": provider, "model": model, "prompt_fp": prompt_fingerprint.current(),
         "dataset": item["dataset"], "item": item["item"], "run": run, "status": status,
         "category": item["category"], "gold_label": item["gold_label"], "gold_intent": item["gold_intent"],
         "gold_operation": item["gold_operation"], "gold_slots": item["gold_slots"],
@@ -430,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(lines))
         if not allowed:
             return 2
-    print("LLM: {} ({})".format(*config.label()))
+    print("LLM: {} ({}), prompt fingerprint {}".format(*config.label(), prompt_fingerprint.current()))
     total = sum(len(select_items(n, args.sample)) for n in names) * args.runs
     runs_mod.save_entry(RESULTS_DIR, sig, "running", total - len(todo), total)
     summary = asyncio.run(run_eval(names, runs=args.runs, sample=args.sample, spacing=args.spacing,

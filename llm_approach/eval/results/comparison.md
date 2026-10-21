@@ -1,6 +1,6 @@
 # LLM approach: evaluation and comparison
 
-**provider gemini, model gemini-3.5-flash-lite.** One provider/model pair per report; results of different pairs are never merged or compared in one table.
+**provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb.** One provider/model pair and one prompt version per report; results of different pairs are never merged or compared in one table.
 
 | Dataset | Items done | Total | Rate-limit misses |
 |---|---|---|---|
@@ -10,7 +10,7 @@
 | golden | 20 | 20 | 0 |
 | golden_slots | 20 | 20 | 0 |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 ## What is compared, and how
 
@@ -28,45 +28,45 @@ _provider gemini, model gemini-3.5-flash-lite_
 
 | Set | Strict | Lenient |
 |---|---|---|
-| ctxY | 30.3% [17.4-47.3] (10/33) | 30.3% [17.4-47.3] (10/33) |
-| matrix55 | 85.2% [73.4-92.3] (46/54) | 96.3% [87.5-99.0] (52/54) |
-| fresh | 91.5% [81.6-96.3] (54/59) | 94.9% [86.1-98.3] (56/59) |
+| ctxY | 69.7% [52.7-82.6] (23/33) | 69.7% [52.7-82.6] (23/33) |
+| matrix55 | 88.9% [77.8-94.8] (48/54) | 96.3% [87.5-99.0] (52/54) |
+| fresh | 96.6% [88.5-99.1] (57/59) | 98.3% [91.0-99.7] (58/59) |
 | golden | 100.0% [83.9-100.0] (20/20) | 100.0% [83.9-100.0] (20/20) |
-| pooled_133 | 90.2% [84.0-94.2] (120/133) | 96.2% [91.5-98.4] (128/133) |
-| pooled_166 | 78.3% [71.4-83.9] (130/166) | 83.1% [76.7-88.1] (138/166) |
+| pooled_133 | 94.0% [88.6-96.9] (125/133) | 97.7% [93.6-99.2] (130/133) |
+| pooled_166 | 89.2% [83.5-93.0] (148/166) | 92.2% [87.1-95.4] (153/166) |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 ### Paired comparison with the old router (same items, intent level, strict)
 
 | Set | n | New | Old | New right, old wrong | New wrong, old right | Both right | Both wrong |
 |---|---|---|---|---|---|---|---|
-| ctxY | 33 | 30.3% [17.4-47.3] (10/33) | 27.3% [15.1-44.2] (9/33) | 5 | 4 | 5 | 19 |
-| matrix55 | 54 | 85.2% [73.4-92.3] (46/54) | 61.1% [47.8-73.0] (33/54) | 17 | 4 | 29 | 4 |
-| fresh | 59 | 91.5% [81.6-96.3] (54/59) | 54.2% [41.7-66.3] (32/59) | 24 | 2 | 30 | 3 |
+| ctxY | 33 | 69.7% [52.7-82.6] (23/33) | 27.3% [15.1-44.2] (9/33) | 16 | 2 | 7 | 8 |
+| matrix55 | 54 | 88.9% [77.8-94.8] (48/54) | 61.1% [47.8-73.0] (33/54) | 17 | 2 | 31 | 4 |
+| fresh | 59 | 96.6% [88.5-99.1] (57/59) | 54.2% [41.7-66.3] (32/59) | 25 | 0 | 32 | 2 |
 | golden | 20 | 100.0% [83.9-100.0] (20/20) | 95.0% [76.4-99.1] (19/20) | 1 | 0 | 19 | 0 |
-| pooled_133 | 133 | 90.2% [84.0-94.2] (120/133) | 63.2% [54.7-70.9] (84/133) | 42 | 6 | 78 | 7 |
-| pooled_166 | 166 | 78.3% [71.4-83.9] (130/166) | 56.0% [48.4-63.4] (93/166) | 47 | 10 | 83 | 26 |
+| pooled_133 | 133 | 94.0% [88.6-96.9] (125/133) | 63.2% [54.7-70.9] (84/133) | 43 | 2 | 82 | 6 |
+| pooled_166 | 166 | 89.2% [83.5-93.0] (148/166) | 56.0% [48.4-63.4] (93/166) | 59 | 4 | 89 | 14 |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 Lenient version (pooled sets):
 
 | Set | n | New | Old | New right, old wrong | New wrong, old right | Both right | Both wrong |
 |---|---|---|---|---|---|---|---|
-| pooled_133 | 133 | 96.2% [91.5-98.4] (128/133) | 66.9% [58.5-74.3] (89/133) | 42 | 3 | 86 | 2 |
-| pooled_166 | 166 | 83.1% [76.7-88.1] (138/166) | 59.0% [51.4-66.2] (98/166) | 47 | 7 | 91 | 21 |
+| pooled_133 | 133 | 97.7% [93.6-99.2] (130/133) | 66.9% [58.5-74.3] (89/133) | 42 | 1 | 88 | 2 |
+| pooled_166 | 166 | 92.2% [87.1-95.4] (153/166) | 59.0% [51.4-66.2] (98/166) | 58 | 3 | 95 | 10 |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 ### Rooms on screen versus none (pooled 166, strict)
 
 | Category | Accuracy |
 |---|---|
-| ctxN | 92.9% [84.3-96.9] (65/70) |
-| ctxY | 67.7% [57.8-76.2] (65/96) |
+| ctxN | 91.4% [82.5-96.0] (64/70) |
+| ctxY | 87.5% [79.4-92.7] (84/96) |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 ### By gold label (pooled 166, strict)
 
@@ -81,37 +81,37 @@ _provider gemini, model gemini-3.5-flash-lite_
 | HIGHEST_PRICE | 100.0% [20.7-100.0] (1/1) |
 | LOCATION | 100.0% [34.2-100.0] (2/2) |
 | LOWEST_PRICE | 100.0% [43.8-100.0] (3/3) |
-| NEW_SEARCH | 70.6% [60.2-79.2] (60/85) |
+| NEW_SEARCH | 87.1% [78.3-92.6] (74/85) |
 | OUT_OF_SCOPE | 100.0% [43.8-100.0] (3/3) |
 | PLATFORM_INFO | 100.0% [43.8-100.0] (3/3) |
 | PROFESSIONAL_SUITABILITY | 100.0% [20.7-100.0] (1/1) |
-| REFINEMENT | 87.5% [52.9-97.8] (7/8) |
+| REFINEMENT | 100.0% [67.6-100.0] (8/8) |
 | REJECT_CURRENT | 100.0% [43.8-100.0] (3/3) |
 | ROOM_DETAILS | 100.0% [51.0-100.0] (4/4) |
 | ROOM_PRICE | 100.0% [43.8-100.0] (3/3) |
-| ROOM_TABLE | 0.0% [0.0-65.8] (0/2) |
+| ROOM_TABLE | 100.0% [34.2-100.0] (2/2) |
 | ROOM_TYPE | 100.0% [20.7-100.0] (1/1) |
 | SHOW_MORE_OPTIONS | 100.0% [70.1-100.0] (9/9) |
 | STUDENT_SUITABILITY | 100.0% [34.2-100.0] (2/2) |
-| UNCLEAR | 60.0% [35.7-80.2] (9/15) |
+| UNCLEAR | 66.7% [41.7-84.8] (10/15) |
 | UNSUPPORTED_ACTION | 100.0% [43.8-100.0] (3/3) |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 ## Operation, clarification, validity
 
 | Metric | Value |
 |---|---|
-| Operation accuracy, ROOM_FOLLOWUP items (pooled 166, strict) | 85.2% [67.5-94.1] (23/27) |
-| Operation accuracy (lenient) | 85.2% [67.5-94.1] (23/27) |
-| Clarification precision (gold ask = UNCLEAR) | 36.4% [22.2-53.4] (12/33) |
-| Clarification recall | 80.0% [54.8-93.0] (12/15) |
-| Invalid-slot rate (search intents, validators rejected a slot) | 5.5% [2.5-11.5] (6/109) |
-| Invalid-search rate (a search would carry a rejected slot; target 0) | 0.0% [0.0-3.4] (0/109) |
+| Operation accuracy, ROOM_FOLLOWUP items (pooled 166, strict) | 92.6% [76.6-97.9] (25/27) |
+| Operation accuracy (lenient) | 92.6% [76.6-97.9] (25/27) |
+| Clarification precision (gold ask = UNCLEAR) | 37.1% [23.2-53.7] (13/35) |
+| Clarification recall | 86.7% [62.1-96.3] (13/15) |
+| Invalid-slot rate (search intents, validators rejected a slot) | 5.4% [2.5-11.2] (6/112) |
+| Invalid-search rate (a search would carry a rejected slot; target 0) | 0.0% [0.0-3.3] (0/112) |
 | No usable decision (invalid JSON twice, timeout, API error) | 0.0% [0.0-2.0] (0/186) |
 | Consistency across runs (items with 2+ runs, identical decision) | n/a |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 The clarification gold is only the UNCLEAR label; the sets have no other 'should ask' labels, so read these as a proxy. The invalid-search rate is evaluated with the pipeline's own rule (a rejected city, BHK or price makes it ask instead of searching); the end-to-end check of that rule is in the pipeline tests and the robustness report.
 
@@ -119,36 +119,36 @@ The clarification gold is only the UNCLEAR label; the sets have no other 'should
 
 | Confidence | Accuracy |
 |---|---|
-| 0.0-0.6 | 81.8% [52.3-94.9] (9/11) |
+| 0.0-0.6 | 83.3% [55.2-95.3] (10/12) |
 | 0.6-0.8 | 0.0% [0.0-79.3] (0/1) |
-| 0.8-0.9 | 80.0% [60.9-91.1] (20/25) |
-| 0.9-1.0 | 78.3% [70.4-84.5] (101/129) |
+| 0.8-0.9 | 79.2% [59.5-90.8] (19/24) |
+| 0.9-1.0 | 92.2% [86.3-95.7] (119/129) |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 ## Cost
 
 | Metric | Value |
 |---|---|
-| Latency p50 / p95 (LLM call incl. retry) | 1748 ms / 3310 ms (n=186) |
-| Tokens in / out per call | 5766 / 199 |
-| Cached tokens per call | 2012 |
+| Latency p50 / p95 (LLM call incl. retry) | 1609 ms / 3264 ms (n=186) |
+| Tokens in / out per call | 6412 / 220 |
+| Cached tokens per call | 4031 |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 ## Slot accuracy (`golden_slots`, reported separately from intent accuracy)
 
 | Field | Accuracy |
 |---|---|
-| city | 94.1% [73.0-99.0] (16/17) |
+| city | 100.0% [81.6-100.0] (17/17) |
 | bhk | 88.2% [65.7-96.7] (15/17) |
 | min_price | 100.0% [81.6-100.0] (17/17) |
 | max_price | 94.1% [73.0-99.0] (16/17) |
 | ideal_for | 100.0% [81.6-100.0] (17/17) |
-| overall | 95.3% [88.5-98.2] (81/85) |
-| exact | 76.5% [52.7-90.4] (13/17) |
+| overall | 96.5% [90.1-98.8] (82/85) |
+| exact | 82.4% [59.0-93.8] (14/17) |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 Over the 17 search items that have slot gold (`tests/golden_set.jsonl`, `expected_args`). Compared on the validated slots; no gold value means the field must be empty. Gold `room_types` other than N-BHK (PG, Single, 1RK) is not a slot of the decision schema, and gold cities such as 'HSR Layout' are localities (the model returns them as `area`), so those items lose city accuracy by construction. There is no paired comparison for this set.
 
@@ -167,9 +167,9 @@ They were still run. The data records only a yes/no flag for rooms on screen, so
 | fresh | 6 | short reply: gold may assume a pending bot question or selected room that the data does not record |
 | fresh | 19 | gold written against the old harness's rooms; fixture rooms used |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
-Intent accuracy on rooms-on-screen items: flagged 93.8% [83.2-97.9] (45/48); not flagged 41.7% [28.8-55.7] (20/48). A large gap means part of the result depends on the missing context rather than on the model.
+Intent accuracy on rooms-on-screen items: flagged 97.9% [89.1-99.6] (47/48); not flagged 77.1% [63.5-86.7] (37/48). A large gap means part of the result depends on the missing context rather than on the model.
 
 ## Scenario pass/fail (live, `scenarios_live.jsonl`)
 
@@ -211,13 +211,13 @@ _offline mocks, no LLM call_
 | Metric | Proposed target | Current |
 |---|---|---|
 | Safety block rate | 100% | 43/43 |
-| Invalid-search rate | 0 | 0.0% [0.0-3.4] (0/109) |
+| Invalid-search rate | 0 | 0.0% [0.0-3.3] (0/112) |
 | E1 scenario pass rate | 100% of turns, or each failure explained | not run live |
-| Intent accuracy, E2 pooled (133) | clearly above the current pipeline's 53.4% (harness: 57.9%) | 90.2% [84.0-94.2] (120/133) |
-| Intent accuracy, E2 ctxY | clearly above 21.2% (harness: 27.3%) | 30.3% [17.4-47.3] (10/33) |
+| Intent accuracy, E2 pooled (133) | clearly above the current pipeline's 53.4% (harness: 57.9%) | 94.0% [88.6-96.9] (125/133) |
+| Intent accuracy, E2 ctxY | clearly above 21.2% (harness: 27.3%) | 69.7% [52.7-82.6] (23/33) |
 | Consistency across 3 runs | >= 95% identical decisions | n/a |
-| p95 LLM latency | <= 3 s (rooms API excluded) | 3310 ms |
+| p95 LLM latency | <= 3 s (rooms API excluded) | 3264 ms |
 
-_provider gemini, model gemini-3.5-flash-lite_
+_provider gemini, model gemini-3.5-flash-lite, prompt 20f328e351bb_
 
 Robustness: 7/7 cases clean.

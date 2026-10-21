@@ -1062,3 +1062,25 @@ Or put `LLM_APPROACH_PROVIDER=groq` in `.env`. `scripts/start-server.ps1` runs `
 ## Tests
 
 `python -m pytest llm_approach/tests -q`: **1230 passed** (1088 before, 142 new). New files: `test_gemini_provider.py` (39: fake Gemini client, mapping, thinking, errors, keys, lazy import, log audit, `smoke_gemini`), `test_provider_parity.py` (74: all 69 stub scenarios, 300 turns, through a fake Groq and a fake Gemini client with identical replies, state and metrics; plus the Groq request parameters) and `test_provider_labels.py` (29: labels, per-provider budgets and ledger, the report refusing to mix, live runners refusing an unset Gemini budget, `llm_info`, the start script, `/ready`). Existing tests that assumed Groq was the default were updated; they are listed in RESULTS.md section 10.
+
+
+## Refinement vs new search with rooms on screen (2026-10-21)
+
+**Pending the team lead's confirmation. Offline only: the post-change accuracy is NOT measured yet, and no new accuracy figure is claimed anywhere.**
+
+- **Why.** On the ctxY set (rooms on screen, 33 items, every gold label NEW_SEARCH) the model predicted REFINEMENT for 18 of its 23 misses, at confidence 0.85 to 0.95. The prompt defined "another city" as REFINEMENT (intent line and rule), had two rooms-on-screen REFINEMENT examples ("in udupi", "under 15k in indiranagar") and only one rooms-on-screen NEW_SEARCH example ("find me a room", no city). Nothing separated a short change from a full standalone request.
+- **The rule now in the prompt.** With rooms on screen, a SHORT change that only makes sense relative to the current search ("in <place>", "under <price>", "2bhk only", "cheaper options only") is REFINEMENT. A FULL standalone request (it names a city, especially a different one, together with other criteria, or reads as a complete request) is NEW_SEARCH. If the model cannot tell which, it uses the existing UNCLEAR behaviour (clarifying question). No new intent. With no rooms on screen nothing changes.
+- **What changed in `prompts.py` (only this).** The REFINEMENT line of `_INTENT_LINES`, the rooms-on-screen rule in `_RULES`, and four few-shot examples placed after "under 15k in indiranagar": `in pune` (REFINEMENT, the short city change), `need a 1bhk flat in jaipur under 12k` (NEW_SEARCH, different city with criteria), `kochi me 2bhk dhundh raha hu 18k tak` (NEW_SEARCH, Hinglish), `family friendly 3bhk in chennai below 30k` (NEW_SEARCH, several criteria). The existing "in udupi" and "under 15k in indiranagar" examples are kept. The new phrasings were written fresh: a leakage check of every example and every quoted phrase in the prompt against all 186 evaluation items (exact, normalised, near-duplicate above 0.9) shows no new match (the 16 hits that existed before, listed in the audit, are unchanged). A test (`test_boundary_examples_do_not_copy_an_eval_item`) keeps it that way.
+- **Size.** System prompt 18,570 -> 20,567 characters (+1,997), about +500 tokens per call at 4 characters per token (about +93K estimated tokens over the 186 evaluation prompts). Few-shot examples 36 -> 40. Nothing else was trimmed.
+- **To revert.** Restore the two lines and delete the four examples in `prompts.py`; the fingerprint changes back with the text. No other file needs to change.
+
+### Prompt fingerprint (new)
+
+`prompt_fingerprint.py`: a 12-character SHA-256 prefix of the whole system prompt text (rules and examples). Every `run_eval` record and every `scenarios_live.jsonl` record now carries `prompt_fp`; `run_state.json` signatures carry it too.
+
+- A record **without** `prompt_fp` was made before the change and counts as `pre-change`. Existing result files are not rewritten; they stay valid for the old prompt.
+- `run_eval` and `run_scenarios` only skip items finished with the **same** fingerprint, so after a prompt change a run does all 186 prompts again and appends to the same files (the old lines stay). `--resume` refuses a run made with another prompt.
+- The report covers **one** prompt version, like one provider/model pair. If the results hold several it stops with `MixedPromptsError` ("The results mix several prompt versions ...") and asks for `--prompt-fp <fingerprint>`; `--prompt-fp pre-change` reports the old results. Every table caption shows `prompt <fingerprint>`. When all records share one version (today: all `pre-change`) no flag is needed.
+- Print the current fingerprint: `python -c "from llm_approach import prompt_fingerprint as p; print(p.current())"`. A live run prints it at start.
+
+Tests: 19 new (`test_prompt_fingerprint.py` 16, `test_prompts.py` 2, `test_provider_parity.py` 1); changed existing tests: `test_prompts.py::test_few_shot_count_and_coverage` and `test_pipeline.py::test_prompt_has_selected_room_wifi_example` (example-count ceiling 36 -> 40), `test_eval_report.py::test_live_record_has_no_text` (the record has `prompt_fp`), `test_provider_labels.py::test_report_with_a_choice_covers_only_that_pair_and_labels_every_table` (captions end with `, prompt <fingerprint>`). `pytest llm_approach/tests`: 1355 passed.

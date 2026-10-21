@@ -218,7 +218,7 @@ def test_prompt_has_selected_room_wifi_example():
     assert decision["room_reference"] == "selected"
     assert '"does it have wifi"' not in prompts.system_prompt()  # rendered as <user_message>, not quoted
     assert "<user_message>does it have wifi</user_message>" in prompts.system_prompt()
-    assert 15 <= len(prompts.FEW_SHOT_EXAMPLES) <= 36  # 25 originals + 8 session-memory examples + 3 conversation-question examples
+    assert 15 <= len(prompts.FEW_SHOT_EXAMPLES) <= 40  # 25 originals + 8 session-memory + 3 conversation-question + 4 refinement/new-search boundary
 
 
 def test_s8_through_the_real_llm_client_with_mocked_groq(monkeypatch, fake_groq):

@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from llm_approach import config, gemini_limits
+from llm_approach import config, gemini_limits, prompt_fingerprint
 
 STATE_FILE = "run_state.json"
 # Planner assumption, per prompt: up to 2 decision calls (the invalid-JSON retry) plus 1 rate-limit retry.
@@ -22,7 +22,7 @@ STATE_FILE = "run_state.json"
 WORST_CASE_CALLS_PER_PROMPT = 3
 WORST_CASE_CALLS_PER_SCENARIO_TURN = 5
 MAX_CONSECUTIVE_FAILURES = 5
-SIGNATURE_KEYS = ("provider", "model", "dataset", "runs", "sample")
+SIGNATURE_KEYS = ("provider", "model", "prompt_fp", "dataset", "runs", "sample")
 
 
 class IncompleteRunError(ValueError):
@@ -34,7 +34,8 @@ class IncompleteRunError(ValueError):
 
 def signature(tool: str, dataset: str, runs: int = 1, sample: int | None = None) -> dict[str, Any]:
     provider, model = config.label()
-    return {"tool": tool, "provider": provider, "model": model, "dataset": dataset, "runs": runs, "sample": sample}
+    return {"tool": tool, "provider": provider, "model": model, "prompt_fp": prompt_fingerprint.current(),
+            "dataset": dataset, "runs": runs, "sample": sample}
 
 
 def load_state(results_dir: Path) -> dict[str, dict]:

@@ -4,12 +4,14 @@ Works on partial results: the coverage banner at the top says how many items of 
 are done. Inputs (all optional): ``<dataset>.jsonl`` (run_eval), ``scenarios_live.jsonl``,
 ``safety.json``, ``robustness.json`` and ``baseline_current.json``.
 
-    python -m llm_approach.eval.report [--provider gemini] [--model gemini-3.5-flash-lite]
+    python -m llm_approach.eval.report [--provider gemini] [--model gemini-3.5-flash-lite] [--prompt-fp pre-change]
 
 Every result record carries the provider and model that made it (records from before the provider
 switch count as groq / openai/gpt-oss-20b). One report covers ONE provider/model pair and every table
 says which: when the results hold several pairs, the report refuses to merge them and asks for
-``--provider`` / ``--model``.
+``--provider`` / ``--model``. The same holds for the prompt: every record carries ``prompt_fp`` (a hash of
+the system prompt; a record without one counts as ``pre-change``), one report covers ONE prompt version, and
+mixed versions are refused until ``--prompt-fp`` chooses one.
 
 No key, token, message text or model reasoning is read or written: records hold ids,
 labels, numbers and verdicts only.
@@ -27,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from llm_approach import config  # noqa: E402
+from llm_approach import config, prompt_fingerprint  # noqa: E402
 from llm_approach.eval import datasets, label_map, metrics, runs as runs_mod  # noqa: E402
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -53,12 +55,34 @@ class MixedProvidersError(ValueError):
     """The results hold records of more than one provider/model pair (or none of the one asked for)."""
 
 
+class MixedPromptsError(MixedProvidersError):
+    """The results of one provider/model hold records made with more than one prompt fingerprint."""
+
+
 OFFLINE_LABEL = "offline mocks, no LLM call"
 _label = ""  # caption printed under every table; set by ``render``
 
 
-def pair_text(provider: str | None, model: str | None) -> str:
-    return f"provider {provider}, model {model}" if provider else "no LLM results yet"
+def pair_text(provider: str | None, model: str | None, prompt_fp: str | None = None) -> str:
+    if not provider:
+        return "no LLM results yet"
+    text = f"provider {provider}, model {model}"
+    return f"{text}, prompt {prompt_fp}" if prompt_fp else text
+
+
+def select_fingerprint(fps: set[str], wanted: str | None) -> str | None:
+    """The one prompt fingerprint a report covers. Records made with different prompts are never merged;
+    a record without a fingerprint is ``pre-change`` (``--prompt-fp pre-change`` selects those)."""
+    chosen = {f for f in fps if wanted is None or f == wanted}
+    if len(chosen) > 1:
+        raise MixedPromptsError(
+            f"The results mix several prompt versions ({'; '.join(sorted(chosen))}). One report covers one "
+            "prompt version: pass --prompt-fp to choose ('pre-change' is the prompt before fingerprints).")
+    if not chosen:
+        if fps:
+            raise MixedPromptsError(f"No results for the requested prompt version. Found: {'; '.join(sorted(fps))}.")
+        return None
+    return next(iter(chosen))
 
 
 def select_pair(pairs: set[tuple[str, str]], provider: str | None, model: str | None) -> tuple[str, str] | None:
@@ -129,7 +153,9 @@ def scenario_summary(records: list[dict]) -> dict[str, Any]:
     return {"per_scenario": per, "turns_run": ran, "turns_passed": sum(d["pass"] for d in per.values())}
 
 
-def build_data(results_dir: Path, provider: str | None = None, model: str | None = None) -> dict[str, Any]:
+def build_data(
+    results_dir: Path, provider: str | None = None, model: str | None = None, prompt_fp: str | None = None
+) -> dict[str, Any]:
     by_ds = load_results(results_dir)
     scenario_records = read_jsonl(results_dir / "scenarios_live.jsonl")
     pairs = {config.record_label(r) for recs in by_ds.values() for r in recs}
@@ -138,6 +164,12 @@ def build_data(results_dir: Path, provider: str | None = None, model: str | None
     if chosen is not None:
         by_ds = {n: [r for r in recs if config.record_label(r) == chosen] for n, recs in by_ds.items()}
         scenario_records = [r for r in scenario_records if config.record_label(r) == chosen]
+    fps = {prompt_fingerprint.of_record(r) for recs in by_ds.values() for r in recs}
+    fps |= {prompt_fingerprint.of_record(r) for r in scenario_records}
+    chosen_fp = select_fingerprint(fps, prompt_fp)  # raises MixedPromptsError rather than merge prompt versions
+    if chosen_fp is not None:
+        by_ds = {n: [r for r in recs if prompt_fingerprint.of_record(r) == chosen_fp] for n, recs in by_ds.items()}
+        scenario_records = [r for r in scenario_records if prompt_fingerprint.of_record(r) == chosen_fp]
     all_items = {n: datasets.load_dataset(n) for n in datasets.DATASETS}
     totals = {n: len(v) for n, v in all_items.items()}
     flat = [r for recs in by_ds.values() for r in recs]
@@ -149,6 +181,7 @@ def build_data(results_dir: Path, provider: str | None = None, model: str | None
         return [r for n in names for r in by_ds[n]]
 
     data: dict[str, Any] = {"provider": chosen[0] if chosen else None, "model": chosen[1] if chosen else None,
+                            "prompt_fp": chosen_fp,
                             "coverage": metrics.coverage(flat, totals), "baseline_loaded": bool(base_rows)}
 
     acc: dict[str, Any] = {}
@@ -217,7 +250,7 @@ def banner(data: dict[str, Any]) -> list[str]:
     cov = data["coverage"]
     done, total = sum(c["done"] for c in cov.values()), sum(c["total"] for c in cov.values())
     lines = ["# LLM approach: evaluation and comparison", "",
-             f"**{pair_text(data['provider'], data['model'])}.** One provider/model pair per report; results of "
+             f"**{pair_text(data['provider'], data['model'], data.get('prompt_fp'))}.** One provider/model pair and one prompt version per report; results of "
              "different pairs are never merged or compared in one table.", ""]
     if done < total:
         lines += [f"> **PARTIAL RESULTS: {done} of {total} items evaluated.** Every number below covers only the items done so far.", ""]
@@ -408,7 +441,7 @@ def targets_section(data: dict[str, Any]) -> list[str]:
 
 def render(data: dict[str, Any]) -> str:
     global _label
-    _label = f"{pair_text(data.get('provider'), data.get('model'))}" if data.get("provider") else ""
+    _label = f"{pair_text(data.get('provider'), data.get('model'), data.get('prompt_fp'))}" if data.get("provider") else ""
     parts = banner(data) + method_notes(data) + accuracy_section(data) + other_metrics_section(data) + \
         faithfulness_section(data) + scenario_section(data) + safety_section(data) + robustness_section(data) + targets_section(data)
     return "\n".join(parts).rstrip() + "\n"
@@ -424,15 +457,16 @@ def missing_prompts(results_dir: Path, entry: dict) -> list[str]:
     sig = entry["signature"]
     label = (str(sig.get("provider")), str(sig.get("model")))
     dataset = str(sig.get("dataset"))
+    fp = str(sig.get("prompt_fp") or prompt_fingerprint.LEGACY)  # a run state without one is a pre-change run
     if sig.get("tool") == "run_eval":
         names = datasets.DATASETS if dataset == "all" else [dataset]
         todo = run_eval.plan_items(names, int(sig.get("runs") or 1), sig.get("sample"), results_dir,
-                                   only_missing=True, label=label)
+                                   only_missing=True, label=label, fp=fp)
         return [f"{it['item']} (run {run})" for it, run in todo]
     only = {x.strip().upper() for x in dataset.removeprefix("scenarios:").split(",") if x.strip() and x != "all"}
     seen: dict[str, set[int]] = {}
     for rec in read_jsonl(results_dir / "scenarios_live.jsonl"):
-        if config.record_label(rec) == label:
+        if config.record_label(rec) == label and prompt_fingerprint.of_record(rec) == fp:
             seen.setdefault(rec["scenario"], set()).add(int(rec["turn"]))
     missing = []
     for path in sorted((Path(__file__).resolve().parents[1] / "scenarios").glob("S*.json"),
@@ -445,12 +479,16 @@ def missing_prompts(results_dir: Path, entry: dict) -> list[str]:
     return missing
 
 
-def check_complete(results_dir: Path, provider: str | None = None, model: str | None = None) -> None:
+def check_complete(
+    results_dir: Path, provider: str | None = None, model: str | None = None, prompt_fp: str | None = None
+) -> None:
     """Raise ``IncompleteRunError`` when an unfinished live run (run_state.json) matches the requested
-    provider/model and still has prompts to do. A comparison is only built from a finished run."""
+    provider/model/prompt version and still has prompts to do. A comparison is only built from a finished run."""
     for entry in runs_mod.unfinished_runs(results_dir):
         sig = entry.get("signature") or {}
         if (provider and sig.get("provider") != provider) or (model and sig.get("model") != model):
+            continue
+        if prompt_fp and str(sig.get("prompt_fp") or prompt_fingerprint.LEGACY) != prompt_fp:
             continue
         missing = missing_prompts(results_dir, entry)
         if not missing:
@@ -464,10 +502,11 @@ def check_complete(results_dir: Path, provider: str | None = None, model: str | 
 
 
 def build_report(
-    results_dir: Path = RESULTS_DIR, provider: str | None = None, model: str | None = None
+    results_dir: Path = RESULTS_DIR, provider: str | None = None, model: str | None = None,
+    prompt_fp: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    check_complete(results_dir, provider, model)
-    data = build_data(results_dir, provider, model)
+    check_complete(results_dir, provider, model, prompt_fp)
+    data = build_data(results_dir, provider, model, prompt_fp)
     return render(data), data
 
 
@@ -476,12 +515,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--results-dir", default=str(RESULTS_DIR))
     p.add_argument("--provider", default=None, help="report only this provider (required if the results mix several)")
     p.add_argument("--model", default=None, help="report only this model (required if the results mix several)")
+    p.add_argument("--prompt-fp", default=None,
+                   help="report only results made with this prompt fingerprint (required if the results mix "
+                        "several; 'pre-change' selects results written before fingerprints existed)")
     args = p.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     rd = Path(args.results_dir)
     try:
-        md, data = build_report(rd, args.provider, args.model)
+        md, data = build_report(rd, args.provider, args.model, args.prompt_fp)
     except (MixedProvidersError, runs_mod.IncompleteRunError) as exc:
         print(exc)
         return 2

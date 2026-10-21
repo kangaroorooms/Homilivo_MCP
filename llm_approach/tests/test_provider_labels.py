@@ -157,7 +157,7 @@ def test_report_with_a_choice_covers_only_that_pair_and_labels_every_table(resul
         tables = [b for b in re.split(r"\n\n", text) if b.startswith("|")]
         assert tables
         for block in tables:  # every table is followed by its caption
-            assert text[text.index(block) + len(block):].startswith(f"\n\n_provider {pair[0]}, model {pair[1]}_")
+            assert text[text.index(block) + len(block):].startswith(f"\n\n_provider {pair[0]}, model {pair[1]}, prompt ")
 
 
 def test_report_labels_old_results_as_groq(results):

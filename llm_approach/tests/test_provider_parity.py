@@ -18,7 +18,7 @@ from unittest import mock
 
 import pytest
 
-from llm_approach import config, conversation_answerer, llm_client, pipeline, prompts, providers
+from llm_approach import config, conversation_answerer, llm_client, pipeline, prompt_fingerprint, prompts, providers
 from llm_approach.eval import run_scenarios
 from llm_approach.state import SessionStore
 
@@ -151,6 +151,31 @@ def test_every_scenario_is_identical_through_fake_groq_and_fake_gemini(scenario,
         assert a == b, f"{scenario['id']} turn {i} differs between Groq and Gemini"
     assert groq_failed == gem_failed == []  # the scenario's own expectations hold through the real client
     assert groq_exhausted == gem_exhausted == 0
+
+
+def test_both_providers_send_the_same_system_prompt_with_the_same_fingerprint(monkeypatch):
+    """Groq and Gemini must see the identical system prompt, so one prompt fingerprint describes both."""
+    seen = {}
+    for kind in ("groq", "gemini"):
+        spy = SimpleNamespace(llm_calls=0, answer_calls=0)
+        reply = {"intent": "NEW_SEARCH", "confidence": 0.9, "slots": {"city": "Pune"}}
+        served = Served([reply], [], spy, kind)
+        client = fake_client(kind, served)
+        captured = []
+        original = served.reply
+
+        def capture(messages, original=original, captured=captured):
+            captured.append(messages[0]["content"])
+            return original(messages)
+
+        served.reply = capture
+        monkeypatch.setenv(config.PROVIDER_ENV, kind)
+        monkeypatch.setattr(providers, "_get_groq_client", lambda c=client: c)
+        monkeypatch.setattr(providers, "_get_gemini_client", lambda c=client: c)
+        asyncio.run(llm_client.decide("rooms in pune", {}, llm_client.LLMBudget()))
+        seen[kind] = captured[0]
+    assert seen["groq"] == seen["gemini"] == prompts.system_prompt()
+    assert prompt_fingerprint.of_text(seen["groq"]) == prompt_fingerprint.current()
 
 
 # ---- the Groq request is unchanged ---------------------------------------------------------------------

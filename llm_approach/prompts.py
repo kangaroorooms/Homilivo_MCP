@@ -14,7 +14,7 @@ FENCE_NAMES = ("verified_data", "user_message")
 
 _INTENT_LINES = """\
 NEW_SEARCH - start a new room search ("find me a room in pune"). City missing: set needs_clarification and ask for the city.
-REFINEMENT - change the current search: another city, budget, BHK or room type ("in udupi", "under 15k", "2bhk only", "something in a different area").
+REFINEMENT - a SHORT change that only makes sense relative to the current search: another city, budget, BHK, room type or area ("in udupi", "under 15k", "2bhk only", "cheaper options only", "something in a different area"). A full request that stands on its own is NEW_SEARCH, even with rooms on screen.
 ROOM_FOLLOWUP - a question about the rooms already on screen ("which is cheapest", "does the second one have wifi"). Set operation.
 SHOW_MORE - wants more or different results ("show more", "kuch aur dikhao").
 REJECT_CURRENT - dislikes the rooms shown ("none of these are good").
@@ -62,7 +62,7 @@ _RULES = """\
 - Words like "pls", "urgent", "a different area", "somewhere" are not cities or areas.
 - area is a locality or neighbourhood inside a city (Koramangala, Indiranagar), never a city. A city goes in city. Without a named locality, area is null.
 - Room references are positions of rooms on screen (first = 1). Use "selected" for "it" / "this one" when selected_room_index is set. Use null when no room is meant.
-- When rooms are on screen, "in <place>" or "under <price>" refines the current search (REFINEMENT). When no rooms are on screen, it starts a new search.
+- When rooms are on screen, a SHORT change that needs the current search ("in <place>", "under <price>", "2bhk only") is REFINEMENT. A FULL standalone request is NEW_SEARCH: it names a city (especially a different one) together with other criteria, or reads as a complete request on its own. If you cannot tell which, use UNCLEAR and ask. When no rooms are on screen, a message like that starts a new search.
 - When pending_question is set, read the message as an answer to that question.
 - The user may write English, Hindi or Hinglish, with typos. Handle all of them.
 - Confidence is how sure you are of the intent. Use below 0.6 when the message is ambiguous.
@@ -158,6 +158,17 @@ FEW_SHOT_EXAMPLES: list[tuple[dict[str, Any], str, dict[str, Any]]] = [
     (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "under 15k in indiranagar",
      _decision("REFINEMENT", area="Indiranagar", max_price=15000,
                standalone_query="find rooms in Indiranagar under 15000")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "in pune",
+     _decision("REFINEMENT", city="Pune", standalone_query="find rooms in Pune")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "need a 1bhk flat in jaipur under 12k",
+     _decision("NEW_SEARCH", city="Jaipur", bhk=1, max_price=12000,
+               standalone_query="find 1 BHK rooms in Jaipur under 12000")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "kochi me 2bhk dhundh raha hu 18k tak",
+     _decision("NEW_SEARCH", city="Kochi", bhk=2, max_price=18000,
+               standalone_query="find 2 BHK rooms in Kochi under 18000")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "family friendly 3bhk in chennai below 30k",
+     _decision("NEW_SEARCH", city="Chennai", bhk=3, max_price=30000, ideal_for="family",
+               standalone_query="find 3 BHK family rooms in Chennai under 30000")),
     (_state(), "i dont know",
      _decision("UNCLEAR", confidence=0.4, needs_clarification=True,
                clarifying_question="Could you tell me which city and budget you have in mind?")),

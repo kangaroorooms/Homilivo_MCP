@@ -1,0 +1,78 @@
+{
+  "id": "S39",
+  "title": "Session memory: a fresh session cannot see the old session's facts or queries",
+  "turns": [
+    {
+      "user": "my name is Faizal",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice to meet you!",
+        "user_facts": {
+          "name": "Faizal"
+        }
+      },
+      "expect": {
+        "facts": {
+          "name": "Faizal"
+        }
+      }
+    },
+    {
+      "user": "2 BHK in Bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "tool_called": true
+      }
+    },
+    {
+      "user": "what is my name?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "name"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "You haven't told me your name in this chat."
+        ],
+        "reply_not_contains": [
+          "Faizal"
+        ],
+        "no_facts": [
+          "name"
+        ],
+        "queries_logged": 1
+      },
+      "new_session": true
+    },
+    {
+      "user": "what was my first query?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "first_query"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_not_contains": [
+          "Bangalore",
+          "Faizal"
+        ],
+        "reply_contains": [
+          "Your first question was: \"what is my name?\"."
+        ]
+      }
+    }
+  ]
+}

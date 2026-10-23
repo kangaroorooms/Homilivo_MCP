@@ -1,0 +1,39 @@
+{
+  "id": "S54",
+  "title": "Conversation question: favourite colour",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "my favourite colour is teal",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Teal is lovely."
+      },
+      "expect": {}
+    },
+    {
+      "user": "what's my favourite colour?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "Your favourite colour is teal.",
+        "evidence_turns": [
+          1
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "teal"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

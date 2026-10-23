@@ -1,0 +1,41 @@
+{
+  "id": "S17",
+  "title": "'kuch aur dikhao' is answered honestly without a new API call (the fixture says it has no next page)",
+  "turns": [
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "kuch aur dikhao",
+      "llm": {
+        "intent": "SHOW_MORE",
+        "confidence": 0.95,
+        "standalone_query": "show more rooms"
+      },
+      "expect": {
+        "intent": "SHOW_MORE",
+        "action": "show_more_all",
+        "tool_called": false,
+        "rooms_on_screen": 10
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "S56",
+  "title": "Conversation question: why was that room shown (search filters)",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "2bhk in bangalore under 20k",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore",
+          "bhk": 2,
+          "max_price": 20000
+        }
+      },
+      "expect": {}
+    },
+    {
+      "user": "why did you show me that room?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "You asked for a 2 BHK in Bangalore under 20000, so I showed rooms that match.",
+        "evidence_turns": [
+          1,
+          2
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "2 BHK",
+          "Bangalore"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

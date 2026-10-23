@@ -1,0 +1,53 @@
+{
+  "id": "S3",
+  "title": "'something in a different area' asks which area, not a price list",
+  "turns": [
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "something in a different area",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.8,
+        "slots": {
+          "city": "A Different Area"
+        },
+        "needs_clarification": true,
+        "clarifying_question": "Which area would you like?"
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "ask_area",
+        "tool_called": false,
+        "pending": "clarify",
+        "rooms_on_screen": 10,
+        "reply_contains": [
+          "Which area"
+        ],
+        "reply_not_contains": [
+          "₹",
+          "price"
+        ]
+      }
+    }
+  ]
+}

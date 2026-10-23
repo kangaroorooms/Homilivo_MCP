@@ -1,0 +1,50 @@
+{
+  "id": "S2",
+  "title": "'find me a room' with rooms on screen asks which city",
+  "turns": [
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "find me a room",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.85,
+        "needs_clarification": true,
+        "clarifying_question": "Which city are you looking for?"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "ask_city",
+        "tool_called": false,
+        "pending": "city",
+        "rooms_on_screen": 10,
+        "reply_contains": [
+          "Which city"
+        ],
+        "reply_not_contains": [
+          "subscription",
+          "plan"
+        ]
+      }
+    }
+  ]
+}

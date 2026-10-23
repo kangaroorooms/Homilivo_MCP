@@ -1,0 +1,37 @@
+{
+  "id": "S41",
+  "title": "Session memory: personal questions the chat cannot answer stay out of scope",
+  "turns": [
+    {
+      "user": "my name is Faizal",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice to meet you!",
+        "user_facts": {
+          "name": "Faizal"
+        }
+      },
+      "expect": {
+        "facts": {
+          "name": "Faizal"
+        }
+      }
+    },
+    {
+      "user": "what's my bank balance",
+      "llm": {
+        "intent": "OUT_OF_SCOPE",
+        "confidence": 0.95,
+        "reply": "I can't help with that."
+      },
+      "expect": {
+        "intent": "OUT_OF_SCOPE",
+        "action": "out_of_scope",
+        "reply_contains": [
+          "I can only help with finding rooms"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "S7",
+  "title": "Platform question is answered by the knowledge base only",
+  "turns": [
+    {
+      "user": "how does homilivo make money",
+      "llm": {
+        "intent": "PLATFORM_INFO",
+        "confidence": 0.95,
+        "standalone_query": "How does Homilivo make money?"
+      },
+      "expect": {
+        "intent": "PLATFORM_INFO",
+        "action": "platform_info",
+        "tool_called": false,
+        "rooms_on_screen": 0,
+        "stub_reply_contains": [
+          "subscription"
+        ]
+      }
+    }
+  ]
+}

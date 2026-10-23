@@ -1,0 +1,45 @@
+{
+  "id": "S6",
+  "title": "'none of these are good' asks what to change",
+  "turns": [
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "none of these are good",
+      "llm": {
+        "intent": "REJECT_CURRENT",
+        "confidence": 0.95,
+        "standalone_query": "the shown rooms are not suitable"
+      },
+      "expect": {
+        "intent": "REJECT_CURRENT",
+        "action": "reject_current",
+        "tool_called": false,
+        "pending": "reject",
+        "rooms_on_screen": 10,
+        "reply_contains": [
+          "change"
+        ]
+      }
+    }
+  ]
+}

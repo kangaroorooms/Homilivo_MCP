@@ -1,0 +1,54 @@
+{
+  "id": "S60",
+  "title": "Conversation question: nothing in the chat -> fixed reply, never a guess",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "hello",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "what's my passport number?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": false,
+        "answer": "",
+        "evidence_turns": []
+      },
+      "expect": {
+        "reply_contains": [
+          "I don't have that in this chat."
+        ],
+        "action": "conversation_not_found",
+        "answer_called": true
+      }
+    },
+    {
+      "user": "what's my favourite food?",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.3
+      },
+      "answer": {
+        "found": false,
+        "answer": "Pizza.",
+        "evidence_turns": []
+      },
+      "expect": {
+        "reply_contains": [
+          "I don't have that in this chat."
+        ],
+        "action": "conversation_not_found",
+        "answer_called": true
+      }
+    }
+  ]
+}

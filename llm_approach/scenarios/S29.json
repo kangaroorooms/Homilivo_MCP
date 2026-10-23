@@ -1,0 +1,61 @@
+{
+  "id": "S29",
+  "title": "Session memory: name is remembered and recalled",
+  "turns": [
+    {
+      "user": "my name is Faizal",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice to meet you!",
+        "user_facts": {
+          "name": "Faizal"
+        }
+      },
+      "expect": {
+        "action": "facts_saved",
+        "intent": "GENERAL_CHAT",
+        "facts": {
+          "name": "Faizal"
+        },
+        "reply_contains": [
+          "Faizal"
+        ]
+      }
+    },
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true
+      }
+    },
+    {
+      "user": "what is my name?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "name"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "action": "recall_name",
+        "reply_contains": [
+          "Your name is Faizal."
+        ],
+        "reply_not_contains": [
+          "I can only help with finding rooms"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "S10",
+  "title": "Typo city, BHK and price cap are all validated and sent",
+  "turns": [
+    {
+      "user": "2bhk bangalor under 15k",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalor",
+          "bhk": 2,
+          "max_price": "15k"
+        }
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "search": {
+          "city": "Bangalore",
+          "bhk": 2,
+          "max_price": 15000
+        }
+      }
+    }
+  ]
+}

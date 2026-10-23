@@ -1,0 +1,29 @@
+{
+  "id": "S16",
+  "title": "Rooms API returns 500: friendly message, state unchanged (stub only)",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 0,
+        "rooms_shown": false,
+        "error_class": "http_500",
+        "reply_contains": [
+          "unavailable"
+        ]
+      }
+    }
+  ],
+  "stub_only": true,
+  "rooms_http_status": 500
+}

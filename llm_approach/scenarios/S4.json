@@ -1,0 +1,27 @@
+{
+  "id": "S4",
+  "title": "'i dont know' gets a clarifying question, not 'You're welcome!' and not a city search",
+  "turns": [
+    {
+      "user": "i dont know",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.4,
+        "needs_clarification": true,
+        "clarifying_question": "Could you tell me which city and budget you have in mind?"
+      },
+      "expect": {
+        "intent": "UNCLEAR",
+        "action": "clarify",
+        "tool_called": false,
+        "rooms_on_screen": 0,
+        "reply_contains": [
+          "city"
+        ],
+        "reply_not_contains": [
+          "welcome"
+        ]
+      }
+    }
+  ]
+}

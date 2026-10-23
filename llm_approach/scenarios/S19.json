@@ -1,0 +1,72 @@
+{
+  "id": "S19",
+  "title": "Area reply to the area question searches instead of repeating it",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "something in a different area",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.8,
+        "needs_clarification": true,
+        "clarifying_question": "Which area would you like?"
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "ask_area",
+        "tool_called": false,
+        "pending": "clarify",
+        "rooms_on_screen": 10,
+        "reply_contains": [
+          "Which area would you like?"
+        ]
+      }
+    },
+    {
+      "user": "koramangala",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "area": "Koramangala"
+        }
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "refinement",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 9,
+        "search": {
+          "city": "Bangalore",
+          "area": "Koramangala"
+        },
+        "reply_contains": [
+          "I found 9 rooms in Koramangala, Bangalore"
+        ],
+        "reply_not_contains": [
+          "Which area"
+        ]
+      }
+    }
+  ]
+}

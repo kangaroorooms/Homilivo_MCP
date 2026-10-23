@@ -1,0 +1,69 @@
+{
+  "id": "S36",
+  "title": "Session memory: two corrections in a row, the last one wins",
+  "turns": [
+    {
+      "user": "my name is Faizal",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice to meet you!",
+        "user_facts": {
+          "name": "Faizal"
+        }
+      },
+      "expect": {}
+    },
+    {
+      "user": "actually it's Ravi",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Got it!",
+        "user_facts": {
+          "name": "Ravi"
+        }
+      },
+      "expect": {
+        "facts": {
+          "name": "Ravi"
+        }
+      }
+    },
+    {
+      "user": "no wait, call me Arjun",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Got it!",
+        "user_facts": {
+          "name": "Arjun"
+        }
+      },
+      "expect": {
+        "facts": {
+          "name": "Arjun"
+        }
+      }
+    },
+    {
+      "user": "what is my name?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "name"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "Your name is Arjun."
+        ],
+        "reply_not_contains": [
+          "Faizal",
+          "Ravi"
+        ]
+      }
+    }
+  ]
+}

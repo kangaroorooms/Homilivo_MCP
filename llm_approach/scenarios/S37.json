@@ -1,0 +1,68 @@
+{
+  "id": "S37",
+  "title": "Session memory: the second query",
+  "turns": [
+    {
+      "user": "rooms in pune",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Pune"
+        },
+        "standalone_query": "find rooms in Pune"
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true
+      }
+    },
+    {
+      "user": "under 10k",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "max_price": 10000
+        }
+      },
+      "expect": {
+        "action": "refinement",
+        "tool_called": true
+      }
+    },
+    {
+      "user": "what was my second query",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "nth_query",
+        "recall_index": 2
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "action": "recall_nth_query",
+        "reply_contains": [
+          "Your second question was: \"under 10k\"."
+        ]
+      }
+    },
+    {
+      "user": "what was my 30th query",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "nth_query",
+        "recall_index": 30
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "You haven't sent that many messages yet."
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "id": "S20",
+  "title": "'rooms in koramangala' with a current city is an area search",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "rooms in koramangala",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore",
+          "area": "Koramangala"
+        }
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 9,
+        "search": {
+          "city": "Bangalore",
+          "area": "Koramangala"
+        }
+      }
+    },
+    {
+      "user": "rooms in adugodi",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "area": "Adugodi"
+        }
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 1,
+        "search": {
+          "city": "Bangalore",
+          "area": "Adugodi"
+        },
+        "reply_contains": [
+          "I found 1 room in Adugodi, Bangalore"
+        ]
+      }
+    }
+  ]
+}

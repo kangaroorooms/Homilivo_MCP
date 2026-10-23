@@ -1,0 +1,88 @@
+{
+  "id": "S22",
+  "title": "A budget refinement keeps the area; a new city clears it",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "koramangala",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "area": "Koramangala"
+        }
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "refinement",
+        "tool_called": true,
+        "rooms_on_screen": 9,
+        "search": {
+          "city": "Bangalore",
+          "area": "Koramangala"
+        }
+      }
+    },
+    {
+      "user": "under 15k",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "max_price": 15000
+        }
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "refinement",
+        "tool_called": true,
+        "search": {
+          "city": "Bangalore",
+          "area": "Koramangala",
+          "max_price": 15000
+        },
+        "reply_contains": [
+          "Koramangala, Bangalore"
+        ]
+      }
+    },
+    {
+      "user": "in pune",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Pune"
+        }
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "refinement",
+        "tool_called": true,
+        "search": {
+          "city": "Pune",
+          "area": null
+        }
+      }
+    }
+  ]
+}

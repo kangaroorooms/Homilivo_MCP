@@ -1,0 +1,50 @@
+{
+  "id": "S35",
+  "title": "Session memory: a mixed message stores the facts and runs the search",
+  "turns": [
+    {
+      "user": "I'm Faizal, 23, need a 2 BHK in Bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore",
+          "bhk": 2
+        },
+        "standalone_query": "find rooms in Bangalore",
+        "user_facts": {
+          "name": "Faizal",
+          "age": 23
+        }
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true,
+        "intent": "NEW_SEARCH",
+        "facts": {
+          "name": "Faizal",
+          "age": 23
+        },
+        "search": {
+          "city": "Bangalore"
+        },
+        "rooms_shown": true
+      }
+    },
+    {
+      "user": "what is my name?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "name"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "Your name is Faizal."
+        ]
+      }
+    }
+  ]
+}

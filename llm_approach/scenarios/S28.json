@@ -1,0 +1,87 @@
+{
+  "id": "S28",
+  "title": "Regression: area question, area reply, then budget keeps city and area (no Koramangala loop)",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10
+      }
+    },
+    {
+      "user": "something in a different area",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.8,
+        "needs_clarification": true,
+        "clarifying_question": "Which area would you like?"
+      },
+      "expect": {
+        "action": "ask_area",
+        "tool_called": false,
+        "pending": "clarify",
+        "reply_contains": [
+          "Which area would you like?"
+        ]
+      }
+    },
+    {
+      "user": "Koramangala",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "area": "Koramangala"
+        }
+      },
+      "expect": {
+        "action": "refinement",
+        "tool_called": true,
+        "search": {
+          "city": "Bangalore",
+          "area": "Koramangala"
+        },
+        "reply_contains": [
+          "Koramangala, Bangalore"
+        ],
+        "reply_not_contains": [
+          "Which area",
+          "already searching"
+        ]
+      }
+    },
+    {
+      "user": "under 15k",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "max_price": "15k"
+        }
+      },
+      "expect": {
+        "action": "refinement",
+        "tool_called": true,
+        "search": {
+          "city": "Bangalore",
+          "area": "Koramangala",
+          "max_price": 15000
+        },
+        "reply_not_contains": [
+          "Which area"
+        ]
+      }
+    }
+  ]
+}

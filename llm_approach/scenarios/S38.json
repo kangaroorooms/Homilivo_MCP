@@ -1,0 +1,445 @@
+{
+  "id": "S38",
+  "title": "Session memory: recall still works after 30+ turns (history is trimmed, memory is not)",
+  "turns": [
+    {
+      "user": "my name is Faizal",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice to meet you!",
+        "user_facts": {
+          "name": "Faizal"
+        }
+      },
+      "expect": {
+        "facts": {
+          "name": "Faizal"
+        }
+      }
+    },
+    {
+      "user": "2 BHK in Bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true
+      }
+    },
+    {
+      "user": "thanks 1",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 2",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 3",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 4",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 5",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 6",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 7",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 8",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 9",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 10",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 11",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 12",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 13",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 14",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 15",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 16",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 17",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 18",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 19",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 20",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 21",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 22",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 23",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 24",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 25",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 26",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 27",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 28",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 29",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 30",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 31",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 32",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "thanks 33",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "what's my name?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "name"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "Your name is Faizal."
+        ]
+      }
+    },
+    {
+      "user": "what was my first query?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "first_query"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "Your first question was: \"my name is Faizal\"."
+        ]
+      }
+    },
+    {
+      "user": "what was my first query regarding rooms?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "first_room_query"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "reply_contains": [
+          "\"2 BHK in Bangalore\""
+        ]
+      }
+    }
+  ]
+}

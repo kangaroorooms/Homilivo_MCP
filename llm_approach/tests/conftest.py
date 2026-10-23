@@ -45,6 +45,13 @@ class FakeGroq:
 
 
 @pytest.fixture(autouse=True)
+def _skip_secret_check(monkeypatch):
+    """Most tests start the app without real keys. The fail-fast secret check has its own tests
+    (test_phase2_wiring.py), which remove this variable."""
+    monkeypatch.setenv("LLM_APPROACH_SKIP_SECRET_CHECK", "1")
+
+
+@pytest.fixture(autouse=True)
 def _provider_env(monkeypatch):
     """The developer's own provider settings must not change a test: start from the defaults (Gemini)."""
     for name in ("LLM_APPROACH_PROVIDER", "LLM_APPROACH_GEMINI_MODEL", "LLM_APPROACH_GEMINI_SPACING_S",

@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-from llm_approach import config, reuse, responder, rooms_client
+from llm_approach import config, responder, reuse, rooms_client, switches, turn_context
 from llm_approach.actions import ActionResult, TurnBudget
-from llm_approach.actions.clarify import ASK_CITY
+from llm_approach.actions.clarify import ASK_CITY, state_aware_question
+from llm_approach.guardrails.parameter_guardrail import validate_search_arguments
 from llm_approach.schema import Decision
 from llm_approach.state import LLMConversationState
+
+logger = logging.getLogger(__name__)
 
 ASK_AREA = "Which area would you like?"
 ALL_SHOWN = (
@@ -81,6 +85,62 @@ def _city(search: dict[str, Any]) -> str:
     return str(search.get("city") or "the city").strip().title()
 
 
+# The guardrail's reason can echo a value, so only the argument name is logged. Prefix -> argument.
+_ARG_REASON_FIELDS = (
+    ("City", "city"),
+    ("Minimum price", "min_price"),
+    ("Maximum price", "max_price"),
+    ("Invalid room type", "room_types"),
+    ("Each room type", "room_types"),
+    ("Room types", "room_types"),
+    ("Duplicate room types", "room_types"),
+    ("Invalid ideal-for", "ideal_for"),
+    ("Each ideal-for", "ideal_for"),
+    ("Ideal-for", "ideal_for"),
+    ("Duplicate ideal-for", "ideal_for"),
+    ("Unexpected search parameter", "parameter"),
+    ("Sort", "sort"),
+    ("Invalid sort", "sort"),
+    ("Result limit", "limit"),
+)
+
+
+def guardrail_arguments(search: dict[str, Any]) -> dict[str, Any]:
+    """The search as the parameter guardrail reads it (the same values the rooms API gets)."""
+    room_types = rooms_client._room_types_param(search)
+    args: dict[str, Any] = {
+        "city": search.get("city"),
+        "min_price": search.get("min_price"),
+        "max_price": search.get("max_price"),
+        "room_types": room_types.split(",") if room_types else None,
+        "ideal_for": [search["ideal_for"]] if search.get("ideal_for") else None,
+        "sort": config.ROOMS_SORT,
+    }
+    return {k: v for k, v in args.items() if v is not None}
+
+
+def _check_arguments(search: dict[str, Any], state: LLMConversationState, action: str) -> ActionResult | None:
+    """Second line of defence after ``validators.validate_slots``: ask instead of searching."""
+    if not switches.search_arg_check():
+        return None
+    valid, reason = validate_search_arguments(guardrail_arguments(search))
+    if valid:
+        return None
+    field = next((name for prefix, name in _ARG_REASON_FIELDS if reason.startswith(prefix)), "unknown")
+    logger.warning(
+        "search arguments rejected field=%s request_id=%s session=%s",
+        field, turn_context.request_id(), turn_context.session_hash(),
+    )
+    state.set_pending("clarify")
+    if field in ("min_price", "max_price"):
+        reply = "I didn't catch the budget. Could you say it again?"
+    elif field == "room_types":
+        reply = "I didn't catch the number of BHK. Could you say it again?"
+    else:
+        reply = state_aware_question(state)
+    return ActionResult(reply, None, "ask_slot")
+
+
 def _run_search(
     search: dict[str, Any],
     state: LLMConversationState,
@@ -91,6 +151,9 @@ def _run_search(
     """Call the rooms API once with validated values (amenity included) and update state.
     ``page`` > 1 is SHOW_MORE: the page's rooms replace the ones on screen."""
     more = page > 1
+    rejected = _check_arguments(search, state, action)
+    if rejected is not None:
+        return rejected
     result = rooms_client.search_rooms(search, budget, page=page)
     if not result.ok:
         state.apply_search_result(search, None)  # keeps previous state

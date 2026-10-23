@@ -1,5 +1,5 @@
 # Copied from app/observability.py at commit 7dbcba3 (copied, not imported).
-# Changes: none
+# Changes: added a room_data_rejections counter (marked '# v2:')
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -60,6 +60,7 @@ class _MetricsRegistry:
         self.error_count = 0
         self.tool_failures = 0
         self.rate_limit_events = 0
+        self.room_data_rejections = 0  # v2: counter for the API data guardrail
         self.status_counts: dict[str, int] = {}
         self.api_latencies_ms: deque[float] = deque(maxlen=500)
         self.llm_latencies_ms: deque[float] = deque(maxlen=500)
@@ -87,6 +88,10 @@ class _MetricsRegistry:
         with self._lock:
             self.llm_latencies_ms.append(latency_ms)
 
+    def record_room_data_rejection(self) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.room_data_rejections += 1  # v2: added
+
     def record_rate_limit_event(self) -> None:
         with self._lock:
             self.rate_limit_events += 1
@@ -112,6 +117,7 @@ class _MetricsRegistry:
                 "error_count": self.error_count,
                 "tool_failures": self.tool_failures,
                 "rate_limit_events": self.rate_limit_events,
+                "room_data_rejections": self.room_data_rejections,  # v2: added
                 "status_counts": dict(self.status_counts),
                 "api_latency": _latency_stats(self.api_latencies_ms),
                 "llm_latency": _latency_stats(self.llm_latencies_ms),
@@ -211,6 +217,11 @@ def record_llm_latency(latency_ms: float, model: str) -> None:
     """One call per LLM generation call (qwen/gemma/groq)."""
     _metrics.record_llm_latency(latency_ms)
     logger.info("llm_call model=%s latency_ms=%.1f", model, latency_ms)
+
+
+def record_room_data_rejection() -> None:  # v2: new
+    """One call whenever validate_room_data rejects a rooms API response."""  # v2: added
+    _metrics.record_room_data_rejection()  # v2: added
 
 
 def record_rate_limit_event() -> None:

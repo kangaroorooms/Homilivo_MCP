@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from llm_approach import config, gemini_limits, prompts, providers
+from llm_approach import config, gemini_limits, observability, prompts, providers
 from llm_approach.schema import Decision, parse_decision
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ class LLMBudget:
     def record_latency(self, ms: float) -> None:
         self.latency_ms += ms
         self.call_ms.append(ms)
+        _observe_latency(ms)
 
     def try_consume(self) -> bool:
         if self.calls >= self.max_calls:
@@ -87,6 +88,23 @@ async def _complete(
     return c.text, c.tokens_in, c.tokens_out, c.cached, c
 
 
+def _observe_latency(ms: float) -> None:
+    """Feed the production latency metric (provider and model names only). Never raises."""
+    try:
+        observability.record_llm_latency(ms, config.model())
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _observe_usage(messages: list[dict[str, str]], completion_text: str) -> None:
+    """Feed the production usage estimate; it keeps token counts only, no text. Never raises."""
+    try:
+        prompt_text = "\n".join(str(m.get("content", "")) for m in messages)
+        observability.record_llm_usage(config.provider(), config.model(), prompt_text, completion_text)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _add_usage(budget: LLMBudget, tokens_in: int, tokens_out: int, cached: int | None, c: providers.Completion) -> None:
     budget.tokens_in += tokens_in
     budget.tokens_out += tokens_out  # includes Gemini thinking tokens
@@ -127,6 +145,7 @@ async def decide(
         budget.record_latency(latency_ms)
         _add_usage(budget, tokens_in, tokens_out, cached, completion)
 
+        _observe_usage(messages, raw)
         decision = parse_decision(raw)
         if decision is not None:
             logger.info(
@@ -169,5 +188,6 @@ async def generate_json(messages: list[dict[str, str]], budget: LLMBudget) -> st
     latency_ms = (time.perf_counter() - started) * 1000
     budget.record_latency(latency_ms)
     _add_usage(budget, tokens_in, tokens_out, cached, completion)
+    _observe_usage(messages, raw)
     logger.info("llm_answer latency_ms=%.0f tokens_in=%d tokens_out=%d", latency_ms, tokens_in, tokens_out)
     return raw

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,9 +23,12 @@ from llm_approach import (
     fallback,
     llm_client,
     metrics as metrics_mod,
+    observability,
     prompts,
     responder,
     reuse,
+    switches,
+    turn_context,
     validators,
 )
 from llm_approach.actions import ActionResult, TurnBudget, clarify, conversation, followup, platform, recall, search
@@ -65,6 +69,13 @@ def configure(*, full_guardrails: bool = True) -> None:
     ``extra_security`` runs. For quick local tests, never for evaluation."""
     global _full_guardrails
     _full_guardrails = full_guardrails
+
+
+def configure_production() -> None:
+    """Everything a server must run with: the full input/output guardrails, the rooms API data check
+    and the search-argument check. ``server_app`` calls this at startup."""
+    configure(full_guardrails=True)
+    switches.configure(room_data_check=True, search_arg_check=True)
 
 
 def get_store() -> SessionStore:
@@ -108,6 +119,45 @@ def _output_ok(reply: str) -> bool:
 
 def _ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000
+
+
+def _status_for(m: metrics_mod.TurnMetrics) -> tuple[str, str | None]:
+    """Map a finished turn to observability's vocabulary: success | blocked | error, plus a category."""
+    blocked = {
+        "empty": "empty_message",
+        "too_long": "message_too_long",
+        "security_block": "security_hard_block",
+        "output_blocked": "output_guardrail",
+    }
+    if m.action in blocked:
+        return "blocked", blocked[m.action]
+    if m.action == "error":
+        return "error", "unhandled_exception"
+    if m.error_class:
+        return "error", m.error_class
+    return "success", None
+
+
+def _record_observability(
+    request_id: str, session_id: str, mode: str, m: metrics_mod.TurnMetrics, latency_ms: float
+) -> None:
+    """One observability.record_turn per turn: ids, names and numbers only. Never raises."""
+    try:
+        status, category = _status_for(m)
+        pre_llm = m.action in ("empty", "too_long", "security_block")
+        observability.record_turn(
+            request_id=request_id,
+            session_id=turn_context.hash_session_id(session_id),
+            intent="OUT_OF_SCOPE" if pre_llm else m.intent,
+            operation=m.operation,
+            tool="search_rooms" if m.tool_called else None,
+            mode=mode,
+            status=status,
+            error_category=category,
+            latency_ms=latency_ms,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("observability failed: %s", type(exc).__name__)
 
 
 def _log_withheld(store: SessionStore, session_id: str, reply: str) -> None:
@@ -311,6 +361,9 @@ async def handle_turn(
     m = metrics_mod.TurnMetrics()
     store = store or get_store()
     text = message if isinstance(message, str) else ""
+    request_id = turn_context.requested_request_id() or str(uuid.uuid4())
+    mode = turn_context.requested_mode() or "fast"
+    ctx = turn_context.begin(request_id, session_id)
 
     try:
         if not text.strip():
@@ -361,3 +414,5 @@ async def handle_turn(
     finally:
         m.total_ms = m.total_ms or _ms(started)
         metrics_mod.record(m)
+        _record_observability(request_id, session_id, mode, m, m.total_ms)
+        turn_context.end(ctx)

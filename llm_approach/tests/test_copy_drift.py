@@ -78,6 +78,8 @@ def _drift(source_lines: list[str], copy_lines: list[str], label: str) -> list[s
         if tag == "delete":
             removed += a1 - a0
             continue
+        if tag == "insert" and not any(ln.strip() for ln in kept[b0:b1]):
+            continue  # blank lines around a block added with '# v2:' lines
         problems.append(f"{label}: source lines {a0 + 1}-{a1} differ from copy: {source_lines[a0:a1]!r} vs {kept[b0:b1]!r}")
     if removed > len(v2_lines):
         problems.append(f"{label}: {removed} source lines are missing from the copy but only {len(v2_lines)} are marked '# v2:'")

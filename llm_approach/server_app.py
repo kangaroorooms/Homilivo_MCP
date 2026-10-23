@@ -34,7 +34,8 @@ from pydantic import BaseModel, Field
 
 from pathlib import Path
 
-from llm_approach import config, pipeline, responder, reuse
+from llm_approach import config, pipeline, responder, reuse, switches, turn_context
+from llm_approach.security.secrets_check import validate_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ SERVER_ERROR_REPLY = "Something went wrong on our side, please try again."
 WS_MAX_MESSAGE_LENGTH = 500
 VALID_MODES = ("fast", "qwen", "gemma", "groq")
 SKIP_PRELOAD_ENV = "LLM_APPROACH_SKIP_PRELOAD"
+SKIP_SECRET_CHECK_ENV = "LLM_APPROACH_SKIP_SECRET_CHECK"  # tests only: never set it on a real server
 CORS_ENV = "LLM_APPROACH_CORS_ORIGINS"
 
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
@@ -117,14 +119,24 @@ def _preload_blocking() -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    logging.getLogger("uvicorn.access").addFilter(_RedactTokenFilter())
-    provider, model = config.label()
-    logger.info("llm provider=%s model=%s key_present=%s", provider, model, _llm_key_present())  # never the key
-    if _env_flag(SKIP_PRELOAD_ENV):
-        logger.info("startup preload skipped by %s", SKIP_PRELOAD_ENV)
+    if _env_flag(SKIP_SECRET_CHECK_ENV):
+        logger.warning("secret check skipped by %s: do not use this on a real server", SKIP_SECRET_CHECK_ENV)
     else:
-        await asyncio.to_thread(_preload_blocking)
-    yield
+        validate_secrets()  # refuses to start when the provider key or KANGAROO_TOKEN is missing (names only, never values)
+    before = (pipeline._full_guardrails, switches.snapshot())
+    pipeline.configure_production()  # full guardrails + room data check + search-argument check, for this app's lifetime
+    try:
+        logging.getLogger("uvicorn.access").addFilter(_RedactTokenFilter())
+        provider, model = config.label()
+        logger.info("llm provider=%s model=%s key_present=%s", provider, model, _llm_key_present())  # never the key
+        if _env_flag(SKIP_PRELOAD_ENV):
+            logger.info("startup preload skipped by %s", SKIP_PRELOAD_ENV)
+        else:
+            await asyncio.to_thread(_preload_blocking)
+        yield
+    finally:
+        pipeline.configure(full_guardrails=before[0])
+        switches.configure(**before[1])
 
 
 # ---- models (same fields and types as the current backend) ---------------------
@@ -174,8 +186,9 @@ def normalize_session_id(candidate: Any) -> str:
     return str(uuid.uuid4())
 
 
-async def run_turn(session_id: str, message: str) -> pipeline.TurnResult:
+async def run_turn(session_id: str, message: str, mode: str = "fast") -> pipeline.TurnResult:
     """One pipeline turn. Never raises: any escape becomes a normal bot message."""
+    turn_context.set_requested(str(uuid.uuid4()), mode)  # read by handle_turn (observability) and build_done
     try:
         return await pipeline.handle_turn(session_id, message)
     except Exception as exc:  # noqa: BLE001
@@ -192,7 +205,7 @@ def build_done(turn: pipeline.TurnResult, session_id: str, mode: str) -> dict[st
     return {
         "success": bool(turn.success),
         "session_id": session_id,
-        "request_id": str(uuid.uuid4()),
+        "request_id": turn_context.requested_request_id() or str(uuid.uuid4()),  # the id pipeline.handle_turn recorded
         "mode": mode,
         "message": turn.reply,
         "room_count": len(rooms),
@@ -286,7 +299,7 @@ def create_app() -> FastAPI:
         session_id = normalize_session_id(request.session_id)
         if request.session_id:
             _session_limit(session_id)
-        turn = await run_turn(session_id, request.message)
+        turn = await run_turn(session_id, request.message, request.mode)
         return ChatResponse(**build_done(turn, session_id, request.mode))
 
     @app.post("/chat/reset")
@@ -349,7 +362,7 @@ def create_app() -> FastAPI:
                     continue
 
                 await websocket.send_json({"event": "typing"})
-                turn = await run_turn(session_id, message)
+                turn = await run_turn(session_id, message, mode)
                 done = build_done(turn, session_id, mode)
 
                 delay = _float_env("STREAM_CHUNK_DELAY_SECONDS", 0.02)

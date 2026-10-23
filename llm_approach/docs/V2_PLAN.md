@@ -113,11 +113,23 @@ Seven phases, each ending in a check that must pass before the next starts. Dura
 | --- | --- | --- | --- |
 | 0. Branch, baseline, inventory | Commit the counter fix; cut experiment/llm-approach_v2; read-only inventory of every app/ component in the diagram (file, functions, imports, tests, config, external dependencies); record the v1 baseline (prompt 20f328e351bb: pooled 94.0%, ctxY 69.7%) | Inventory reviewed; no code changed | 1 day |
 | 1. Copy unchanged (part A done: output, parameter and API data guardrails, demo_auth, rate_limit, fast_parser, observability, prompt_safety, secrets_check; input guardrail, embeddings and RAG wait for decisions) | Copy the input, output and parameter guardrails, the API data guardrail, demo_auth, rate_limit and the delimiter neutraliser into the new folders with provenance headers; switch imports away from reuse.py; copy their app/ tests; add the drift test. Nothing is wired in yet | All tests pass (1,369 + copied ones); safety 43/43, 0/144, 6/6; parity identical; none of these modules imported from app/ | 1 day |
-| 2. Wire the missing protections | API data guardrail on every Rooms API response; fail-fast secret check at startup; semantic gate in shadow mode | Robustness 7/7 plus new cases; new tests for each guard; shadow report with 0 would-be blocks on the 144 general and 166 eval messages | 2 days |
+| 2. Wire the missing protections (**done for secrets, API data check, parameter check, observability**; semantic gate still open) | API data guardrail on every Rooms API response; fail-fast secret check at startup; semantic gate in shadow mode | Robustness 7/7 plus new cases; new tests for each guard; shadow report with 0 would-be blocks on the 144 general and 166 eval messages | 2 days |
 | 3. Parameter guardrail and MCP tool | Replace validate_slots with the copied parameter guardrail (side-by-side comparison first); route searches through the copied MCP tool call | Invalid-search rate 0; golden_slots at least 96.5% of fields; rooms tests pass | 1 day |
 | 4. RAG and orchestration shell | Copy the RAG path for PLATFORM_INFO; LangGraph router (if D1); different-city rule (if D4) | Stub scenarios 300/300; parity on unchanged paths; platform answers come from RAG | 2 days |
 | 5. Live validation | Five evaluation sets on v2; consistency (3 runs); live scenarios; held-out set (if approved) | Every quality gate in the next section | 2 days |
 | 6. Docs and review | README, pipeline PDF, evaluation report and Overleaf report updated; draft PR from the v2 branch | Team lead and Rudrakash Sir approve | 1 day |
+
+## Phase 2 status (wired, 1,481 tests passing)
+
+| Stage | Wired | Where |
+| --- | --- | --- |
+| 3 Authentication | fail-fast secret check at startup | server_app._lifespan calls secrets_check.validate_secrets |
+| 9 Parameter guardrail | **done** as the second line after validate_slots (D3) | actions/search._check_arguments, before the rooms API call |
+| 12 API guardrail | **done**: one bad room rejects the whole result; failing field logged, counter kept | rooms_client._search_rooms |
+| 16 Observability | **done**: one record_turn per turn, LLM latency and usage, rooms API latency | pipeline.handle_turn, llm_client, rooms_client |
+| Production switch | pipeline.configure_production() at server start | server_app._lifespan |
+
+Still open: the semantic input gate (D2), RAG copy (stage 6), MCP/search tool (stage 10), LangGraph (D1), the copied input guardrail. Known gaps from Phase 2: (1) the parameter guardrail accepts only PG, 1BHK, 2BHK, 3BHK, 1RK and SINGLE, so a 4 or 5 BHK search (allowed by validators.py) now asks again instead of searching: team-lead decision; (2) the API data guardrail's closed idealFor and availability lists may reject real rooms, so check a live sample before go-live; (3) eight older tests build rooms that lack required fields, so the two new checks are off by default and on only under configure_production().
 
 ## Quality gates
 

@@ -22,8 +22,9 @@ from typing import Any, Callable
 
 import httpx
 
-from llm_approach import config
+from llm_approach import config, observability, switches, turn_context
 from llm_approach.actions import TurnBudget
+from llm_approach.guardrails.api_data_guardrail import validate_room_data
 from llm_approach.state import clean_room
 
 logger = logging.getLogger(__name__)
@@ -309,6 +310,40 @@ def parse_meta(body: Any) -> tuple[int | None, bool | None]:
     return total, has_next
 
 
+# The guardrail's reason can hold a room id or a value, so only the field name is logged. Prefix -> field.
+_ROOM_REASON_FIELDS = (
+    ("Invalid room data format", "rooms"),
+    ("Invalid room record", "rooms"),
+    ("Invalid room ID", "id"),
+    ("Invalid title", "title"),
+    ("Invalid city", "city"),
+    ("Invalid price", "pricePerMonth"),
+    ("Invalid negative price", "pricePerMonth"),
+    ("Invalid room type", "roomType"),
+    ("Invalid idealFor", "idealFor"),
+    ("Invalid location", "location"),
+    ("Invalid availability status", "availabilityStatus"),
+    ("Invalid images", "images"),
+    ("Invalid image URL", "images"),
+    ("Invalid rating", "rating"),
+    ("Rating must be", "rating"),
+    ("Invalid review count", "reviewsCount"),
+    ("Review count cannot", "reviewsCount"),
+)
+_MISSING_PREFIX = "Room data missing required field: "
+
+
+def failing_field(reason: str) -> tuple[str, str]:
+    """``(field, kind)`` for a ``validate_room_data`` reason. Never returns the reason text itself."""
+    if reason.startswith(_MISSING_PREFIX):
+        name = reason[len(_MISSING_PREFIX):].strip()
+        return (name if re.fullmatch(r"\w{1,40}", name) else "unknown"), "missing"
+    for prefix, name in _ROOM_REASON_FIELDS:
+        if reason.startswith(prefix):
+            return name, "invalid"
+    return "unknown", "invalid"
+
+
 def _fail(error_class: str, status: int | None = None, message: str | None = None) -> RoomsResult:
     # Status, class and the API's own `message` only. Never headers or token.
     logger.error("rooms api failure status=%s class=%s message=%s", status, error_class, message)
@@ -316,6 +351,27 @@ def _fail(error_class: str, status: int | None = None, message: str | None = Non
 
 
 def search_rooms(
+    search: dict[str, Any],
+    budget: TurnBudget,
+    *,
+    limit: int | None = None,
+    page: int = 1,
+    http_get: HttpGet | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    jitter: Callable[[float, float], float] = random.uniform,
+) -> RoomsResult:
+    """Run one search and record its latency (live API only, not the offline fixture)."""
+    started = time.monotonic()
+    result = _search_rooms(search, budget, limit=limit, page=page, http_get=http_get, sleep=sleep, jitter=jitter)
+    if offline_path() is None:
+        try:
+            observability.record_api_latency((time.monotonic() - started) * 1000, result.ok)
+        except Exception:  # noqa: BLE001 - metrics never break a search
+            pass
+    return result
+
+
+def _search_rooms(
     search: dict[str, Any],
     budget: TurnBudget,
     *,
@@ -367,6 +423,15 @@ def search_rooms(
     rooms = extract_rooms(raw.body)
     if rooms is None:
         return _fail("bad_payload", raw.status_code, _error_message(raw.body, search, token))
+    valid, reason = validate_room_data(rooms) if switches.room_data_check() else (True, "")  # one bad room rejects the whole result
+    if not valid:
+        field_name, kind = failing_field(reason)
+        observability.record_room_data_rejection()
+        logger.warning(
+            "rooms api data rejected field=%s reason=%s request_id=%s session=%s",
+            field_name, kind, turn_context.request_id(), turn_context.session_hash(),
+        )
+        return _fail("invalid_room_data", raw.status_code)
     total, has_next = parse_meta(raw.body)
     return _finish(
         rooms,

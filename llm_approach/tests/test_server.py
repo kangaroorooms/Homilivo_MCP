@@ -30,7 +30,7 @@ CARD_KEYS = {"id", "title", "city", "location", "price_per_month", "room_type", 
 
 @pytest.fixture(autouse=True)
 def server_env(monkeypatch):
-    from app.rate_limit import InMemoryRateLimiter
+    from llm_approach.security.rate_limit import InMemoryRateLimiter  # v2: was: from app.rate_limit import InMemoryRateLimiter
 
     monkeypatch.setenv(server_app.SKIP_PRELOAD_ENV, "1")
     monkeypatch.setenv("STREAM_CHUNK_DELAY_SECONDS", "0")
@@ -138,7 +138,7 @@ def test_chat_requires_authorization_and_valid_body(client, monkeypatch):
 
 def test_chat_rate_limit_gives_429_with_retry_after(client, monkeypatch):
     stub_turn(monkeypatch)
-    from app.rate_limit import RateLimitResult
+    from llm_approach.security.rate_limit import RateLimitResult  # v2: was: from app.rate_limit import RateLimitResult
 
     monkeypatch.setattr(server_app._rl, "check_rate_limit", lambda key: RateLimitResult(False, 0, 4.0))
     r = client.post("/chat", json={"message": "hi"}, headers={"Authorization": "Bearer x"})
@@ -225,7 +225,7 @@ def test_ws_missing_token_closes_4401(client):
 
 
 def test_ws_rate_limit_closes_4429(client, monkeypatch):
-    from app.rate_limit import RateLimitResult
+    from llm_approach.security.rate_limit import RateLimitResult  # v2: was: from app.rate_limit import RateLimitResult
 
     monkeypatch.setattr(server_app._rl, "check_rate_limit", lambda key: RateLimitResult(False, 0, 4.0))
     with pytest.raises(WebSocketDisconnect) as info:
@@ -298,7 +298,7 @@ def test_ws_bad_json_and_non_object_keep_connection_open(client, monkeypatch):
 
 def test_ws_per_turn_rate_limit_is_an_error_event(client, monkeypatch):
     stub_turn(monkeypatch)
-    from app.rate_limit import RateLimitResult
+    from llm_approach.security.rate_limit import RateLimitResult  # v2: was: from app.rate_limit import RateLimitResult
 
     ok = RateLimitResult(True, 1, 0.0)
     answers = iter([ok, RateLimitResult(False, 0, 3.0)])  # connect passes, first turn is limited

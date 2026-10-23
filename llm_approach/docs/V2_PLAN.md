@@ -49,17 +49,17 @@ Every guardrail and security stage of the plan already exists in app/ and is cop
 | # | Planned stage | llm_approach today | v2 plan | Source in app/ |
 | --- | --- | --- | --- | --- |
 | 1 | React Chatbot, WebSocket | Unchanged frontend, start-frontend-llm.ps1 | Unchanged | Frontend repo |
-| 2 | FastAPI /ws/chat | Own server_app.py | Keep server_app.py; copy the 500-character cap, session id check and token log redaction | api.py: ChatRequest, _run_chat_turn, _normalize_session_id, _RedactTokenFilter |
-| 3 | Authentication | demo_auth and rate_limit imported through reuse.py | Copy both; add the fail-fast secret check, adapted to require GEMINI_API_KEY and KANGAROO_TOKEN | demo_auth.py, rate_limit.py, api.validate_secrets |
-| 4 | Input Guardrail | Security hard block imported, plus extra_security.py; semantic gate not used | Copy input_guardrail.py whole; hard block and extra_security before the LLM as today; add the semantic gate with conversation context (decision D2) | input_guardrail.py: is_security_blocked, validate_user_input |
+| 2 | FastAPI /ws/chat | Own server_app.py, which already has its own `_RedactTokenFilter` and `ChatRequest` (500-character cap) | Keep server_app.py; `_normalize_session_id` is copied to security/secrets_check.py (Phase 1) and wired in Phase 2 | api.py: _normalize_session_id (the filter and ChatRequest already match) |
+| 3 | Authentication | demo_auth and rate_limit imported through reuse.py | Copy both (done in Phase 1); add the fail-fast secret check, requiring GEMINI_API_KEY (or GROQ_API_KEY when the provider is groq) and KANGAROO_TOKEN; wiring into server_app.py is Phase 2 | demo_auth.py, rate_limit.py, api.validate_secrets |
+| 4 | Input Guardrail | Security hard block imported, plus extra_security.py; semantic gate not used | Copy input_guardrail.py whole; hard block and extra_security before the LLM as today. **The semantic gate has no conversation-context parameter and wrongly blocks follow-ups** ("does it have wifi", "show cheaper ones", "under 15k"), so D2 must define a gating rule first, for example: gate only when no rooms are on screen and no question is pending; shadow mode first (decision D2) | input_guardrail.py: is_security_blocked, validate_user_input |
 | 5 | LangGraph Router | Keyword router replaced by one LLM decision, validators.py and a dispatcher in pipeline.py | **Replaced**: the router node becomes the LLM decision (prompt, schema-checked JSON, confidence threshold), routing by validated intent (decision D1) | Graph shell only; keyword routing not reused |
-| 6 | FAQ/RAG | actions/platform.py answers PLATFORM_INFO from knowledge-base text | Copy the app/ RAG retriever and answer path; PLATFORM_INFO routes to it | RAG module (name confirmed in Phase 0) |
+| 6 | FAQ/RAG | actions/platform.py answers PLATFORM_INFO through app/knowledge, reached by reuse.py | **Copy and decouple**: llm_approach already uses app/knowledge through reuse.py, so copy the retriever, answer path, embeddings.py and the documents (rag/documents/) and give v2 its own CHROMA_PERSIST_DIR | app/knowledge/, app/embeddings.py |
 | 7 | Conversation | conversation.py, clarify.py, recall.py, conversation_answerer.py | **Keep** (memory, recall and verified chat answers are new); keep the reused fact-grounding and injection-defence prompt rules | agent_modes: FACT_GROUNDING_RULE, PROMPT_INJECTION_DEFENSE_RULE |
 | 8 | API Request, Pydantic Extraction | Slots extracted inside the LLM decision (schema.py, Pydantic) | **Keep**: the decision call is the extraction step, so one call, not two | None |
 | 9 | Parameter Guardrail | Re-implemented as validators.validate_slots | Copy parameter_guardrail.py as the single slot check; validators.py keeps only LLM-specific checks (allowed intent, room index, confidence) | parameter_guardrail.validate_search_arguments |
-| 10 | MCP Tool | rooms_client.py calls the Rooms API directly | Copy the MCP tool call with its timeout, so search uses the same path as production | agent_modes._call_search_rooms_with_timeout + MCP client |
+| 10 | MCP Tool | rooms_client.py calls the Rooms API directly | **Needs a decision**: (a) copy app/server.py and add the mcp package, or (b) keep rooms_client.py and copy only the timeout and token behaviour (**recommended: b**) | agent_modes._call_search_rooms_with_timeout, app/server.py |
 | 11 | Homilivo API | Rooms API GET | Unchanged | None |
-| 12 | API Guardrail | Not used; only a field allowlist and sanitiser in state.clean_room | Copy api_data_guardrail.py; run validate_room_data on every Rooms API response before rooms reach state or the prompt | api_data_guardrail.validate_room_data, sanitize_room_for_llm_context |
+| 12 | API Guardrail | Not used; only a field allowlist and sanitiser in state.clean_room | Copy api_data_guardrail.py (done in Phase 1); run validate_room_data on every Rooms API response before rooms reach state or the prompt. **validate_room_data rejects the whole result on one bad room**, so log the failing field when it is wired in. `sanitize_room_for_llm_context` is in agent_modes, not api_data_guardrail, and is copied to prompt_safety.py | api_data_guardrail.validate_room_data; agent_modes.sanitize_room_for_llm_context |
 | 13 | Response Generation | Templates per action; the LLM only drafts chat-memory answers, verified in code | **Keep**; delimiter neutraliser copied (already wrapped) | agent_modes._neutralize_prompt_delimiters |
 | 14 | Output Guardrail | validate_ai_response imported through reuse.py | Copy output_guardrail.py unchanged | output_guardrail.validate_ai_response |
 | 15 | Session state (not drawn) | state.py: rooms, filters, pending question, transcript, facts, queries, per-session lock | **Keep** | None |
@@ -80,8 +80,11 @@ Target folder layout:
 
 ```
 llm_approach/
-  guardrails/   input_guardrail.py  parameter_guardrail.py  api_data_guardrail.py  output_guardrail.py
+  guardrails/   common.py  input_guardrail.py  parameter_guardrail.py  api_data_guardrail.py  output_guardrail.py
   security/     demo_auth.py  rate_limit.py  secrets_check.py
+  prompt_safety.py   (pure symbols extracted from agent_modes: neutraliser, sanitiser, rules, response strings)
+  fast_parser.py  embeddings.py  observability.py
+  rag/documents/     (knowledge-base documents; own CHROMA_PERSIST_DIR)
   tools/        mcp_search.py
   rag/          (the app/ FAQ/RAG module and its helpers)
   graph/        router.py   (LangGraph shell, if decision D1 is approved)
@@ -109,7 +112,7 @@ Seven phases, each ending in a check that must pass before the next starts. Dura
 | Phase | Work | Exit criterion | Estimate |
 | --- | --- | --- | --- |
 | 0. Branch, baseline, inventory | Commit the counter fix; cut experiment/llm-approach_v2; read-only inventory of every app/ component in the diagram (file, functions, imports, tests, config, external dependencies); record the v1 baseline (prompt 20f328e351bb: pooled 94.0%, ctxY 69.7%) | Inventory reviewed; no code changed | 1 day |
-| 1. Copy unchanged | Copy the input, output and parameter guardrails, the API data guardrail, demo_auth, rate_limit and the delimiter neutraliser into the new folders with provenance headers; switch imports away from reuse.py; copy their app/ tests; add the drift test. Nothing is wired in yet | All tests pass (1,369 + copied ones); safety 43/43, 0/144, 6/6; parity identical; none of these modules imported from app/ | 1 day |
+| 1. Copy unchanged (part A done: output, parameter and API data guardrails, demo_auth, rate_limit, fast_parser, observability, prompt_safety, secrets_check; input guardrail, embeddings and RAG wait for decisions) | Copy the input, output and parameter guardrails, the API data guardrail, demo_auth, rate_limit and the delimiter neutraliser into the new folders with provenance headers; switch imports away from reuse.py; copy their app/ tests; add the drift test. Nothing is wired in yet | All tests pass (1,369 + copied ones); safety 43/43, 0/144, 6/6; parity identical; none of these modules imported from app/ | 1 day |
 | 2. Wire the missing protections | API data guardrail on every Rooms API response; fail-fast secret check at startup; semantic gate in shadow mode | Robustness 7/7 plus new cases; new tests for each guard; shadow report with 0 would-be blocks on the 144 general and 166 eval messages | 2 days |
 | 3. Parameter guardrail and MCP tool | Replace validate_slots with the copied parameter guardrail (side-by-side comparison first); route searches through the copied MCP tool call | Invalid-search rate 0; golden_slots at least 96.5% of fields; rooms tests pass | 1 day |
 | 4. RAG and orchestration shell | Copy the RAG path for PLATFORM_INFO; LangGraph router (if D1); different-city rule (if D4) | Stub scenarios 300/300; parity on unchanged paths; platform answers come from RAG | 2 days |
@@ -150,6 +153,20 @@ The biggest risk is the semantic gate blocking legitimate follow-ups; shadow mod
 | ctxY gain is partly tuned | Accuracy overstated | Held-out context set written before looking at model answers |
 | Gemini free-tier quota | Runs stop partway | Rolling 24-hour counter, per-day run plan, resume after interruption |
 
+## Production readiness beyond guardrails
+
+Guardrails are not enough for production. Each item is marked with who must act.
+
+| Item | Detail | Type |
+| --- | --- | --- |
+| LLM provider for production | The Gemini free tier allows 500 requests a day, and its prompts may be used by Google. Production needs a paid key, or Groq as primary | needs team-lead decision |
+| Failure handling | When the LLM times out, returns 429 or gives bad JSON twice: provider fallback, then a fixed polite message, plus an alert | engineering task |
+| Sessions in Redis | Use Redis instead of memory (STATE_BACKEND exists in app/) so sessions survive restarts and work across several servers | engineering task |
+| Load test | About 20 concurrent users: check session locks and the rate limit | engineering task |
+| Latency | p95 is 3.26 s against the 3 s target | engineering task |
+| Frontend wiring | Point the frontend at the v2 server | engineering task |
+| Evaluation after every phase | Rerun the full evaluation: pooled at least 92%, invalid searches 0, safety unchanged | rule |
+
 ## Decisions needed from the team lead
 
 - [x] Branch: experiment/llm-approach_v2, cut from experiment/llm-approach so the llm_approach/ work carries over (name left to us)
@@ -158,3 +175,5 @@ The biggest risk is the semantic gate blocking legitimate follow-ups; shadow mod
 - [ ] D4: a different city with rooms on screen starts a fresh search, without the old filters
 - [ ] The quality gates above, especially the 2-point tolerance on accuracy
 - [ ] Approval to build the held-out context set
+- [ ] Stage 10: copy app/server.py and add the mcp package, or keep rooms_client.py and copy only the timeout and token behaviour (recommended)
+- [ ] LLM provider for production: paid Gemini key, or Groq as primary

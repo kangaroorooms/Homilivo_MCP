@@ -979,7 +979,8 @@ python -m llm_approach.smoke_gemini                      # ONE live request, see
 | `GEMINI_API_KEY` | none | read from the environment only; a missing or blank key raises the same non-secret `KeyError("GEMINI_API_KEY")` as Groq, before any request |
 | `LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET` | unset | **our own safety cap** (Google lists no daily token limit) in tokens per day for the live evaluation; **unset means `run_eval --dataset ...` and `run_scenarios --live` refuse to start** and name this variable |
 | `LLM_APPROACH_GEMINI_SPACING_S` | `5` (minimum `4`) | seconds between live evaluation calls |
-| `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET` | `450` | Gemini requests per Pacific day, shared by the server, the CLI and the eval runners |
+| `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET` | `450` | Gemini requests per rolling 24 hours, shared by the server, the CLI and the eval runners |
+| `LLM_APPROACH_GEMINI_DAY_RESET` | unset | optional **fixed daily boundary**, a UTC time such as `07:00`. Unset = the rolling 24-hour window. Use it only once Google's real reset boundary is known |
 
 Groq keeps its values (30 s spacing, 150,000 tokens a day) and is not touched by the Gemini limiter. `--spacing` and `--daily-token-budget` override either. The Gemini limits are explained in the next section.
 
@@ -990,8 +991,9 @@ From AI Studio: **15 requests per minute (RPM), 250K tokens per minute (TPM), 50
 | Guard | Setting | Behaviour |
 |---|---|---|
 | Spacing | `LLM_APPROACH_GEMINI_SPACING_S`, default **5 s**, minimum **4 s** (a lower value is raised to 4 with one warning) | seconds between prompts in `run_eval` / `run_scenarios --live` |
-| Daily request cap | `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET`, default **450** (500 minus a margin) | counter file `eval/results/gemini_requests.json` (git-ignored; only a date and a count). The day ends at **midnight US Pacific time**. Every request counts, retries and failed calls included. At the cap no Gemini call starts and the pipeline gives its normal rate-limit reply (same path as a 429); an eval run stops with `STOPPED EARLY` |
-| Daily token budget | `LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET`, unset = live evals refuse | **our own safety cap**: Google lists no daily token limit |
+| Request cap | `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET`, default **450** (500 minus a margin) | applies to a **rolling 24-hour window**. Counter file `eval/results/gemini_requests.json` (git-ignored; only timestamps, request counts and token counts; entries 24 h old or older are dropped on every read). Every request counts, retries and failed calls included. At the cap no Gemini call starts and the pipeline gives its normal rate-limit reply (same path as a 429); an eval run stops with `STOPPED EARLY` |
+| Token budget | `LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET`, unset = live evals refuse | **our own safety cap** on the tokens of the last 24 hours, read from the same counter file (chat tokens included; a failed call keeps its estimate). Google lists no daily token limit |
+| Fixed boundary (optional) | `LLM_APPROACH_GEMINI_DAY_RESET=HH:MM` (UTC), off by default | switches both counters to a fixed daily boundary at that time instead of the rolling window |
 | Sliding window | fixed: **12 requests and 200K tokens per 60 s** (20% under 15 and 250K) | waits before a call that could exceed either. The next call's token estimate is the previous call's count, or the prompt-size estimate before the first call. On top of the spacing |
 | 429 | | reads the retry delay from the error (at most 60 s; 60 s when it names none), waits, retries the same call **once**. A 429 that says the **daily quota** is used up is not retried: the run stops cleanly and the remaining prompts are "not run" |
 
@@ -1002,7 +1004,7 @@ LLM_APPROACH_GEMINI_SPACING_S=5
 LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET=2000000
 ```
 
-**Before a live run** (`run_eval`, `run_scenarios --live`) the runner prints the plan: prompts x worst-case calls per prompt (3 for a dataset prompt: two decision calls plus one rate-limit retry; 5 for a scenario turn, which can add the answerer's two calls), the requests used today, the remaining budget and the estimated time at the current spacing. It **refuses to start** when the worst case exceeds the remaining requests (no override flag). The first real prompt is the connectivity check: a wrong key, model or quota stops the run after that one call with a clear message. Five failures in a row (network error, 5xx, timeout, rate-limit miss) stop it too.
+**Before a live run** (`run_eval`, `run_scenarios --live`) the runner prints the plan: prompts x worst-case calls per prompt (3 for a dataset prompt: two decision calls plus one rate-limit retry; 5 for a scenario turn, which can add the answerer's two calls), the requests used in the last 24 h, the remaining budget and the estimated time at the current spacing. It **refuses to start** when the worst case exceeds the remaining requests (no override flag). The first real prompt is the connectivity check: a wrong key, model or quota stops the run after that one call with a clear message. Five failures in a row (network error, 5xx, timeout, rate-limit miss) stop it too.
 
 **Checkpoint and resume.** Every prompt is written to its results file (with provider and model, no keys) before the next call. A run that stops early prints, as its last line:
 
@@ -1012,7 +1014,11 @@ STOPPED EARLY: X of Y done. Reason: ... Resume with: python -m llm_approach.eval
 
 `--resume` continues the unfinished run: finished prompts are skipped, failed ones are retried. Only a run with the same provider, model and dataset (and `--runs` / `--sample`) can be resumed; anything else is refused, as is starting the same command again without `--resume`. The record is `eval/results/run_state.json` (git-ignored). The report generator refuses to build a comparison from an unfinished run and lists the missing prompts.
 
-**Plan the days:** `python -m llm_approach.eval.plan` prints the estimated requests and minutes for ctxY, golden, golden_slots, matrix55, fresh and the live scenarios, and a suggested order that keeps each day under the request budget (or says everything fits in one day). `python -m llm_approach.llm_info` also shows the requests used today, the request budget, the spacing and the token budget.
+**Plan the days:** `python -m llm_approach.eval.plan` prints the estimated requests and minutes for ctxY, golden, golden_slots, matrix55, fresh and the live scenarios, and a suggested order that keeps each day under the request budget (or says everything fits in one day). `python -m llm_approach.llm_info` also shows the requests and tokens used in the last 24 h, the request cap and token budget, the spacing, and when the oldest entries drop out (when capacity starts to free up).
+
+**Google's reset boundary was not what we assumed.** The first version counted by the US Pacific day. Live on 21 Oct 2026 our counter reset at midnight Pacific (about 12:30 IST) and showed 0, while AI Studio kept counting (204 of 500 at 12:36, 290 at 13:00); the token counter never reset. We do not know Google's real boundary, so both counters now use a rolling 24-hour window (the conservative choice) and an old date+count file is converted by counting its numbers as used now (one log line says so).
+
+**Seeding from the dashboard:** `python -m llm_approach.llm_info --seed-used N [--seed-tokens T] [--seed-at HH:MM]` records N requests (and T tokens) as already used at the given local time (default now) so the local number matches Google's dashboard. It adds to the counter (run it once), refuses N above 500, prints what it wrote, and makes no API call. If Google's boundary turns out to be fixed, set `LLM_APPROACH_GEMINI_DAY_RESET` to it (UTC).
 
 
 ## Switching providers

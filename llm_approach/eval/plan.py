@@ -6,7 +6,7 @@ keeps every day under the request budget. Makes no call.
 "Worst-case" is the planner's per-prompt assumption (``runs.WORST_CASE_CALLS_PER_PROMPT`` = 3: two decision calls
 plus one rate-limit retry; scenario turns 5, because a chat question adds the answerer's two calls). The daily
 counter (``LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET``, default 450 of the free tier's 500) enforces the cap
-whatever the real use turns out to be. The first day is sized by what is still left today.
+whatever the real use turns out to be. The first day is sized by what is still left in the last 24 hours.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def build_plan(spacing: float, used: int, budget: int) -> list[str]:
     remaining = max(0, budget - used)
     lines = [
         f"Gemini free tier: 15 requests/min, 250K tokens/min, 500 requests/day. Planner budget: {budget} requests/day, "
-        f"spacing {spacing:g} s. Requests used today: {used}; remaining today: {remaining}.",
+        f"spacing {spacing:g} s. Requests used in the last 24 h: {used}; remaining in the last 24 h: {remaining}.",
         "",
         f"{'run':<14}{'prompts':>8}{'typical req':>13}{'worst-case req':>16}{'worst-case min':>16}",
     ]
@@ -93,16 +93,16 @@ def build_plan(spacing: float, used: int, budget: int) -> list[str]:
     lines.append("")
     days = schedule(items, remaining, budget)
     if len(days) == 1 and days[0]:
-        lines.append(f"Everything fits in one day: {total} worst-case requests, {remaining} left today.")
+        lines.append(f"Everything fits in one day: {total} worst-case requests, {remaining} left in the last 24 h.")
         lines.append("Suggested order: " + " + ".join(label for label, _ in days[0]))
         return lines
     lines.append(f"Suggested order, each day within {budget} worst-case requests "
-                 f"(today has {remaining} left):")
+                 f"(the last 24 h have {remaining} left):")
     for n, day in enumerate(days, 1):
-        when = "today" if n == 1 else ("next day" if n == 2 else f"day {n}")
+        when = "now" if n == 1 else ("next 24 h" if n == 2 else f"24 h block {n}")
         what = " + ".join(label for label, _ in day) or "nothing fits in what is left"
         lines.append(f"  {when}: {what}  ({sum(c for _, c in day)} requests)")
-    lines.append(f"{len(days)} day(s) in total. Each run stops cleanly at the cap and continues with --resume.")
+    lines.append(f"{len(days)} 24-hour block(s) in total. Each run stops cleanly at the cap and continues with --resume.")
     return lines
 
 
@@ -117,7 +117,7 @@ def main() -> int:
         pass
     from llm_approach import gemini_limits
 
-    used = gemini_limits.get_limiter().counter.used_today()
+    used = gemini_limits.get_limiter().counter.used_requests()
     print("\n".join(build_plan(config.spacing_s("gemini"), used, config.daily_request_budget())))
     return 0
 

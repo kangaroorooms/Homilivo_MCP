@@ -14,8 +14,8 @@ Spacing and daily token budget are per provider. Groq free tier: 8,000 tokens pe
 200,000 per day; one call is about 4,000 tokens, hence 30 s and 150,000 (the defaults). Gemini: set
 ``LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET`` (our own cap; a live run refuses to start without it); spacing is
 5 s (``LLM_APPROACH_GEMINI_SPACING_S``, minimum 4 s); ``--spacing`` and ``--daily-token-budget`` override either.
-Gemini live runs also print a plan first (prompts x worst-case calls, requests left today) and refuse to start
-when the worst case does not fit in the daily request budget (see ``gemini_limits.py``).
+Gemini live runs also print a plan first (prompts x worst-case calls, requests left in the last 24 h) and refuse to
+start when the worst case does not fit in the request budget (see ``gemini_limits.py``).
 Every prompt is checkpointed to its results file. ``--resume`` continues an unfinished run (same provider,
 model and dataset only); a run that stops early ends with a ``STOPPED EARLY: X of Y done. Reason: ...
 Resume with: <command>`` line.
@@ -104,15 +104,23 @@ def append_record(path: Path, record: dict) -> None:
 
 
 def tokens_used_today(results_dir: Path, today: str, label: tuple[str, str] | None = None) -> int:
-    """Tokens spent today by one (provider, model) pair; each provider has its own daily budget."""
+    """Tokens spent by one (provider, model) pair; each provider has its own daily budget. Groq: today's lines of
+    the date ledger. Gemini: the tokens of the last 24 hours in the shared counter file (chat included)."""
     label = label or config.label()
+    if label[0] == "gemini":
+        from llm_approach import gemini_limits
+
+        return gemini_limits.get_limiter().counter.used_tokens()
     return sum(int(r.get("tokens", 0)) for r in read_records(results_dir / USAGE_FILE)
                if r.get("date") == today and config.record_label(r) == label)
 
 
 def add_usage(results_dir: Path, today: str, tokens: int, label: tuple[str, str] | None = None) -> None:
+    """Add to the Groq date ledger. Gemini tokens are already counted by the limiter as each call finishes."""
     if tokens > 0:
         provider, model = label or config.label()
+        if provider == "gemini":
+            return
         append_record(results_dir / USAGE_FILE, {"date": today, "tokens": int(tokens), "provider": provider, "model": model})
 
 
@@ -289,7 +297,8 @@ async def run_eval(
     first_call = True
     streak = runs_mod.FailureStreak(max_failures)
     gemini = config.provider() == "gemini"
-    out(f"{len(todo)} item-runs to do; tokens used today so far: {used}; budget {daily_budget}")
+    when = "in the last 24 h" if gemini else "today"
+    out(f"{len(todo)} item-runs to do; tokens used {when} so far: {used}; budget {daily_budget}")
 
     def stop(reason: str) -> None:
         summary["stop_reason"] = reason
@@ -297,6 +306,8 @@ async def run_eval(
 
     for item, run in todo:
         need = estimate_tokens(item, system_chars)
+        if gemini:  # chat or another process may have spent tokens meanwhile
+            used = max(used, tokens_used_today(results_dir, today))
         if used + need > daily_budget:
             summary["stopped_by_budget"] = True
             stop("daily token budget reached")
@@ -326,7 +337,7 @@ async def run_eval(
         seen[item["dataset"]] += 1
         out(f"[{item['dataset']}] {seen[item['dataset']]}/{totals[item['dataset']]} run {run} {item['item']} "
             f"{record['status']} intent={record['intent']} conf={record['confidence']} "
-            f"{record['latency_ms']:.0f}ms {spent}tok (today {used})")
+            f"{record['latency_ms']:.0f}ms {spent}tok ({'24 h' if gemini else 'today'} {used})")
         if first_call and record["status"] == "error":  # the first real prompt is the connectivity check
             hint = runs_mod.error_hint(record["error_class"], record["error_code"], record["error_status"])
             stop(f"the first request failed ({hint}); check the key, the model name and the quota")
@@ -371,7 +382,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--spacing", type=float, default=None,
                    help="seconds between calls (default: the provider's setting; Groq 30, Gemini 5)")
     p.add_argument("--daily-token-budget", type=int, default=None,
-                   help="stop when today's tokens would exceed this (default: the provider's setting; "
+                   help="stop when the tokens of today (Groq) or the last 24 h (Gemini) would exceed this (default: the provider's setting; "
                         "Groq 150000, Gemini from the environment)")
     p.add_argument("--dry-run", action="store_true", help="no calls: print items, calls, tokens and time")
     p.add_argument("--only-missing", action="store_true", help="also retry rate-limit misses; skip finished items")
@@ -408,7 +419,8 @@ def main(argv: list[str] | None = None) -> int:
                   f"est. time {d['calls'] * spacing / 60:>6.1f} min")
         print(f"  {'total':<13} calls {est['calls']:>4}  est. tokens {est['tokens']:>8}  est. time {est['minutes']:.1f} min")
         print(f"At a budget of {budget} tokens/day this needs about {est['days']:.1f} day(s). "
-              f"Tokens already used today: {tokens_used_today(RESULTS_DIR, dt.date.today().isoformat())}.")
+              f"Tokens already used {'in the last 24 h' if config.label()[0] == 'gemini' else 'today'}: "
+              f"{tokens_used_today(RESULTS_DIR, dt.date.today().isoformat())}.")
         return 0
 
     from dotenv import load_dotenv

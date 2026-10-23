@@ -1,4 +1,4 @@
-"""Gemini free-tier limits: spacing, daily request counter (Pacific day), cap and fallback, sliding window,
+"""Gemini free-tier limits: spacing, request and token counter (rolling 24 h), cap and fallback, sliding window,
 429 handling, run planner, resume, STOPPED EARLY, failure streak, report refusal, plan and llm_info output.
 Fake clock, fake client, fake decide only: no network, no key, no SDK."""
 
@@ -57,36 +57,53 @@ def test_request_budget_default_450_and_env(monkeypatch):
     assert config.daily_request_budget() == 450
 
 
-# ---- daily counter: increments, Pacific day --------------------------------------------------------
+# ---- counter: rolling 24-hour window ---------------------------------------------------------------
+
+HOUR = dt.timedelta(hours=1)
 
 
-def test_pacific_midnight_boundary_summer_and_winter():
-    # PDT (UTC-7): midnight Pacific is 07:00 UTC
-    assert gemini_limits.pacific_date(utc(2026, 10, 20, 6, 59)) == "2026-10-19"
-    assert gemini_limits.pacific_date(utc(2026, 10, 20, 7, 0)) == "2026-10-20"
-    # PST (UTC-8): midnight Pacific is 08:00 UTC
-    assert gemini_limits.pacific_date(utc(2026, 12, 20, 7, 59)) == "2026-12-19"
-    assert gemini_limits.pacific_date(utc(2026, 12, 20, 8, 0)) == "2026-12-20"
-    # DST switches in 2026: starts Sunday March 8 (10:00 UTC), ends Sunday November 1 (09:00 UTC)
-    assert gemini_limits.pacific_date(utc(2026, 3, 8, 7, 59)) == "2026-03-07"  # PST
-    assert gemini_limits.pacific_date(utc(2026, 3, 8, 8, 0)) == "2026-03-08"
-    assert gemini_limits.pacific_date(utc(2026, 3, 9, 6, 59)) == "2026-03-08"  # PDT from here on
-    assert gemini_limits.pacific_date(utc(2026, 3, 9, 7, 0)) == "2026-03-09"
-    assert gemini_limits.pacific_date(utc(2026, 11, 1, 6, 59)) == "2026-10-31"  # still PDT
-    assert gemini_limits.pacific_date(utc(2026, 11, 1, 7, 0)) == "2026-11-01"
-    assert gemini_limits.pacific_date(utc(2026, 11, 2, 7, 59)) == "2026-11-01"  # PST afterwards
-    assert gemini_limits.pacific_date(utc(2026, 11, 2, 8, 0)) == "2026-11-02"
+def fake_counter(tmp_path, start=None):
+    now = [start or utc(2026, 10, 21, 12, 0)]
+    return gemini_limits.UsageCounter(tmp_path / "c.json", wall=lambda: now[0]), now
 
 
-def test_counter_resets_at_pacific_midnight_and_stores_only_date_and_count(tmp_path):
-    now = [utc(2026, 10, 20, 6, 0)]
-    counter = gemini_limits.DailyCounter(tmp_path / "c.json", wall=lambda: now[0])
-    assert counter.add() == 1 and counter.add() == 2 and counter.used_today() == 2
-    assert json.loads((tmp_path / "c.json").read_text()) == {"count": 2, "date": "2026-10-19"}
-    now[0] = utc(2026, 10, 20, 7, 0)  # Pacific midnight passed
-    assert counter.used_today() == 0
-    assert counter.add() == 1
-    assert json.loads((tmp_path / "c.json").read_text()) == {"count": 1, "date": "2026-10-20"}
+def test_entries_older_than_24_hours_are_dropped_and_newer_ones_count(tmp_path):
+    counter, now = fake_counter(tmp_path)
+    counter.add(3, tokens=300)
+    now[0] += 23 * HOUR + dt.timedelta(minutes=59)
+    counter.add(2, tokens=50)
+    assert counter.used_requests() == 5 and counter.used_tokens() == 350
+    now[0] += dt.timedelta(minutes=2)  # the first entry is now 24 h 1 min old
+    assert counter.used_requests() == 2 and counter.used_tokens() == 50
+
+
+def test_an_entry_exactly_24_hours_old_is_dropped(tmp_path):
+    counter, now = fake_counter(tmp_path)
+    counter.add(1, tokens=10)
+    now[0] += 24 * HOUR - dt.timedelta(seconds=1)
+    assert counter.used_requests() == 1  # 23 h 59 min 59 s: still counts
+    now[0] += dt.timedelta(seconds=1)
+    assert counter.used_requests() == 0 and counter.used_tokens() == 0  # exactly 24 h: gone
+
+
+def test_counter_file_holds_only_numbers_and_prunes_old_entries_on_write(tmp_path):
+    counter, now = fake_counter(tmp_path)
+    counter.add(2, tokens=40)
+    now[0] += 25 * HOUR
+    counter.add(1, tokens=5)
+    data = json.loads((tmp_path / "c.json").read_text())
+    assert data["version"] == 2 and len(data["entries"]) == 1
+    assert set(data["entries"][0]) == {"id", "t", "n", "tokens"}
+
+
+def test_free_up_time_is_24_hours_after_the_oldest_entry(tmp_path):
+    counter, now = fake_counter(tmp_path)
+    assert counter.free_up_time() is None
+    counter.add(1)
+    first = now[0]
+    now[0] += 5 * HOUR
+    counter.add(1)
+    assert counter.free_up_time() == first + 24 * HOUR
 
 
 def test_counter_survives_a_damaged_file(tmp_path):
@@ -326,7 +343,7 @@ def test_planner_allows_a_fitting_run_and_prints_the_numbers(live, capsys, _gemi
     assert run_eval.main(["--dataset", "golden", "--sample", "4", "--spacing", "0"]) == 0
     out = capsys.readouterr().out
     assert "Plan: 4 prompts x 3 worst-case calls = 12 requests" in out
-    assert "Requests used today (Pacific day): 10 of 450; remaining: 440." in out
+    assert "Requests used in the last 24 h: 10 of 450; remaining: 440." in out
     assert len(fn.calls) == 4
     allowed, lines = runs.preflight(4, 3, 5.0)
     assert allowed and "Estimated time at 5 s spacing: about 0.3 min typical, 1.0 min worst case." in lines[2]
@@ -539,7 +556,7 @@ def test_plan_rows_for_the_known_dataset_sizes():
 def test_plan_output_suggests_days_under_the_budget():
     text = "\n".join(plan.build_plan(5.0, 0, 450))
     assert "ctxY" in text and "99" in text and "177" in text
-    assert "today: ctxY + golden + golden_slots + matrix55" in text and "next day: fresh + scenarios (part 1)" in text
+    assert "now: ctxY + golden + golden_slots + matrix55" in text and "next 24 h: fresh + scenarios (part 1)" in text
     days = plan.schedule(plan.rows(5.0), 450, 450)
     assert all(sum(n for _, n in d) <= 450 for d in days)
 
@@ -550,9 +567,9 @@ def test_plan_says_when_everything_fits_in_one_day():
     assert "Suggested order: ctxY + golden + golden_slots + matrix55 + fresh + scenarios" in text
 
 
-def test_plan_counts_what_is_left_today():
+def test_plan_counts_what_is_left_in_the_last_24_hours():
     text = "\n".join(plan.build_plan(5.0, 440, 450))
-    assert "remaining today: 10" in text and "today: nothing fits in what is left" in text
+    assert "remaining in the last 24 h: 10" in text and "now: nothing fits in what is left" in text
 
 
 def test_plan_main_prints_without_a_key(capsys, monkeypatch):
@@ -565,12 +582,184 @@ def test_llm_info_prints_the_limits_and_never_the_key(monkeypatch, capsys, _gemi
     monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
     monkeypatch.setenv("GEMINI_API_KEY", KEY)
     monkeypatch.setenv("LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET", "2000000")
-    _gemini_limiter.counter.add(7)
-    assert llm_info.main() == 0
+    _gemini_limiter.counter.add(7, tokens=1234)
+    assert llm_info.main([]) == 0
     out = capsys.readouterr().out
-    assert "Gemini requests used today (Pacific day): 7 of 450" in out
+    assert "Gemini requests used in the last 24 h: 7 of 450 (free tier allows 500)" in out
+    assert "Gemini tokens used in the last 24 h: 1234 of 2000000 (our own budget)" in out
     assert "Gemini spacing: 5 s" in out and "12 requests and 200000 tokens per 60 s" in out
-    assert "Gemini daily token budget (our own cap): 2000000" in out
     assert KEY not in out
     monkeypatch.delenv("LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET")
-    assert "not set" in "\n".join(llm_info.limits_lines())
+    assert "no budget set" in "\n".join(llm_info.limits_lines())
+
+
+# ---- failures, retries and sharing count for requests AND tokens -----------------------------------------
+
+
+def test_failures_and_retries_count_requests_and_tokens(fake_gemini, _gemini_limiter):
+    fake_gemini([GOOD, ClientError(500, "INTERNAL", "boom"), ClientError(429, "RESOURCE_EXHAUSTED", "q"), GOOD])
+    counter = _gemini_limiter.counter
+    run(decide("a", {}, LLMBudget()))
+    assert (counter.used_requests(), counter.used_tokens()) == (1, 120)  # the real count: 100 in + 20 out
+    run(decide("b", {}, LLMBudget()))  # a failed call keeps its estimate (the previous call's 120)
+    assert (counter.used_requests(), counter.used_tokens()) == (2, 240)
+    run(decide("c", {}, LLMBudget()))  # a 429 and its retry: two more requests (the retry's real count replaces its estimate)
+    assert counter.used_requests() == 4 and counter.used_tokens() == 240 + 120 + 120
+
+
+def test_chat_and_the_eval_runner_see_the_same_tokens(fake_gemini, _gemini_limiter, tmp_path):
+    fake_gemini([GOOD])
+    run(decide("a", {}, LLMBudget()))  # a "live chat" request
+    assert run_eval.tokens_used_today(tmp_path, "2026-01-01") == 120  # the runner reads the shared file
+    run_eval.add_usage(tmp_path, "2026-01-01", 500)  # no ledger line for Gemini: the limiter already counted
+    assert not (tmp_path / run_eval.USAGE_FILE).exists()
+
+
+def test_token_budget_counts_chat_tokens_and_stops_with_the_resume_command(live, capsys, _gemini_limiter):
+    live([])
+    _gemini_limiter.counter.add(1, tokens=4_999_000)  # chat spent almost the whole budget within 24 h
+    code = run_eval.main(["--dataset", "golden", "--sample", "3", "--spacing", "0"])
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert code == 3 and lines[-1].startswith("STOPPED EARLY: 0 of 3 done. Reason: daily token budget reached")
+    assert lines[-1].endswith("--spacing 0 --daily-token-budget 5000000 --resume")
+
+
+def test_cap_frees_up_when_the_oldest_requests_leave_the_window(fake_gemini, monkeypatch, tmp_path):
+    now = [utc(2026, 10, 21, 12, 0)]
+    limiter = gemini_limits.GeminiLimiter(gemini_limits.UsageCounter(tmp_path / "w.json", wall=lambda: now[0]))
+    gemini_limits.set_limiter(limiter)
+    monkeypatch.setenv("LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET", "1")
+    fake_gemini([GOOD, GOOD])
+    assert run(decide("a", {}, LLMBudget())) is not None
+    budget = LLMBudget()
+    assert run(decide("b", {}, budget)) is None and budget.error_kind == "request_cap"
+    now[0] += 24 * HOUR
+    assert run(decide("c", {}, LLMBudget())) is not None
+
+
+# ---- legacy file ------------------------------------------------------------------------------------------
+
+
+def test_legacy_file_is_converted_conservatively_and_logged_once(tmp_path, caplog):
+    now = utc(2026, 10, 21, 12, 0)
+    path = tmp_path / "c.json"
+    path.write_text(json.dumps({"date": "2026-10-20", "count": 204}), encoding="utf-8")
+    counter = gemini_limits.UsageCounter(path, wall=lambda: now)
+    with caplog.at_level(logging.WARNING, logger="llm_approach.gemini_limits"):
+        assert counter.used_requests() == 204  # not zero: counted as used right now
+        assert counter.used_requests() == 204
+        assert counter.add() == 205
+    msgs = [r.getMessage() for r in caplog.records if "old date+count format" in r.getMessage()]
+    assert len(msgs) == 1 and "204 requests" in msgs[0]
+    data = json.loads(path.read_text())
+    assert data["version"] == 2 and sum(e["n"] for e in data["entries"]) == 205
+    assert counter.free_up_time() == now + 24 * HOUR  # the old numbers count from "now"
+
+
+# ---- fixed daily boundary ----------------------------------------------------------------------------------
+
+
+def test_fixed_boundary_resets_at_the_set_utc_time(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_APPROACH_GEMINI_DAY_RESET", "07:00")
+    counter, now = fake_counter(tmp_path, utc(2026, 10, 21, 6, 59))
+    counter.add(5, tokens=500)
+    now[0] = utc(2026, 10, 21, 7, 0)  # the boundary: the earlier entry is gone
+    assert counter.used_requests() == 0 and counter.used_tokens() == 0
+    counter.add(2, tokens=20)
+    now[0] = utc(2026, 10, 21, 23, 0)
+    assert counter.used_requests() == 2  # same fixed day
+    assert counter.free_up_time() == utc(2026, 10, 22, 7, 0)
+    now[0] = utc(2026, 10, 22, 7, 0)
+    assert counter.used_requests() == 0
+
+
+def test_rolling_window_when_the_day_reset_is_unset_or_unusable(tmp_path, monkeypatch, caplog):
+    counter, now = fake_counter(tmp_path, utc(2026, 10, 21, 6, 59))
+    counter.add(1)
+    now[0] = utc(2026, 10, 21, 7, 0)
+    assert counter.used_requests() == 1  # 07:00 means nothing without the setting
+    monkeypatch.setenv("LLM_APPROACH_GEMINI_DAY_RESET", "seven")
+    monkeypatch.setattr(gemini_limits, "_bad_reset_warned", False)
+    with caplog.at_level(logging.WARNING, logger="llm_approach.gemini_limits"):
+        assert counter.used_requests() == 1 and counter.used_requests() == 1
+    assert len([r for r in caplog.records if "DAY_RESET" in r.getMessage()]) == 1
+    monkeypatch.setenv("GEMINI_API_KEY", KEY)
+    assert "LLM_APPROACH_GEMINI_DAY_RESET must be a UTC time like 07:00" in config.setup_problem()
+
+
+def test_llm_info_in_fixed_mode_says_so(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_APPROACH_GEMINI_DAY_RESET", "07:00")
+    counter, now = fake_counter(tmp_path, utc(2026, 10, 21, 12, 0))
+    gemini_limits.set_limiter(gemini_limits.GeminiLimiter(counter))
+    counter.add(3)
+    lines = llm_info.limits_lines()
+    assert lines[0].startswith("Gemini requests used since the 07:00 UTC reset: 3 of 450")
+    assert lines[2].startswith("Gemini the counters reset at: ")
+
+
+# ---- llm_info: free-up line and the seeding command --------------------------------------------------------
+
+
+def info_limiter(tmp_path, now):
+    limiter = gemini_limits.GeminiLimiter(gemini_limits.UsageCounter(tmp_path / "i.json", wall=lambda: now[0]))
+    gemini_limits.set_limiter(limiter)
+    return limiter
+
+
+def test_llm_info_free_up_line(tmp_path):
+    now = [utc(2026, 10, 21, 12, 0)]
+    limiter = info_limiter(tmp_path, now)
+    assert llm_info.limits_lines()[2] == "Gemini capacity: nothing counted, all of it is free"
+    limiter.counter.add(1, at=now[0] - 5 * HOUR)
+    line = llm_info.limits_lines()[2]
+    assert line.startswith("Gemini the oldest entries drop out and capacity starts to free up at: ")
+    assert line.endswith("(19 h 00 min from now)")
+
+
+def test_seed_records_requests_and_tokens_at_the_given_local_time(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
+    now = [dt.datetime.now(dt.timezone.utc).replace(second=30, microsecond=0)]
+    limiter = info_limiter(tmp_path, now)
+
+    def no_api(*a, **k):
+        pytest.fail("the seed command must not call any API")
+
+    monkeypatch.setattr(providers, "_get_gemini_client", no_api)
+    monkeypatch.setattr(providers, "_get_groq_client", no_api)
+    at = (now[0].astimezone() - dt.timedelta(minutes=90)).strftime("%H:%M")
+    assert llm_info.main(["--seed-used", "204", "--seed-tokens", "150000", "--seed-at", at]) == 0
+    out = capsys.readouterr().out
+    assert "Recorded 204 requests and 150000 tokens as used at " in out and f"{at} (local time)" in out
+    assert "Gemini requests used in the last 24 h: 204 of 450" in out
+    assert "Gemini tokens used in the last 24 h: 150000 of" in out
+    entry = json.loads((tmp_path / "i.json").read_text())["entries"][0]
+    assert entry["n"] == 204 and entry["tokens"] == 150000
+    assert 90 * 60 <= now[0].timestamp() - entry["t"] < 91 * 60  # HH:MM floors to the minute
+    assert limiter.counter.used_requests() == 204
+
+
+def test_seed_default_time_is_now_and_a_future_time_means_yesterday(tmp_path):
+    now = [utc(2026, 10, 21, 12, 0)]
+    limiter = info_limiter(tmp_path, now)
+    llm_info.seed(10)
+    future = (now[0].astimezone() + dt.timedelta(hours=2)).strftime("%H:%M")
+    llm_info.seed(5, at=future)
+    entries = json.loads(limiter.counter.path.read_text())["entries"]
+    assert entries[0]["t"] == now[0].timestamp()
+    assert entries[1]["t"] == (now[0] - 22 * HOUR).timestamp()  # 22 h ago, not 2 h in the future
+    assert limiter.counter.used_requests() == 15
+
+
+def test_seed_refuses_more_than_500_and_bad_input(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
+    info_limiter(tmp_path, [utc(2026, 10, 21, 12, 0)])
+    assert llm_info.main(["--seed-used", "501"]) == 2
+    assert "Refused: --seed-used must be between 1 and 500" in capsys.readouterr().out
+    assert not (tmp_path / "i.json").exists()
+    assert llm_info.main(["--seed-used", "500"]) == 0
+    capsys.readouterr()
+    assert llm_info.main(["--seed-used", "0"]) == 2
+    assert llm_info.main(["--seed-used", "5", "--seed-at", "noon"]) == 2
+    assert "HH:MM" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        llm_info.main(["--seed-tokens", "5"])

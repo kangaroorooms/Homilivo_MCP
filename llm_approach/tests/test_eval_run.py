@@ -132,7 +132,8 @@ def test_spacing_between_calls_only(tmp_path):
 # ---- budget ------------------------------------------------------------------------
 
 
-def test_budget_stop_and_next_day_resume(tmp_path):
+def test_budget_stop_and_next_day_resume(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")  # the per-day ledger is Groq's; Gemini counts a rolling 24 h
     decide = make_decide([], tokens=(4000, 100))
     s1, _ = run(["golden"], tmp_path, decide, sample=5, daily_budget=6000)
     assert s1["stopped_by_budget"] and s1["completed"] == 1

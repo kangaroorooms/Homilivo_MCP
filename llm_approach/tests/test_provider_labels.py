@@ -65,18 +65,19 @@ def test_a_gemini_run_does_not_skip_items_finished_with_groq(results, monkeypatc
     assert run_eval.plan_items(["golden"], 1, 3, results) == []  # groq: all three finished
 
 
-def test_the_daily_ledger_is_per_provider(results, monkeypatch):
-    run_eval.add_usage(results, "2026-01-01", 5000)  # gemini (default)
+def test_the_daily_ledger_is_groqs_and_gemini_uses_the_24_hour_counter(results, monkeypatch, _gemini_limiter):
+    run_eval.add_usage(results, "2026-01-01", 5000)  # gemini (default): no ledger line, the limiter counts it
+    assert not (results / run_eval.USAGE_FILE).exists()
+    _gemini_limiter.counter.add(1, tokens=5000)
     monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")
     run_eval.add_usage(results, "2026-01-01", 700)
     assert run_eval.tokens_used_today(results, "2026-01-01") == 700
     monkeypatch.setenv("LLM_APPROACH_PROVIDER", "gemini")
-    assert run_eval.tokens_used_today(results, "2026-01-01") == 5000
+    assert run_eval.tokens_used_today(results, "2026-01-01") == 5000  # any date: the last 24 h of the counter
     legacy = results / run_eval.USAGE_FILE
     legacy.write_text(json.dumps({"date": "2026-01-02", "tokens": 90}) + "\n", encoding="utf-8")
-    assert run_eval.tokens_used_today(results, "2026-01-02") == 0  # old ledger lines are Groq's
     monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")
-    assert run_eval.tokens_used_today(results, "2026-01-02") == 90
+    assert run_eval.tokens_used_today(results, "2026-01-02") == 90  # old ledger lines are Groq's
 
 
 def test_metrics_lines_carry_provider_and_model_numbers_only(tmp_path, monkeypatch):

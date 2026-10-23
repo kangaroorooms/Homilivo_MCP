@@ -106,27 +106,27 @@ class FailureStreak:
 
 
 def request_status() -> tuple[int, int, int]:
-    """(used today, daily request budget, remaining) from the shared counter."""
-    used = gemini_limits.get_limiter().counter.used_today()
+    """(used in the last 24 h, request budget, remaining) from the shared counter."""
+    used = gemini_limits.get_limiter().counter.used_requests()
     budget = config.daily_request_budget()
     return used, budget, max(0, budget - used)
 
 
 def preflight(prompts: int, worst_calls_per_prompt: int, spacing: float) -> tuple[bool, list[str]]:
     """Planner for a Gemini run: (allowed, lines to print). Refuses when the worst case exceeds the remaining
-    requests today. There is deliberately no override."""
+    requests in the last 24 h. There is deliberately no override."""
     used, budget, remaining = request_status()
     calls = prompts * worst_calls_per_prompt
     lines = [
         f"Plan: {prompts} prompts x {worst_calls_per_prompt} worst-case calls = {calls} requests (estimate).",
-        f"Requests used today (Pacific day): {used} of {budget}; remaining: {remaining}.",
+        f"Requests used in the last 24 h: {used} of {budget}; remaining: {remaining}.",
         f"Estimated time at {spacing:g} s spacing: about {prompts * spacing / 60:.1f} min typical, "
         f"{calls * spacing / 60:.1f} min worst case.",
     ]
     if calls > remaining:
-        lines.append(f"REFUSED: the worst case needs {calls} requests but only {remaining} remain today. "
+        lines.append(f"REFUSED: the worst case needs {calls} requests but only {remaining} remain in the last 24 h. "
                      "Run fewer prompts (--dataset / --sample), use `python -m llm_approach.eval.plan` for a day-by-day "
-                     "split, or continue tomorrow.")
+                     "split, or continue later, when the oldest requests drop out of the 24-hour window (`python -m llm_approach.llm_info` shows when).")
         return False, lines
     return True, lines
 

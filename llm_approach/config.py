@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import os
 
@@ -98,6 +99,7 @@ GEMINI_DAILY_BUDGET_ENV = "LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET"
 # Requests per day is the binding Gemini limit (500 on the free tier); the default leaves a safety margin.
 GEMINI_REQUEST_BUDGET_ENV = "LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET"
 GEMINI_DEFAULT_REQUEST_BUDGET = 450
+GEMINI_DAY_RESET_ENV = "LLM_APPROACH_GEMINI_DAY_RESET"  # optional fixed daily boundary, a UTC time such as 07:00
 
 # What result files written before the provider switch were produced with.
 LEGACY_PROVIDER = "groq"
@@ -198,6 +200,7 @@ def setup_problem() -> str | None:
     if name == "gemini":
         try:
             gemini_thinking()
+            day_reset()
         except ValueError as exc:
             return str(exc)
     return None
@@ -250,8 +253,20 @@ def spacing_s(name: str | None = None) -> float:
 
 
 def daily_request_budget() -> int:
-    """Gemini requests allowed per (Pacific) day: ``LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET``, default 450."""
+    """Gemini requests allowed per 24 hours: ``LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET``, default 450."""
     return _int_env(GEMINI_REQUEST_BUDGET_ENV, GEMINI_DEFAULT_REQUEST_BUDGET)
+
+
+def day_reset() -> dt.time | None:
+    """The fixed daily boundary (a UTC time, ``LLM_APPROACH_GEMINI_DAY_RESET=HH:MM``), or None (the default): the
+    rolling 24-hour window is used. A value that is not HH:MM raises ValueError."""
+    raw = os.getenv(GEMINI_DAY_RESET_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        return dt.datetime.strptime(raw, "%H:%M").time()
+    except ValueError:
+        raise ValueError(f"{GEMINI_DAY_RESET_ENV} must be a UTC time like 07:00 (HH:MM)") from None
 
 
 def daily_token_budget(name: str | None = None) -> int | None:

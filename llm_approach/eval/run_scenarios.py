@@ -416,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--spacing", type=float, default=None,
                         help="seconds between LLM calls in --live (default: the provider's setting; Groq 30, Gemini 5)")
     parser.add_argument("--daily-token-budget", type=int, default=None,
-                        help="--live: stop between scenarios when today's tokens would pass this "
+                        help="--live: stop between scenarios when the tokens of today (Groq) or the last 24 h (Gemini) would pass this "
                              "(default: the provider's setting; Groq 150000, Gemini from the environment)")
     parser.add_argument("--resume", action="store_true",
                         help="--live: continue the unfinished run (same provider, model and dataset); "
@@ -491,6 +491,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"\n{scenario['id']}: already recorded in {LIVE_RESULTS.name}, skipped")
                     continue
                 need = EST_TOKENS_PER_TURN * sum(1 for t in scenario["turns"] if t["llm"] != "never")
+                if config.provider() == "gemini":  # chat or another process may have spent tokens meanwhile
+                    used[0] = max(used[0], run_eval.tokens_used_today(LIVE_RESULTS.parent, today))
                 if used[0] + need > args.daily_token_budget:
                     stop_reason.append("daily token budget reached")
                     break

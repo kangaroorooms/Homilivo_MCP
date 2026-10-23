@@ -49,7 +49,8 @@ def _provider_env(monkeypatch):
     """The developer's own provider settings must not change a test: start from the defaults (Gemini)."""
     for name in ("LLM_APPROACH_PROVIDER", "LLM_APPROACH_GEMINI_MODEL", "LLM_APPROACH_GEMINI_SPACING_S",
                  "LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET", "LLM_APPROACH_GEMINI_THINKING",
-                 "LLM_APPROACH_GEMINI_MAX_OUTPUT_TOKENS", "LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET"):
+                 "LLM_APPROACH_GEMINI_MAX_OUTPUT_TOKENS", "LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET",
+                 "LLM_APPROACH_GEMINI_DAY_RESET"):
         monkeypatch.delenv(name, raising=False)
 
 

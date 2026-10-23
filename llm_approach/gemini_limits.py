@@ -5,9 +5,13 @@ gemini-3.5-flash-lite free tier (AI Studio): 15 requests per minute (RPM), 250K 
 every request, shared by live chat and the eval runners (same process: one limiter; other processes: one
 counter file):
 
-1. Daily request cap (``LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET``, default 450 of 500). The counter file
-   ``eval/results/gemini_requests.json`` holds only a date and a count. The day ends at midnight US Pacific
-   time. Every request counts, retries and failed calls included. At the cap no request starts.
+1. Request cap over a rolling 24-hour window (``LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET``, default 450 of 500).
+   The counter file ``eval/results/gemini_requests.json`` holds only timestamps, request counts and token counts;
+   entries 24 hours old or older are dropped on every read. Every request counts, retries and failed calls
+   included (a failed call keeps its estimated tokens). The same file holds the 24-hour token total, so chat
+   and the eval runners share both numbers. At the cap no request starts. Google's real reset boundary is not
+   known: with ``LLM_APPROACH_GEMINI_DAY_RESET`` (a UTC time such as 07:00) the window becomes a fixed daily
+   boundary at that time instead; unset, the rolling window is used.
 2. Sliding 60-second window: at most 12 requests and 200K tokens (20% under 15 and 250K). The limiter waits
    instead of exceeding either. The token estimate for the next call is the previous call's count, or the
    prompt-size estimate before any call.
@@ -22,13 +26,19 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import logging
 import os
 import re
 import threading
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 from typing import Any, Awaitable, Callable
+
+from llm_approach import config
+
+logger = logging.getLogger(__name__)
 
 RPM_LIMIT, TPM_LIMIT, RPD_LIMIT = 15, 250_000, 500  # what Google lists for the free tier (documentation only)
 WINDOW_S = 60.0
@@ -38,6 +48,8 @@ DEFAULT_DAILY_REQUEST_BUDGET = 450  # 500 RPD minus a safety margin
 MAX_RETRY_WAIT_S = 60.0
 DEFAULT_RETRY_WAIT_S = 60.0  # a 429 that names no delay
 EST_COMPLETION_TOKENS = 250
+USAGE_WINDOW_S = 24 * 3600.0  # the rolling window for requests and tokens
+MAX_SEED_REQUESTS = RPD_LIMIT
 
 COUNTER_PATH = Path(__file__).resolve().parent / "eval" / "results" / "gemini_requests.json"  # git-ignored
 
@@ -79,33 +91,33 @@ class RateLimitRetried(GeminiLimitError):
         super().__init__(str(original) if original else "Gemini rate limit (429) persisted after one retry")
 
 
-# ---- US Pacific day boundary ---------------------------------------------------------
-
-
-def _nth_sunday(year: int, month: int, n: int) -> dt.date:
-    first = dt.date(year, month, 1)
-    return first + dt.timedelta(days=(6 - first.weekday()) % 7 + 7 * (n - 1))
-
-
-def pacific_date(now: dt.datetime) -> str:
-    """ISO date in US Pacific time of an aware ``now``. DST: second Sunday of March 02:00 to first Sunday of
-    November 02:00 local time (10:00 and 09:00 UTC). Computed here so no tz database is needed."""
-    utc = now.astimezone(dt.timezone.utc)
-    start = dt.datetime.combine(_nth_sunday(utc.year, 3, 2), dt.time(10), tzinfo=dt.timezone.utc)
-    end = dt.datetime.combine(_nth_sunday(utc.year, 11, 1), dt.time(9), tzinfo=dt.timezone.utc)
-    offset = -7 if start <= utc < end else -8
-    return (utc + dt.timedelta(hours=offset)).date().isoformat()
-
-
 def _utc_now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
-# ---- daily request counter -------------------------------------------------------------
+# ---- request and token counter (rolling 24 h, or a fixed daily boundary) -------------------------------
+
+_bad_reset_warned = False
 
 
-class DailyCounter:
-    """A tiny file ``{"date": "YYYY-MM-DD", "count": n}`` (Pacific date). A new day starts at 0."""
+def _day_reset() -> dt.time | None:
+    """The fixed daily boundary (UTC) from the environment, or None for the rolling window. An unusable value
+    falls back to the rolling window with one warning (``config.setup_problem`` reports it for live runs)."""
+    global _bad_reset_warned
+    try:
+        return config.day_reset()
+    except ValueError as exc:
+        if not _bad_reset_warned:
+            _bad_reset_warned = True
+            logger.warning("%s; using the rolling 24-hour window", exc)
+        return None
+
+
+class UsageCounter:
+    """A tiny file ``{"version": 2, "entries": [{"id", "t", "n", "tokens"}]}``: ``t`` is a UTC epoch time, ``n`` the
+    requests and ``tokens`` the tokens of that entry. Numbers only: no text, no keys. An entry counts while it is
+    inside the window: the last 24 hours (it drops out once it is 24 hours old), or, with a day reset set, since
+    the latest reset boundary."""
 
     def __init__(self, path: Path | None = None, wall: Wall = _utc_now) -> None:
         self._path = path
@@ -116,32 +128,110 @@ class DailyCounter:
     def path(self) -> Path:
         return self._path or COUNTER_PATH
 
-    def _read(self) -> int:
-        today = pacific_date(self.wall())
+    # -- window
+
+    def window_start(self, now: dt.datetime | None = None) -> dt.datetime:
+        """Entries strictly after this time count (rolling), or at/after it (fixed boundary)."""
+        now = now or self.wall()
+        reset = _day_reset()
+        if reset is None:
+            return now - dt.timedelta(seconds=USAGE_WINDOW_S)
+        utc = now.astimezone(dt.timezone.utc)
+        boundary = dt.datetime.combine(utc.date(), reset, tzinfo=dt.timezone.utc)
+        return boundary if boundary <= utc else boundary - dt.timedelta(days=1)
+
+    def _in_window(self, entries: list[dict]) -> list[dict]:
+        start = self.window_start().timestamp()
+        fixed = _day_reset() is not None
+        return [e for e in entries if e["t"] > start or (fixed and e["t"] == start)]
+
+    # -- file
+
+    def _load(self) -> list[dict]:
+        """Every well-formed entry in the file, converting the old ``{"date", "count"}`` format when found."""
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            if data.get("date") == today and isinstance(data.get("count"), int) and data["count"] >= 0:
-                return data["count"]
-        except (OSError, ValueError, AttributeError):
-            pass
-        return 0
-
-    def used_today(self) -> int:
-        with self._lock:
-            return self._read()
-
-    def add(self, n: int = 1) -> int:
-        """Count ``n`` more requests today; returns the new total. A write failure never blocks a call."""
-        with self._lock:
-            count = self._read() + n
-            tmp = self.path.with_suffix(".tmp")
+        except (OSError, ValueError):
+            return []
+        if not isinstance(data, dict):
+            return []
+        if "entries" not in data:
+            count = data.get("count")
+            if "date" in data and isinstance(count, int) and not isinstance(count, bool) and count > 0:
+                # old format: the real times are unknown, so the old count is treated as used right now
+                logger.warning("Gemini counter file was in the old date+count format: counted %d requests as used "
+                               "now (conservative) and converted it to the rolling-window format", count)
+                entries = [{"id": uuid.uuid4().hex[:8], "t": self.wall().timestamp(), "n": count, "tokens": 0}]
+                self._write(entries)
+                return entries
+            return []
+        out = []
+        for e in data["entries"] if isinstance(data["entries"], list) else []:
             try:
-                self.path.parent.mkdir(parents=True, exist_ok=True)
-                tmp.write_text(json.dumps({"date": pacific_date(self.wall()), "count": count}), encoding="utf-8")
-                os.replace(tmp, self.path)
-            except OSError:
-                pass
-            return count
+                t, n, tokens = float(e["t"]), int(e["n"]), int(e.get("tokens", 0))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if n >= 0 and tokens >= 0:
+                out.append({"id": str(e.get("id", "")), "t": t, "n": n, "tokens": tokens})
+        return out
+
+    def _write(self, entries: list[dict]) -> None:
+        keep = self.wall().timestamp() - USAGE_WINDOW_S
+        entries = [e for e in entries if e["t"] > keep]
+        tmp = self.path.with_suffix(".tmp")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps({"version": 2, "entries": entries}), encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError:
+            pass  # a write failure never blocks a call
+
+    # -- reads
+
+    def used_requests(self) -> int:
+        with self._lock:
+            return sum(e["n"] for e in self._in_window(self._load()))
+
+    used_today = used_requests  # the old name
+
+    def used_tokens(self) -> int:
+        with self._lock:
+            return sum(e["tokens"] for e in self._in_window(self._load()))
+
+    def free_up_time(self) -> dt.datetime | None:
+        """When capacity starts to free up: 24 hours after the oldest counted entry (rolling), or the next reset
+        boundary (fixed). None when nothing is counted."""
+        with self._lock:
+            live = self._in_window(self._load())
+        if not live:
+            return None
+        if _day_reset() is None:
+            return dt.datetime.fromtimestamp(min(e["t"] for e in live) + USAGE_WINDOW_S, dt.timezone.utc)
+        return self.window_start() + dt.timedelta(days=1)
+
+    # -- writes
+
+    def add(self, n: int = 1, tokens: int = 0, at: dt.datetime | None = None, eid: str | None = None) -> int:
+        """Count ``n`` more requests (and ``tokens``) at ``at`` (default now); returns the requests now in the window."""
+        with self._lock:
+            entries = self._load()
+            entries.append({"id": eid or uuid.uuid4().hex[:8], "t": (at or self.wall()).timestamp(), "n": n,
+                            "tokens": max(0, int(tokens))})
+            self._write(entries)
+            return sum(e["n"] for e in self._in_window(entries))
+
+    def set_tokens(self, eid: str, tokens: int) -> None:
+        """Replace the estimated tokens of entry ``eid`` with the real count."""
+        with self._lock:
+            entries = self._load()
+            for e in entries:
+                if e["id"] == eid:
+                    e["tokens"] = max(0, int(tokens))
+                    self._write(entries)
+                    return
+
+
+DailyCounter = UsageCounter  # the old name
 
 
 # ---- error parsing ----------------------------------------------------------------------
@@ -184,14 +274,14 @@ def retry_delay(exc: BaseException) -> float | None:
 
 
 class GeminiLimiter:
-    """Daily cap + sliding window + single 429 retry. ``clock`` (monotonic seconds), ``sleep`` and ``wall``
+    """Request cap + sliding window + single 429 retry. ``clock`` (monotonic seconds), ``sleep`` and ``wall``
     can be faked in tests."""
 
     def __init__(
-        self, counter: DailyCounter | None = None, clock: Clock = time.monotonic,
+        self, counter: UsageCounter | None = None, clock: Clock = time.monotonic,
         sleep: Sleep = asyncio.sleep, wall: Wall = _utc_now,
     ) -> None:
-        self.counter = counter or DailyCounter(wall=wall)
+        self.counter = counter or UsageCounter(wall=wall)
         self.clock, self.sleep = clock, sleep
         self._window: deque[list[float]] = deque()  # [start time, tokens] of each request in the last 60 s
         self._last_tokens: int | None = None
@@ -230,31 +320,33 @@ class GeminiLimiter:
         return max(0.0, wait)
 
     def remaining_requests(self, budget: int) -> int:
-        return max(0, budget - self.counter.used_today())
+        return max(0, budget - self.counter.used_requests())
 
     # -- one guarded request
 
-    async def _begin(self, budget: int, prompt_estimate: int) -> list[float]:
-        """Cap check, window wait, then count the request. Returns the window entry to fix up afterwards."""
-        if self.counter.used_today() >= budget:
+    async def _begin(self, budget: int, prompt_estimate: int) -> tuple[list[float], str]:
+        """Cap check, window wait, then count the request. Returns the window entry and the counter entry id,
+        to fix up afterwards."""
+        if self.counter.used_requests() >= budget:
             raise RequestCapReached()
         estimate = self._last_tokens if self._last_tokens is not None else prompt_estimate
         wait = self._wait_needed(estimate)
         while wait > 0:
             await self.sleep(wait)
             wait = self._wait_needed(estimate)
-        if self.counter.used_today() >= budget:  # another task may have used the last request while we waited
+        if self.counter.used_requests() >= budget:  # another task may have used the last request while we waited
             raise RequestCapReached()
-        self.counter.add(1)  # counted before it is sent: failed calls and retries count too
+        eid = uuid.uuid4().hex[:8]
+        self.counter.add(1, tokens=estimate, eid=eid)  # counted before it is sent: failed calls and retries count too
         entry = [self.clock(), float(estimate)]
         self._window.append(entry)
-        return entry
+        return entry, eid
 
     async def call(self, send: Callable[[], Awaitable[Any]], *, budget: int, prompt_estimate: int,
                    tokens_of: Callable[[Any], int | None] = lambda _r: None) -> Any:
         """Run ``send()`` under the guards. ``tokens_of(result)`` gives the call's real token count."""
         for attempt in (1, 2):
-            entry = await self._begin(budget, prompt_estimate)
+            entry, eid = await self._begin(budget, prompt_estimate)
             try:
                 result = await send()
             except Exception as exc:
@@ -272,6 +364,7 @@ class GeminiLimiter:
             if used:
                 entry[1] = float(used)
                 self._last_tokens = int(used)
+                self.counter.set_tokens(eid, int(used))
             return result
         raise RateLimitRetried()  # not reached
 

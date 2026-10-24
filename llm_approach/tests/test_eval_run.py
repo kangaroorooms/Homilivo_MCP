@@ -292,3 +292,97 @@ def test_cached_tokens_from_usage(monkeypatch, details, expected):
 
 def test_cached_tokens_default_is_none():
     assert llm_client.LLMBudget().cached_tokens is None
+
+
+# ---- --fresh ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def live(tmp_path, monkeypatch):
+    """main() wired to a temp results dir and a fake decide: no network, no .env, no key."""
+    import dotenv
+
+    from llm_approach import config
+
+    monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(config, "setup_problem", lambda: None)
+    monkeypatch.setattr(run_eval, "RESULTS_DIR", tmp_path)
+    decide = make_decide([], tokens=(4000, 100))
+    monkeypatch.setattr(llm_client, "decide", decide)
+    return decide
+
+
+def fresh_dirs(tmp_path):
+    return sorted(d for d in tmp_path.glob(run_eval.FRESH_PREFIX + "*") if d.is_dir())
+
+
+def cli(*argv):
+    return run_eval.main(["--dataset", "golden", "--sample", "3", "--spacing", "0", "--daily-token-budget", "150000", *argv])
+
+
+def test_fresh_runs_everything_again_and_leaves_old_results_untouched(tmp_path, live):
+    assert cli() == 0 and len(live.calls) == 3
+    old = (tmp_path / "golden.jsonl").read_bytes()
+    assert cli() == 0 and len(live.calls) == 3  # without --fresh: nothing to do
+    assert cli("--fresh") == 0 and len(live.calls) == 6  # all three again
+    (d,) = fresh_dirs(tmp_path)
+    assert len(run_eval.read_records(d / "golden.jsonl")) == 3
+    assert (tmp_path / "golden.jsonl").read_bytes() == old
+    assert not (d / "golden.jsonl").samefile(tmp_path / "golden.jsonl")
+    # a second fresh run is another directory, not a merge into the first
+    assert cli("--fresh") == 0 and len(live.calls) == 9 and len(fresh_dirs(tmp_path)) == 2
+
+
+def test_fresh_resume_continues_the_interrupted_fresh_run(tmp_path, live, capsys):
+    cli()
+    old = (tmp_path / "golden.jsonl").read_bytes()
+    assert cli("--fresh", "--daily-token-budget", "18000") == 3  # 12,300 used by the first run: room for one more call
+    (d,) = fresh_dirs(tmp_path)
+    assert len(run_eval.read_records(d / "golden.jsonl")) == 1
+    assert "--fresh --resume" in capsys.readouterr().out
+    assert cli("--fresh", "--resume", "--daily-token-budget", "150000") == 0
+    assert fresh_dirs(tmp_path) == [d]  # same run, no new directory
+    assert len(run_eval.read_records(d / "golden.jsonl")) == 3
+    assert (tmp_path / "golden.jsonl").read_bytes() == old
+
+
+def test_fresh_resume_without_a_fresh_run_is_refused(tmp_path, live):
+    cli()
+    assert cli("--fresh", "--resume") == 2 and not fresh_dirs(tmp_path)
+
+
+def test_plain_resume_ignores_fresh_runs(tmp_path, live):
+    assert cli("--fresh", "--daily-token-budget", "5000") == 3
+    # the unfinished run is the fresh one; plain --resume looks at the normal results only
+    assert cli("--resume") == 2
+
+
+def test_fresh_dry_run_shows_the_full_call_count(tmp_path, live, capsys):
+    run_eval.main(["--dataset", "golden", "--sample", "5", "--spacing", "0", "--daily-token-budget", "150000"])
+    capsys.readouterr()
+    assert run_eval.main(["--dry-run", "--dataset", "golden"]) == 0
+    assert "calls   15" in capsys.readouterr().out  # 5 finished
+    assert run_eval.main(["--dry-run", "--dataset", "golden", "--fresh"]) == 0
+    assert "calls   20" in capsys.readouterr().out  # a fresh run does all 20
+    assert not fresh_dirs(tmp_path)  # a dry run creates nothing
+
+
+def test_fresh_run_shares_the_token_ledger_and_copies_the_baseline(tmp_path, live):
+    (tmp_path / "baseline_current.json").write_text('{"x": 1}', encoding="utf-8")
+    assert cli("--fresh") == 0
+    (d,) = fresh_dirs(tmp_path)
+    assert (d / "baseline_current.json").read_text(encoding="utf-8") == '{"x": 1}'
+    assert run_eval.tokens_used_today(tmp_path, __import__("datetime").date.today().isoformat()) == 3 * 4100
+    assert not (d / run_eval.USAGE_FILE).exists()
+
+
+def test_report_reads_a_fresh_run_on_its_own(tmp_path, live):
+    from llm_approach.eval import report
+
+    cli()
+    cli("--fresh")
+    (d,) = fresh_dirs(tmp_path)
+    for rd in (tmp_path, d):
+        _, data = report.build_report(rd)
+        assert data["coverage"]["golden"]["done"] == 3  # not 6: runs are never merged

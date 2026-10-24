@@ -93,6 +93,36 @@ async def _complete(
     return c.text, c.tokens_in, c.tokens_out, c.cached, c
 
 
+async def _complete_with_5xx_retry(
+    messages: list[dict[str, str]], budget: LLMBudget, max_tokens: int | None, prov: str | None
+) -> tuple[str, int, int, int | None, providers.Completion]:
+    """``_complete``; on the active provider, a 5xx (500/502/503/504) is retried once after a short delay.
+    The retry goes through the same provider call (so the Gemini limiter counts it) and is skipped when the
+    delay would push the turn past its Gemini time budget. Failures are noted by the caller, once per turn;
+    the caller's latency covers both attempts and the delay."""
+    def call():
+        if prov is not None:
+            return _complete(messages, max_tokens, prov)
+        return _complete(messages, max_tokens)
+
+    started = time.perf_counter()
+    try:
+        return await call()
+    except Exception as exc:  # noqa: BLE001
+        delay = config.retry_5xx_delay_s()
+        spent_ms = budget.latency_ms + (time.perf_counter() - started) * 1000
+        if (delay is None or prov is not None or not llm_resilience.is_retryable_5xx(exc)
+                or (config.provider() == "gemini" and spent_ms + delay * 1000 >= config.GEMINI_TURN_LLM_BUDGET_S * 1000)):
+            raise
+        logger.warning("llm 5xx retry in %.1fs %s", delay, _error_log(exc))
+        await asyncio.sleep(delay)
+        budget.calls += 1  # the retry is a real request; it is not part of the call cap
+        result = await call()
+        logger.info("llm recovered after 5xx retry")
+        observability.record_llm_event("recovered_5xx_retry")
+        return result
+
+
 def _observe_latency(ms: float, provider: str | None = None) -> None:
     """Feed the production latency metric (provider and model names only). Never raises."""
     try:
@@ -177,7 +207,7 @@ async def _decide_on(messages: list[dict[str, str]], budget: LLMBudget, prov: st
         started = time.perf_counter()
         try:
             raw, tokens_in, tokens_out, cached, completion = await (
-                _complete(messages) if prov is None else _complete(messages, provider=prov))
+                _complete_with_5xx_retry(messages, budget, None, prov))
         except asyncio.TimeoutError:
             budget.record_latency((time.perf_counter() - started) * 1000, name)
             budget.error_class = "TimeoutError"
@@ -250,8 +280,7 @@ async def _generate_on(messages: list[dict[str, str]], budget: LLMBudget, prov: 
     started = time.perf_counter()
     try:
         raw, tokens_in, tokens_out, cached, completion = await (
-            _complete(messages, config.ANSWERER_MAX_TOKENS) if prov is None
-            else _complete(messages, config.ANSWERER_MAX_TOKENS, prov))
+            _complete_with_5xx_retry(messages, budget, config.ANSWERER_MAX_TOKENS, prov))
     except asyncio.TimeoutError:
         budget.record_latency((time.perf_counter() - started) * 1000, name)
         budget.error_class = "TimeoutError"

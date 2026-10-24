@@ -92,6 +92,8 @@ KEY_ENV = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY"}
 FALLBACK_PROVIDER_ENV = "LLM_APPROACH_FALLBACK_PROVIDER"
 BREAKER_FAILURES_ENV = "LLM_APPROACH_BREAKER_FAILURES"
 BREAKER_COOLDOWN_ENV = "LLM_APPROACH_BREAKER_COOLDOWN_SECONDS"
+RETRY_5XX_DELAY_ENV = "LLM_APPROACH_5XX_RETRY_DELAY_SECONDS"
+DEFAULT_RETRY_5XX_DELAY_S = 1.0
 DEFAULT_BREAKER_FAILURES = 5
 DEFAULT_BREAKER_COOLDOWN_S = 60
 
@@ -143,6 +145,16 @@ def breaker_failures() -> int:
 def breaker_cooldown_s() -> int:
     """Seconds the open breaker skips the primary provider (default 60)."""
     return _int_env(BREAKER_COOLDOWN_ENV, DEFAULT_BREAKER_COOLDOWN_S)
+
+
+def retry_5xx_delay_s() -> float | None:
+    """Seconds to wait before the one retry of the primary provider after a 5xx (default 1.0; 0 retries at once;
+    a negative value turns the retry off; an unreadable value uses the default)."""
+    try:
+        value = float(os.getenv(RETRY_5XX_DELAY_ENV, "").strip())
+    except ValueError:
+        return DEFAULT_RETRY_5XX_DELAY_S
+    return value if value >= 0 else None
 
 
 def model(name: str | None = None) -> str:

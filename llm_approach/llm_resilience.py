@@ -55,6 +55,16 @@ def classify(exc: BaseException) -> str:
     return "other"
 
 
+RETRY_5XX_CODES = frozenset({500, 502, 503, 504})
+
+
+def is_retryable_5xx(exc: BaseException) -> bool:
+    """A 500, 502, 503 or 504 answer from the provider (never a 4xx, 429, auth error, timeout or lost connection)."""
+    if isinstance(exc, (TimeoutError, ConnectionError)) or isinstance(exc, gemini_limits.GeminiLimitError):
+        return False
+    return _http_code(exc) in RETRY_5XX_CODES
+
+
 class CircuitBreaker:
     """Closed until ``failures`` calls in a row fail; then open for ``cooldown_s``. After the cooldown one trial
     call is let through (half-open): a success closes the breaker, a failure opens it for another cooldown.

@@ -62,6 +62,7 @@ def _llm_failure_env(monkeypatch):
     for name in ("LLM_APPROACH_FALLBACK_PROVIDER", "LLM_APPROACH_BREAKER_FAILURES",
                  "LLM_APPROACH_BREAKER_COOLDOWN_SECONDS"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LLM_APPROACH_5XX_RETRY_DELAY_SECONDS", "-1")  # 5xx retry off; its tests turn it on
     llm_resilience.reset()
     yield
     llm_resilience.reset()

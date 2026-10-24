@@ -50,6 +50,59 @@ SESSION_MAX_COUNT = _int_env("SESSION_MAX_COUNT", 1000)
 SESSION_MAX_HISTORY_MESSAGES = _int_env("SESSION_MAX_HISTORY_MESSAGES", 40)
 MAX_LLM_CONTEXT_CHARS = 8000
 
+# Session storage. STATE_BACKEND and REDIS_URL are the variables app/session_store.py reads (same names, same
+# defaults); memory stays the default. The lock settings are new and v2-only.
+STATE_BACKEND_ENV = "STATE_BACKEND"
+STATE_BACKENDS = ("memory", "redis")
+REDIS_URL_ENV = "REDIS_URL"
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+REDIS_TIMEOUT_ENV = "LLM_APPROACH_REDIS_TIMEOUT_S"  # connect and read timeout; a down Redis must not stall a turn
+LOCK_TTL_ENV = "LLM_APPROACH_SESSION_LOCK_TTL_MS"  # life of the Redis lock key; refreshed while the turn runs
+LOCK_WAIT_ENV = "LLM_APPROACH_SESSION_LOCK_WAIT_S"  # longest a turn waits for the session (this server + Redis)
+LOCK_MAX_HOLD_ENV = "LLM_APPROACH_SESSION_LOCK_MAX_HOLD_S"  # a turn that runs longer stops refreshing and loses the lock
+DEFAULT_REDIS_TIMEOUT_S = 1.0
+DEFAULT_LOCK_TTL_MS = 30_000
+DEFAULT_LOCK_WAIT_S = 30.0
+DEFAULT_LOCK_MAX_HOLD_S = 120.0  # above the 60 s Gemini 429 wait plus the 25 s call budget
+
+
+def state_backend() -> str:
+    """``STATE_BACKEND`` (memory or redis), read fresh each call; default memory. An unknown value is an error
+    (it is not echoed), so a typo never silently falls back to memory on a multi-server deployment."""
+    value = os.getenv(STATE_BACKEND_ENV, "").strip().lower() or "memory"
+    if value not in STATE_BACKENDS:
+        raise ValueError(f"{STATE_BACKEND_ENV} must be one of: {', '.join(STATE_BACKENDS)}")
+    return value
+
+
+def redis_url() -> str:
+    """The Redis URL. May contain a password: never log it."""
+    return os.getenv(REDIS_URL_ENV, "").strip() or DEFAULT_REDIS_URL
+
+
+def _positive_float_env_default(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, "").strip())
+    except ValueError:
+        return default
+    return value if value > 0 and value == value and value != float("inf") else default
+
+
+def redis_timeout_s() -> float:
+    return _positive_float_env_default(REDIS_TIMEOUT_ENV, DEFAULT_REDIS_TIMEOUT_S)
+
+
+def session_lock_ttl_ms() -> int:
+    return _int_env(LOCK_TTL_ENV, DEFAULT_LOCK_TTL_MS)
+
+
+def session_lock_wait_s() -> float:
+    return _positive_float_env_default(LOCK_WAIT_ENV, DEFAULT_LOCK_WAIT_S)
+
+
+def session_lock_max_hold_s() -> float:
+    return _positive_float_env_default(LOCK_MAX_HOLD_ENV, DEFAULT_LOCK_MAX_HOLD_S)
+
 
 # Rooms API (mirrors API_URL in app/server.py, which is heavy to import).
 ROOMS_API_URL = os.getenv("LLM_APPROACH_ROOMS_API_URL", "https://homilivo.onrender.com/api/rooms")

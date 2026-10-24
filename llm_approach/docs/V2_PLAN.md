@@ -140,18 +140,44 @@ Still open: the semantic input gate (D2), RAG copy (stage 6), MCP/search tool (s
 | Circuit breaker | **done** (`LLM_APPROACH_BREAKER_FAILURES` 5, `LLM_APPROACH_BREAKER_COOLDOWN_SECONDS` 60, one trial after the cooldown) | llm_resilience.py |
 | 5xx retry | **done**: the active provider is retried once after a 500/502/503/504 (`LLM_APPROACH_5XX_RETRY_DELAY_SECONDS`, default 1.0, negative = off), counted by the Gemini limiter, skipped past the 25 s turn budget, one breaker failure per turn, event `recovered_5xx_retry`; not in the planner estimate | llm_client.py, llm_resilience.py, config.py |
 | 2 RAG / platform questions | **done**: copied into llm_approach/rag/ (embeddings, store, answer, ingest, 2 documents), own storage `data/chroma_v2` and collection `homilivo_knowledge_v2`, drift-tested; reuse.py uses the local copies | llm_approach/rag/, tests/copied/test_knowledge.py (11 of the 17 original tests), tests/test_rag_storage.py |
-| 3 Sessions in Redis | investigated, **not implemented** (plan in the Phase 3A report) | none |
+| 3 Sessions in Redis | investigated in 3A, **implemented in Phase 4A** (next section) | session_store.py |
 | 4 Commands | scripts/check_room_data.py written (not run); eval commands handed to the team lead | scripts/ |
 
 Still open after Phase 3A:
 
 - Live checks, run by hand: the 40-item golden and golden_slots evaluation with the current prompt fingerprint; scripts/check_room_data.py against one real rooms response.
 - The semantic input gate (D2) still comes from app/ (`reuse.get_is_security_blocked`, the only remaining app/ import); it also loads its own copy of the embedding model, so two copies are in memory until the gate is copied.
-- Redis sessions, load test, latency (p95), frontend wiring.
+- Load test, latency (p95), frontend wiring. (Redis sessions: Phase 4A, below.)
 - Fallback provider quality: run the evaluation with `LLM_APPROACH_PROVIDER` set to the fallback before turning it on.
 - homilivo_faq.md is a placeholder document (not official content): replace it before go-live.
 - Add `data/chroma_v2/` to the repo-root .gitignore (llm_approach/ has no .gitignore of its own).
 - MCP/search tool (stage 10), LangGraph (D1), the copied input guardrail, the 4 and 5 BHK parameter guardrail gap, and the other Phase 2 gaps above.
+
+## Phase 4A status (sessions in Redis, 1,633 tests passing)
+
+**Done** with fakeredis only (no real Redis, no LLM call). The default is unchanged: the in-memory `SessionStore`. Redis is used only when `STATE_BACKEND=redis`.
+
+| Part | Status | Where |
+| --- | --- | --- |
+| Store protocol | **done**: `SessionStoreBackend` (get_or_create, peek, save, reset, count, turn, `is_shared`); the in-memory store gained `save` and `is_shared = False`, nothing else | session_store.py, state.py |
+| Versioned state | **done**: `LLMConversationState.to_dict / from_dict`, JSON only, `schema_version` 1, a type check per field, selected room must be on screen. Bad, wrong-version or unreadable blobs give a fresh session and one WARNING without contents | state.py |
+| RedisSessionStore | **done**: load before the turn, save after, idle TTL 3600 s, cap 1000 (LRU sorted set), copied from app/session_store.py (`_key`, `_evict_expired`, `_enforce_cap`; drift-tested); key prefix `homilivo:v2:` so v2 never touches app/ sessions | session_store.py |
+| Redis down | **done**: the turn answers from a fresh in-memory state and saves nothing (so a fresh state can never overwrite the real session when Redis returns), error logged by class name only, counted as `session_store_events.redis_unavailable` in /metrics | session_store.py, observability.py |
+| /ready | **done**: with Redis sessions, `session_store: {backend, redis_reachable}` is added. It is reported, not required: with Redis down turns still answer, so the load balancer is not told to drain the server | server_app.py |
+| Cross-server lock | **done**: per-session `SET NX PX` with a random token, release and refresh only if the token still matches (WATCH, no Lua), the in-process `asyncio.Lock` kept, one wait bound (`LLM_APPROACH_SESSION_LOCK_WAIT_S`, 30 s) for both. At the bound the pipeline answers `RATE_LIMIT_REPLY` ("...please try again in a minute"), action `session_busy`, no LLM call | session_store.py, pipeline.py |
+| 429 wait under the lock | **done by refreshing**: the lock lives 30 s (`LLM_APPROACH_SESSION_LOCK_TTL_MS`) and a background task renews it every TTL/3 while the turn runs, up to a hard cap of 120 s (`LLM_APPROACH_SESSION_LOCK_MAX_HOLD_S`, above the 60 s Gemini wait plus the 25 s call budget). A crashed server's lock lapses after 30 s. Lost lock and cap hits are counted (`lock_lost`, `lock_hold_cap`) | session_store.py |
+| Reset during a turn | **done**: a reset while a turn holds the lock leaves a marker, so that turn does not save the session back | session_store.py |
+| Config | `STATE_BACKEND` and `REDIS_URL` (same names and defaults as app/); new: `LLM_APPROACH_REDIS_TIMEOUT_S` (1.0), `LLM_APPROACH_SESSION_LOCK_TTL_MS`, `_WAIT_S`, `_MAX_HOLD_S`. A bad `STATE_BACKEND` stops the server at startup; Redis being down at startup does not | config.py, server_app.py |
+| Reply without a second read | `TurnResult.state` carries the state the turn left, so `/chat` and the WebSocket do not read Redis again to build the reply | pipeline.py, server_app.py |
+
+Open after Phase 4A:
+
+- Run once against a real Redis (local or the production one): nothing here has touched one. Check `/ready`, a restart with a live session, and two servers on one Redis.
+- Choose the busy wording: it reuses `RATE_LIMIT_REPLY` ("try again in a minute"), which is longer than the real wait.
+- Decide whether `/ready` should return 503 when Redis is down (now: reported only).
+- Add `redis` to the llm_approach requirements (it is in the repo-root requirements.txt).
+- Redis memory per session: states hold up to 200 transcript entries and the rooms on screen; measure a long session before sizing Redis.
+- The load test (about 20 concurrent users) should now run with `STATE_BACKEND=redis` and two server processes.
 
 ## Quality gates
 
@@ -195,7 +221,7 @@ Guardrails are not enough for production. Each item is marked with who must act.
 | --- | --- | --- |
 | LLM provider for production | The Gemini free tier allows 500 requests a day, and its prompts may be used by Google. Production needs a paid key, or Groq as primary | needs team-lead decision |
 | Failure handling | **Done in Phase 3A** (fallback provider off by default, circuit breaker, fixed polite message, counters in /metrics). Open: an alert on the counters, and evaluating the fallback provider before enabling it | engineering task |
-| Sessions in Redis | Use Redis instead of memory (STATE_BACKEND exists in app/) so sessions survive restarts and work across several servers | engineering task |
+| Sessions in Redis | **Built in Phase 4A** (`STATE_BACKEND=redis`), tested with fakeredis only. Open: a run against a real Redis, the busy wording, the /ready rule | engineering task |
 | Load test | About 20 concurrent users: check session locks and the rate limit | engineering task |
 | Latency | p95 is 3.26 s against the 3 s target | engineering task |
 | Frontend wiring | Point the frontend at the v2 server | engineering task |

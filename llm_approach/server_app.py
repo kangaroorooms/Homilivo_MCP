@@ -129,6 +129,8 @@ async def _lifespan(app: FastAPI):
     else:
         validate_secrets()  # refuses to start when the provider key or KANGAROO_TOKEN is missing (names only, never values)
     before = (pipeline._full_guardrails, switches.snapshot())
+    pipeline.get_store()  # fail fast on a bad STATE_BACKEND or a missing redis package; Redis being down is not fatal
+    logger.info("session store backend=%s", "redis" if pipeline.get_store().is_shared else "memory")
     pipeline.configure_production()  # full guardrails + room data check + search-argument check, for this app's lifetime
     try:
         logging.getLogger("uvicorn.access").addFilter(_RedactTokenFilter())
@@ -195,7 +197,11 @@ async def run_turn(session_id: str, message: str, mode: str = "fast") -> pipelin
     """One pipeline turn. Never raises: any escape becomes a normal bot message."""
     turn_context.set_requested(str(uuid.uuid4()), mode)  # read by handle_turn (observability) and build_done
     try:
-        return await pipeline.handle_turn(session_id, message)
+        turn = await pipeline.handle_turn(session_id, message)
+        store = pipeline.get_store()
+        if store.is_shared and not turn.state_resolved:  # a shared store is a network read: keep it off the event loop
+            turn.state, turn.state_resolved = await asyncio.to_thread(store.peek, session_id), True
+        return turn
     except Exception as exc:  # noqa: BLE001
         logger.error("turn failed outside the pipeline: %s", type(exc).__name__)
         return pipeline.TurnResult(reply=SERVER_ERROR_REPLY, rooms=None, success=False)
@@ -203,7 +209,7 @@ async def run_turn(session_id: str, message: str, mode: str = "fast") -> pipelin
 
 def build_done(turn: pipeline.TurnResult, session_id: str, mode: str) -> dict[str, Any]:
     """The ChatResponse payload (also the ``done`` event body), field names as the frontend reads them."""
-    state = pipeline.get_store().peek(session_id)
+    state = turn.state if turn.state_resolved else pipeline.get_store().peek(session_id)
     on_screen = list(state.rooms_on_screen) if state is not None else []
     rooms = turn.rooms if turn.rooms is not None else responder.room_cards(on_screen)
     selected = state.selected_room() if state is not None else None
@@ -275,10 +281,14 @@ def create_app() -> FastAPI:
         }
         # The rooms token is reported but not required: offline-fixture runs work without it.
         is_ready = all(v for k, v in checks.items() if k != "kangaroo_token_present")
-        return JSONResponse(
-            status_code=200 if is_ready else 503,
-            content={"status": "ready" if is_ready else "not_ready", "checks": checks, **_llm_label()},
-        )
+        content = {"status": "ready" if is_ready else "not_ready", "checks": checks, **_llm_label()}
+        store = pipeline.get_store()
+        if hasattr(store, "ping"):  # Redis sessions: report the state. Not part of "ready": with Redis down the
+            # turns still answer (from a fresh state each time), so a load balancer should not drain the server.
+            reachable = store.ping()
+            content["session_store"] = {"backend": "redis", "redis_reachable": reachable,
+                                        "sessions_survive_restart": reachable}
+        return JSONResponse(status_code=200 if is_ready else 503, content=content)
 
     @app.get("/chat-ui/demo-token")
     def demo_token():

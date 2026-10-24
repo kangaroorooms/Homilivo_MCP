@@ -34,7 +34,8 @@ from llm_approach import (
 )
 from llm_approach.actions import ActionResult, TurnBudget, clarify, conversation, followup, platform, recall, search
 from llm_approach.schema import Decision, Intent
-from llm_approach.state import ERROR_REPLY, LLMConversationState, SessionStore
+from llm_approach.session_store import SessionStoreBackend, make_store
+from llm_approach.state import ERROR_REPLY, LLMConversationState, SessionBusyError
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ _SEARCH_SLOTS = ("city", "bhk", "min_price", "max_price")
 _SLOT_NAMES = ("city", "area", "bhk", "min_price", "max_price", "amenity", "ideal_for")
 
 _full_guardrails = True
-_store: SessionStore | None = None
+_store: SessionStoreBackend | None = None
 
 
 @dataclass
@@ -60,6 +61,10 @@ class TurnResult:
     metrics: dict[str, Any] = field(default_factory=dict)
     success: bool = True  # False for blocked, too-long and error replies
     debug: dict[str, Any] | None = None  # decision details for the CLI; never persisted
+    # The session state as the turn left it, so the server can build its reply without a second store read
+    # (a Redis round trip). state_resolved False: not known, look it up.
+    state: LLMConversationState | None = field(default=None, repr=False, compare=False)
+    state_resolved: bool = field(default=False, repr=False, compare=False)
 
 
 # ---- configuration -------------------------------------------------------
@@ -79,14 +84,15 @@ def configure_production() -> None:
     switches.configure(room_data_check=True, search_arg_check=True)
 
 
-def get_store() -> SessionStore:
+def get_store() -> SessionStoreBackend:
+    """The process-wide store: in memory unless ``STATE_BACKEND=redis``."""
     global _store
     if _store is None:
-        _store = SessionStore()
+        _store = make_store()
     return _store
 
 
-def reset_session(session_id: str, store: SessionStore | None = None) -> bool:
+def reset_session(session_id: str, store: SessionStoreBackend | None = None) -> bool:
     return (store or get_store()).reset(session_id)
 
 
@@ -161,21 +167,27 @@ def _record_observability(
         logger.error("observability failed: %s", type(exc).__name__)
 
 
-def _log_withheld(store: SessionStore, session_id: str, reply: str) -> None:
+async def _log_withheld(store: SessionStoreBackend, session_id: str, reply: str) -> None:
     """A too-long message still counts as a message the user sent: log a placeholder (and our reply)."""
     try:
+        if store.is_shared:  # a shared store needs the session lock for a read-modify-write
+            async with store.turn(session_id) as state:
+                state.record_query(None)
+                state.record_bot_reply(reply)
+            return
         state = store.get_or_create(session_id)
         state.record_query(None)
         state.record_bot_reply(reply)
-    except ValueError:  # not a session id: nothing to log against
+    except (ValueError, SessionBusyError):  # not a session id, or the session is busy: nothing to log against
         pass
 
 
 def _result(
-    reply: str, rooms, m: metrics_mod.TurnMetrics, *, success: bool = True, debug=None, started: float
+    reply: str, rooms, m: metrics_mod.TurnMetrics, *, success: bool = True, debug=None, started: float, state=None
 ) -> TurnResult:
     m.total_ms = _ms(started)
-    return TurnResult(reply=reply, rooms=rooms, metrics=m.to_dict(), success=success, debug=debug)
+    return TurnResult(reply=reply, rooms=rooms, metrics=m.to_dict(), success=success, debug=debug,
+                      state=state, state_resolved=state is not None)
 
 
 def _clarify_rejected(
@@ -359,7 +371,7 @@ async def _run_turn(
 
 
 async def handle_turn(
-    session_id: str, message: str, *, store: SessionStore | None = None
+    session_id: str, message: str, *, store: SessionStoreBackend | None = None
 ) -> TurnResult:
     started = time.perf_counter()
     m = metrics_mod.TurnMetrics()
@@ -375,7 +387,7 @@ async def handle_turn(
             return _result(EMPTY_REPLY, None, m, success=False, started=started)
         if len(text) > config.MAX_USER_MESSAGE_CHARS:
             m.action = "too_long"
-            _log_withheld(store, session_id, TOO_LONG_REPLY)
+            await _log_withheld(store, session_id, TOO_LONG_REPLY)
             return _result(TOO_LONG_REPLY, None, m, success=False, started=started)
 
         async with store.turn(session_id, user_message=text) as state:
@@ -387,7 +399,7 @@ async def handle_turn(
                     state.record_query(None)  # placeholder, never the blocked text
                     state.record_bot_reply(extra_security.REFUSAL)
                     state.record_turn(BLOCKED_PLACEHOLDER, extra_security.REFUSAL)
-                    return _result(extra_security.REFUSAL, None, m, success=False, started=started)
+                    return _result(extra_security.REFUSAL, None, m, success=False, started=started, state=state)
 
                 state.record_query(text)
                 action, debug = await _run_turn(text, state, m)
@@ -406,11 +418,15 @@ async def handle_turn(
                     state.record_query(None)
                 state.record_bot_reply(reply)
                 state.record_turn(text, reply)
-                return _result(reply, rooms, m, success=False, started=started)
+                return _result(reply, rooms, m, success=False, started=started, state=state)
 
             state.record_bot_reply(reply, rooms)  # after the output guard
             state.record_turn(text, reply)
-            return _result(reply, rooms, m, debug=debug, started=started)
+            return _result(reply, rooms, m, debug=debug, started=started, state=state)
+    except SessionBusyError:
+        # Another turn on this session (maybe on another server) is still running: ask for a resend, no LLM call.
+        m.error_class, m.action = "SessionBusy", "session_busy"
+        return _result(RATE_LIMIT_REPLY, None, m, success=False, started=started)
     except Exception as exc:  # bad session id, cancelled store, anything left
         logger.error("turn failed outside the session: %s", type(exc).__name__)
         m.error_class, m.action = type(exc).__name__, "error"

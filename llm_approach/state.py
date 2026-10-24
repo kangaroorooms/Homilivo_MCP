@@ -7,11 +7,11 @@ and one ``asyncio.Lock`` per session.
 Assumptions (single process, asyncio only):
 - All access happens on one event loop in one process. The store is not
   thread-safe and is not shared between uvicorn workers. Run one worker, or
-  move the state to Redis (not done here).
+  use ``session_store.RedisSessionStore`` (``STATE_BACKEND=redis``) for restarts and several servers.
 - Store methods are synchronous and never await, so they cannot interleave
   inside one event loop. The only awaiting is the per-session lock taken by
   ``SessionStore.turn``.
-- Sessions are lost on restart.
+- Sessions are lost on restart (this store only).
 
 Indexing: ``selected_room_index`` is **1-based**, like ``room_reference`` in
 the decision schema and the ``index`` field ``prompts.build_state_summary``
@@ -21,6 +21,9 @@ shows the model. ``None`` means no room in focus.
 from __future__ import annotations
 
 import asyncio
+import copy
+import dataclasses
+import json
 import re
 import time
 import uuid
@@ -96,6 +99,56 @@ def clean_room(room: dict[str, Any]) -> dict[str, Any]:
 
 def _empty_search() -> dict[str, Any]:
     return {key: None for key in SEARCH_FIELDS}
+
+
+# ---- persistence helpers ---------------------------------------------------
+
+STATE_SCHEMA_VERSION = 1  # bump when a field changes meaning; an old blob is then dropped, not guessed at
+
+
+class StateDecodeError(ValueError):
+    """A stored state could not be read. The message is a fixed kind (and field name), never content."""
+
+
+class SessionBusyError(RuntimeError):
+    """The session lock could not be taken within the wait bound (another turn on the session is still running)."""
+
+
+def _is_int(v: Any) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _list_of_dicts(v: Any) -> bool:
+    return isinstance(v, list) and all(isinstance(i, dict) for i in v)
+
+
+def _opt(check: Callable[[Any], bool]) -> Callable[[Any], bool]:
+    return lambda v: v is None or check(v)
+
+
+# One check per dataclass field (the round-trip test fails when a field is added without one).
+_FIELD_CHECKS: dict[str, Callable[[Any], bool]] = {
+    "history": lambda v: _list_of_dicts(v) and all(isinstance(i.get("content"), str) for i in v),
+    "last_bot_message": lambda v: isinstance(v, str),
+    "current_search": lambda v: isinstance(v, dict),
+    "rooms_on_screen": _list_of_dicts,
+    "selected_room_index": _opt(_is_int),
+    "pending_question": _opt(lambda v: isinstance(v, dict) and v.get("type") in PENDING_TYPES),
+    "rejected_room_ids": lambda v: isinstance(v, list),
+    "api_room_count": _opt(_is_int),
+    "rooms_truncated": lambda v: isinstance(v, bool),
+    "search_page": lambda v: _is_int(v) and v >= 1,
+    "has_next": _opt(lambda v: isinstance(v, bool)),
+    "total_rooms": _opt(_is_int),
+    "turn_count": lambda v: _is_int(v) and v >= 0,
+    "updated_at": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+    "user_queries": lambda v: _list_of_dicts(v) and all(isinstance(i.get("text"), str) for i in v),
+    "query_count": lambda v: _is_int(v) and v >= 0,
+    "user_facts": lambda v: isinstance(v, dict) and all(isinstance(e, dict) and "value" in e for e in v.values()),
+    "transcript": lambda v: _list_of_dicts(v)
+    and all(i.get("role") in ("user", "bot") and isinstance(i.get("text"), str) for i in v),
+    "transcript_seq": lambda v: _is_int(v) and v >= 0,
+}
 
 
 @dataclass
@@ -277,6 +330,40 @@ class LLMConversationState:
         entry = self.user_facts.get(key)
         return entry["value"] if entry else None
 
+    # ---- persistence (Redis) ---------------------------------------------
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-safe copy of every field plus ``schema_version``. Raises ``TypeError`` when a value is not JSON-safe."""
+        data = {f.name: copy.deepcopy(getattr(self, f.name)) for f in dataclasses.fields(self)}
+        json.dumps(data)  # fail here, not half way into a Redis write
+        data["schema_version"] = STATE_SCHEMA_VERSION
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "LLMConversationState":
+        """Rebuild a state from ``to_dict`` output. Raises ``StateDecodeError`` (a ValueError) for anything that is
+        not a dict of the current schema version, has a field of the wrong type, or whose selected room is not on
+        screen. The message names the problem kind and field, never a value."""
+        if not isinstance(data, dict):
+            raise StateDecodeError("not_an_object")
+        if data.get("schema_version") != STATE_SCHEMA_VERSION or isinstance(data.get("schema_version"), bool):
+            raise StateDecodeError("wrong_schema_version")
+        kwargs: dict[str, Any] = {}
+        for f in dataclasses.fields(cls):
+            if f.name not in data:
+                continue  # an older blob of the same version: that field keeps its default
+            value = data[f.name]
+            check = _FIELD_CHECKS[f.name]
+            if not check(value):
+                raise StateDecodeError(f"bad_field:{f.name}")
+            kwargs[f.name] = copy.deepcopy(value)
+        state = cls(**kwargs)
+        state.current_search = {key: state.current_search.get(key) for key in SEARCH_FIELDS}
+        index = state.selected_room_index
+        if index is not None and not 1 <= index <= len(state.rooms_on_screen):
+            raise StateDecodeError("bad_field:selected_room_index")
+        return state
+
     # ---- prompt view ---------------------------------------------------
 
     def to_prompt_state(self) -> dict[str, Any]:
@@ -312,7 +399,10 @@ class _Entry:
 
 
 class SessionStore:
-    """In-memory sessions: TTL, LRU cap, one lock per session."""
+    """In-memory sessions: TTL, LRU cap, one lock per session. The default store; ``session_store.RedisSessionStore``
+    is the shared one (same interface, see ``session_store.SessionStoreBackend``)."""
+
+    is_shared = False  # state lives in this process: a state returned by get_or_create is the live one
 
     def __init__(
         self,
@@ -365,6 +455,11 @@ class SessionStore:
         """The session's state (created if missing). Refreshes its TTL.
         Raises ``ValueError`` for a session id that is not a UUID."""
         return self._get_entry(session_id).state
+
+    def save(self, session_id: str, state: LLMConversationState) -> None:
+        """Store ``state`` as the session's state (the interface the Redis store needs; a no-op for a state that
+        came from ``get_or_create``, which is already the live one)."""
+        self._get_entry(session_id).state = state
 
     def peek(self, session_id: str) -> LLMConversationState | None:
         """The state if the session exists and is not expired. Never creates,

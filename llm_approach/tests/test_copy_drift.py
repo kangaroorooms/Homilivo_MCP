@@ -71,6 +71,17 @@ PARTIAL_COPIES = [
 ]
 
 
+# (source, copy, class name, members): class members (methods and class attributes) copied into a v2 class
+CLASS_MEMBER_COPIES = [
+    (
+        "app/session_store.py",
+        "llm_approach/session_store.py",
+        "RedisSessionStore",
+        ("_KEY_PREFIX", "_LRU_KEY", "_key", "_evict_expired", "_enforce_cap"),
+    ),
+]
+
+
 def _read(rel: str) -> str:
     return (REPO / rel).read_text(encoding="utf-8")
 
@@ -154,6 +165,44 @@ def test_extracted_definitions_match_source(source, copy, names):
         else:
             problems += _drift(src_segs[name], copy_segs[name], f"{copy}:{name}")
     assert not problems, f"{copy} drifted from {source}:\n" + "\n".join(problems)
+
+
+def _member_segments(text: str, class_name: str, names) -> dict[str, list[str]]:
+    lines = text.split("\n")
+    found: dict[str, list[str]] = {}
+    for cls in ast.parse(text).body:
+        if isinstance(cls, ast.ClassDef) and cls.name == class_name:
+            for node in cls.body:
+                name = getattr(node, "name", None)
+                if name is None and isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
+                    name = node.targets[0].id
+                if name in names:
+                    found[name] = lines[node.lineno - 1:node.end_lineno]
+    return found
+
+
+@pytest.mark.parametrize("source,copy,class_name,names", CLASS_MEMBER_COPIES, ids=[c for _, c, _, _ in CLASS_MEMBER_COPIES])
+def test_copied_class_members_match_source(source, copy, class_name, names):
+    copy_text = _read(copy)
+    header = copy_text.split(HEADER_END)[0]
+    assert source in header and "7dbcba3" in header and "copied, not imported" in header
+    src_segs = _member_segments(_read(source), class_name, names)
+    copy_segs = _member_segments(copy_text, class_name, names)
+    problems: list[str] = []
+    for name in names:
+        if name not in src_segs:
+            problems.append(f"{copy}: {class_name}.{name} no longer exists in {source}")
+        elif name not in copy_segs:
+            problems.append(f"{copy}: {class_name}.{name} is missing from the copy")
+        else:
+            problems += _drift(src_segs[name], copy_segs[name], f"{copy}:{class_name}.{name}")
+    assert not problems, f"{copy} drifted from {source}:\n" + "\n".join(problems)
+
+
+def test_class_member_drift_check_notices_a_changed_method():
+    src = "class A:\n    def m(self):\n        return 1\n"
+    assert _member_segments(src, "A", ("m",))["m"] == ["    def m(self):", "        return 1"]
+    assert _drift(_member_segments(src, "A", ("m",))["m"], ["    def m(self):", "        return 2"], "x")
 
 
 def test_drift_check_detects_a_changed_line():

@@ -22,6 +22,7 @@ from llm_approach import (
     extra_security,
     fallback,
     llm_client,
+    llm_resilience,
     metrics as metrics_mod,
     observability,
     prompts,
@@ -319,6 +320,9 @@ async def _run_turn(
     m.llm_ms, m.tokens_in, m.tokens_out = llm_budget.latency_ms, llm_budget.tokens_in, llm_budget.tokens_out
     m.llm_calls, m.llm_call_ms = llm_budget.calls, list(llm_budget.call_ms)
 
+    if decision is None and llm_budget.breaker_open:
+        # The circuit breaker is open and no fallback provider answered: a fixed reply at once, no wait.
+        return ActionResult(llm_resilience.LLM_UNAVAILABLE_REPLY, None, "llm_unavailable", error_class="BreakerOpen"), None
     if decision is None and llm_budget.error_class == "RateLimitError":
         # Groq is throttling us: say so, rather than asking the user a misleading question.
         return ActionResult(RATE_LIMIT_REPLY, None, "rate_limited", error_class="RateLimitError"), None

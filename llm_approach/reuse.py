@@ -112,8 +112,8 @@ def get_demo_auth_module() -> Any:
 
 
 def get_knowledge_preload() -> Callable[[], None]:
-    """``app.knowledge.store.warmup()``: loads the knowledge-base index. Lazy (embedding model)."""
-    from app.knowledge.store import warmup
+    """``llm_approach.rag.store.warmup()``: loads the knowledge-base index (v2's own copy and storage). Lazy."""
+    from llm_approach.rag.store import warmup
 
     return warmup
 
@@ -122,6 +122,6 @@ def get_knowledge_preload() -> Callable[[], None]:
 def get_answer_platform_question() -> Callable[[str], dict]:
     """``answer_platform_question(query) -> {grounded, message, sources}``.
     Lazy: retrieval loads the embedding model."""
-    from app.knowledge.answer import answer_platform_question
+    from llm_approach.rag.answer import answer_platform_question
 
     return answer_platform_question

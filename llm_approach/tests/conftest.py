@@ -48,7 +48,23 @@ class FakeGroq:
 def _skip_secret_check(monkeypatch):
     """Most tests start the app without real keys. The fail-fast secret check has its own tests
     (test_phase2_wiring.py), which remove this variable."""
+    from llm_approach import server_app
+
     monkeypatch.setenv("LLM_APPROACH_SKIP_SECRET_CHECK", "1")
+    monkeypatch.setattr(server_app, "ALLOW_SECRET_CHECK_SKIP", True)  # the app ignores the variable without this
+
+
+@pytest.fixture(autouse=True)
+def _llm_failure_env(monkeypatch):
+    """No test inherits the developer's fallback or breaker settings, or another test's breaker state."""
+    from llm_approach import llm_resilience
+
+    for name in ("LLM_APPROACH_FALLBACK_PROVIDER", "LLM_APPROACH_BREAKER_FAILURES",
+                 "LLM_APPROACH_BREAKER_COOLDOWN_SECONDS"):
+        monkeypatch.delenv(name, raising=False)
+    llm_resilience.reset()
+    yield
+    llm_resilience.reset()
 
 
 @pytest.fixture(autouse=True)

@@ -1,5 +1,5 @@
 # Copied from app/observability.py at commit 7dbcba3 (copied, not imported).
-# Changes: added a room_data_rejections counter (marked '# v2:')
+# Changes: added a room_data_rejections counter and LLM failure, fallback and breaker counters (marked '# v2:')
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -61,6 +61,8 @@ class _MetricsRegistry:
         self.tool_failures = 0
         self.rate_limit_events = 0
         self.room_data_rejections = 0  # v2: counter for the API data guardrail
+        self.llm_failures: dict[str, int] = {}  # v2: by kind (timeout, rate_limit, ...)
+        self.llm_events: dict[str, int] = {}  # v2: fallback_switch, breaker_open, breaker_skip, breaker_close
         self.status_counts: dict[str, int] = {}
         self.api_latencies_ms: deque[float] = deque(maxlen=500)
         self.llm_latencies_ms: deque[float] = deque(maxlen=500)
@@ -92,6 +94,14 @@ class _MetricsRegistry:
         with self._lock:  # v2: added
             self.room_data_rejections += 1  # v2: added
 
+    def record_llm_failure(self, kind: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.llm_failures[kind] = self.llm_failures.get(kind, 0) + 1  # v2: added
+
+    def record_llm_event(self, event: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.llm_events[event] = self.llm_events.get(event, 0) + 1  # v2: added
+
     def record_rate_limit_event(self) -> None:
         with self._lock:
             self.rate_limit_events += 1
@@ -118,6 +128,8 @@ class _MetricsRegistry:
                 "tool_failures": self.tool_failures,
                 "rate_limit_events": self.rate_limit_events,
                 "room_data_rejections": self.room_data_rejections,  # v2: added
+                "llm_failures": dict(self.llm_failures),  # v2: added
+                "llm_events": dict(self.llm_events),  # v2: added
                 "status_counts": dict(self.status_counts),
                 "api_latency": _latency_stats(self.api_latencies_ms),
                 "llm_latency": _latency_stats(self.llm_latencies_ms),
@@ -222,6 +234,16 @@ def record_llm_latency(latency_ms: float, model: str) -> None:
 def record_room_data_rejection() -> None:  # v2: new
     """One call whenever validate_room_data rejects a rooms API response."""  # v2: added
     _metrics.record_room_data_rejection()  # v2: added
+
+
+def record_llm_failure(kind: str) -> None:  # v2: new
+    """One call per failed LLM call or unusable reply; ``kind`` is a fixed word, never text."""  # v2: added
+    _metrics.record_llm_failure(kind)  # v2: added
+
+
+def record_llm_event(event: str) -> None:  # v2: new
+    """One call per fallback switch or circuit-breaker change; ``event`` is a fixed word."""  # v2: added
+    _metrics.record_llm_event(event)  # v2: added
 
 
 def record_rate_limit_event() -> None:

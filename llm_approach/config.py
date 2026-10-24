@@ -87,6 +87,14 @@ GEMINI_MAX_OUTPUT_ENV = "LLM_APPROACH_GEMINI_MAX_OUTPUT_TOKENS"
 DEFAULT_GEMINI_MAX_OUTPUT_TOKENS = 1024  # thinking tokens count toward the cap, so 500 can truncate the JSON
 KEY_ENV = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY"}
 
+# Failure handling (llm_resilience.py, llm_client.py). Fallback provider: off unless set, because the
+# answer quality on the fallback has not been evaluated.
+FALLBACK_PROVIDER_ENV = "LLM_APPROACH_FALLBACK_PROVIDER"
+BREAKER_FAILURES_ENV = "LLM_APPROACH_BREAKER_FAILURES"
+BREAKER_COOLDOWN_ENV = "LLM_APPROACH_BREAKER_COOLDOWN_SECONDS"
+DEFAULT_BREAKER_FAILURES = 5
+DEFAULT_BREAKER_COOLDOWN_S = 60
+
 # Daily token budget and call spacing are per provider. Groq: the values the eval runners always had.
 # Gemini: read from the environment on purpose, no limit numbers are hard-coded here.
 GROQ_DEFAULT_SPACING_S = 30.0
@@ -113,6 +121,28 @@ def provider() -> str:
     if value not in PROVIDERS:
         raise ValueError(f"{PROVIDER_ENV} must be one of: {', '.join(PROVIDERS)}")
     return value
+
+
+def fallback_provider() -> str | None:
+    """``LLM_APPROACH_FALLBACK_PROVIDER`` (gemini or groq), or None: unset, the same as the primary, or not a
+    known provider (that last case logs one warning that does not echo the value)."""
+    value = os.getenv(FALLBACK_PROVIDER_ENV, "").strip().lower()
+    if not value:
+        return None
+    if value not in PROVIDERS:
+        logger.warning("%s is not one of: %s; fallback provider stays off", FALLBACK_PROVIDER_ENV, ", ".join(PROVIDERS))
+        return None
+    return None if value == provider() else value
+
+
+def breaker_failures() -> int:
+    """Consecutive primary failures that open the circuit breaker (default 5)."""
+    return _int_env(BREAKER_FAILURES_ENV, DEFAULT_BREAKER_FAILURES)
+
+
+def breaker_cooldown_s() -> int:
+    """Seconds the open breaker skips the primary provider (default 60)."""
+    return _int_env(BREAKER_COOLDOWN_ENV, DEFAULT_BREAKER_COOLDOWN_S)
 
 
 def model(name: str | None = None) -> str:

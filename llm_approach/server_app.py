@@ -44,6 +44,9 @@ WS_MAX_MESSAGE_LENGTH = 500
 VALID_MODES = ("fast", "qwen", "gemma", "groq")
 SKIP_PRELOAD_ENV = "LLM_APPROACH_SKIP_PRELOAD"
 SKIP_SECRET_CHECK_ENV = "LLM_APPROACH_SKIP_SECRET_CHECK"  # tests only: never set it on a real server
+# The server always runs configure_production(), so the variable alone never skips the check. Only the test
+# suite flips this switch (tests/conftest.py); nothing in the app does.
+ALLOW_SECRET_CHECK_SKIP = False
 CORS_ENV = "LLM_APPROACH_CORS_ORIGINS"
 
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
@@ -119,7 +122,9 @@ def _preload_blocking() -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    if _env_flag(SKIP_SECRET_CHECK_ENV):
+    if _env_flag(SKIP_SECRET_CHECK_ENV) and not ALLOW_SECRET_CHECK_SKIP:
+        logger.error("%s is ignored in production mode: the secret check still runs", SKIP_SECRET_CHECK_ENV)
+    if _env_flag(SKIP_SECRET_CHECK_ENV) and ALLOW_SECRET_CHECK_SKIP:
         logger.warning("secret check skipped by %s: do not use this on a real server", SKIP_SECRET_CHECK_ENV)
     else:
         validate_secrets()  # refuses to start when the provider key or KANGAROO_TOKEN is missing (names only, never values)

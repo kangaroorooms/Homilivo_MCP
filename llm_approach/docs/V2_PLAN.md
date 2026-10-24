@@ -131,6 +131,27 @@ Seven phases, each ending in a check that must pass before the next starts. Dura
 
 Still open: the semantic input gate (D2), RAG copy (stage 6), MCP/search tool (stage 10), LangGraph (D1), the copied input guardrail. Known gaps from Phase 2: (1) the parameter guardrail accepts only PG, 1BHK, 2BHK, 3BHK, 1RK and SINGLE, so a 4 or 5 BHK search (allowed by validators.py) now asks again instead of searching: team-lead decision; (2) the API data guardrail's closed idealFor and availability lists may reject real rooms, so check a live sample before go-live; (3) eight older tests build rooms that lack required fields, so the two new checks are off by default and on only under configure_production().
 
+## Phase 3A status (failure handling and RAG copy, 1,538 tests passing)
+
+| Part | Status | Where |
+| --- | --- | --- |
+| 1 LLM failure handling | **done** (fakes only, no live call) | llm_resilience.py (kinds, breaker, fixed reply), llm_client.py (counting, fallback, breaker gate), pipeline.py (polite reply when the breaker is open), observability.py (failure and event counters), config.py (3 env variables), server_app.py (skip flag ignored in production) |
+| Optional fallback provider | **done, OFF by default** (`LLM_APPROACH_FALLBACK_PROVIDER`); one retry per turn, for timeout, 429, 5xx, bad JSON after the retry; fallback answer quality is not evaluated | llm_client.py |
+| Circuit breaker | **done** (`LLM_APPROACH_BREAKER_FAILURES` 5, `LLM_APPROACH_BREAKER_COOLDOWN_SECONDS` 60, one trial after the cooldown) | llm_resilience.py |
+| 2 RAG / platform questions | **done**: copied into llm_approach/rag/ (embeddings, store, answer, ingest, 2 documents), own storage `data/chroma_v2` and collection `homilivo_knowledge_v2`, drift-tested; reuse.py uses the local copies | llm_approach/rag/, tests/copied/test_knowledge.py (11 of the 17 original tests), tests/test_rag_storage.py |
+| 3 Sessions in Redis | investigated, **not implemented** (plan in the Phase 3A report) | none |
+| 4 Commands | scripts/check_room_data.py written (not run); eval commands handed to the team lead | scripts/ |
+
+Still open after Phase 3A:
+
+- Live checks, run by hand: the 40-item golden and golden_slots evaluation with the current prompt fingerprint; scripts/check_room_data.py against one real rooms response.
+- The semantic input gate (D2) still comes from app/ (`reuse.get_is_security_blocked`, the only remaining app/ import); it also loads its own copy of the embedding model, so two copies are in memory until the gate is copied.
+- Redis sessions, load test, latency (p95), frontend wiring.
+- Fallback provider quality: run the evaluation with `LLM_APPROACH_PROVIDER` set to the fallback before turning it on.
+- homilivo_faq.md is a placeholder document (not official content): replace it before go-live.
+- Add `data/chroma_v2/` to the repo-root .gitignore (llm_approach/ has no .gitignore of its own).
+- MCP/search tool (stage 10), LangGraph (D1), the copied input guardrail, the 4 and 5 BHK parameter guardrail gap, and the other Phase 2 gaps above.
+
 ## Quality gates
 
 v2 must hold the v1 experiment's accuracy while adding the protections. The gates below are proposed and need the team lead's confirmation.
@@ -172,7 +193,7 @@ Guardrails are not enough for production. Each item is marked with who must act.
 | Item | Detail | Type |
 | --- | --- | --- |
 | LLM provider for production | The Gemini free tier allows 500 requests a day, and its prompts may be used by Google. Production needs a paid key, or Groq as primary | needs team-lead decision |
-| Failure handling | When the LLM times out, returns 429 or gives bad JSON twice: provider fallback, then a fixed polite message, plus an alert | engineering task |
+| Failure handling | **Done in Phase 3A** (fallback provider off by default, circuit breaker, fixed polite message, counters in /metrics). Open: an alert on the counters, and evaluating the fallback provider before enabling it | engineering task |
 | Sessions in Redis | Use Redis instead of memory (STATE_BACKEND exists in app/) so sessions survive restarts and work across several servers | engineering task |
 | Load test | About 20 concurrent users: check session locks and the rate limit | engineering task |
 | Latency | p95 is 3.26 s against the 3 s target | engineering task |

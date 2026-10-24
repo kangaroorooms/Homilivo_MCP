@@ -29,6 +29,16 @@ WHOLE_FILE_COPIES = [
     ("app/demo_auth.py", "llm_approach/security/demo_auth.py"),
     ("app/observability.py", "llm_approach/observability.py"),
     ("app/rate_limit.py", "llm_approach/security/rate_limit.py"),
+    ("app/embeddings.py", "llm_approach/rag/embeddings.py"),
+    ("app/knowledge/store.py", "llm_approach/rag/store.py"),
+    ("app/knowledge/answer.py", "llm_approach/rag/answer.py"),
+    ("app/knowledge/ingest.py", "llm_approach/rag/ingest.py"),
+]
+
+# Documents carry no header (every *.md in the documents folder is indexed): they must match byte for byte.
+DOCUMENT_COPIES = [
+    ("app/knowledge/documents/about_this_assistant.md", "llm_approach/rag/documents/about_this_assistant.md"),
+    ("app/knowledge/documents/homilivo_faq.md", "llm_approach/rag/documents/homilivo_faq.md"),
 ]
 
 PROMPT_SAFETY_NAMES = (
@@ -116,6 +126,16 @@ def test_whole_file_copy_matches_source(source, copy):
     assert source in header and "7dbcba3" in header and "copied, not imported" in header
     problems = _drift(_read(source).split("\n"), _body_after_header(copy_text), copy)
     assert not problems, f"{copy} drifted from {source}:\n" + "\n".join(problems)
+
+
+@pytest.mark.parametrize("source,copy", DOCUMENT_COPIES, ids=[c for _, c in DOCUMENT_COPIES])
+def test_document_copy_is_identical_to_source(source, copy):
+    assert (REPO / source).read_bytes() == (REPO / copy).read_bytes()
+
+
+def test_rag_folder_holds_only_the_copied_documents():
+    names = sorted(p.name for p in (REPO / "llm_approach/rag/documents").iterdir())
+    assert names == sorted(Path(c).name for _, c in DOCUMENT_COPIES)  # a stray file here would be indexed
 
 
 @pytest.mark.parametrize("source,copy,names", PARTIAL_COPIES, ids=[c for _, c, _ in PARTIAL_COPIES])

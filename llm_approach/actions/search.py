@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from llm_approach import config, responder, reuse, rooms_client, switches, turn_context
+from llm_approach import config, observability, responder, reuse, rooms_client, switches, turn_context
 from llm_approach.actions import ActionResult, TurnBudget
 from llm_approach.actions.clarify import ASK_CITY, state_aware_question
 from llm_approach.guardrails.parameter_guardrail import validate_search_arguments
@@ -127,6 +127,7 @@ def _check_arguments(search: dict[str, Any], state: LLMConversationState, action
     if valid:
         return None
     field = next((name for prefix, name in _ARG_REASON_FIELDS if reason.startswith(prefix)), "unknown")
+    observability.record_parameter_rejection(field)
     logger.warning(
         "search arguments rejected field=%s request_id=%s session=%s",
         field, turn_context.request_id(), turn_context.session_hash(),

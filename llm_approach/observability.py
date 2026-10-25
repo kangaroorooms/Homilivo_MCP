@@ -1,5 +1,5 @@
 # Copied from app/observability.py at commit 7dbcba3 (copied, not imported).
-# Changes: added a semantic-gate counter (checked, would block, blocked, error, labels, latency), a room_data_rejections counter, LLM failure, fallback and breaker counters and a session-store event counter (marked '# v2:')
+# Changes: added a semantic-gate counter (checked, would block, blocked, error, labels, latency), a room_data_rejections counter, LLM failure, fallback and breaker counters and a session-store event counter, a parameter-rejection counter and a search-timeout counter (marked '# v2:')
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -61,6 +61,8 @@ class _MetricsRegistry:
         self.tool_failures = 0
         self.rate_limit_events = 0
         self.room_data_rejections = 0  # v2: counter for the API data guardrail
+        self.parameter_rejections: dict[str, int] = {}  # v2: by field name (fixed words)
+        self.search_timeouts = 0  # v2: whole-search timeouts
         self.llm_failures: dict[str, int] = {}  # v2: by kind (timeout, rate_limit, ...)
         self.llm_events: dict[str, int] = {}  # v2: fallback_switch, breaker_open, breaker_skip, breaker_close
         self.session_store_events: dict[str, int] = {}  # v2: redis_unavailable, state_corrupt, lock_timeout, ...
@@ -97,6 +99,14 @@ class _MetricsRegistry:
     def record_room_data_rejection(self) -> None:  # v2: new
         with self._lock:  # v2: added
             self.room_data_rejections += 1  # v2: added
+
+    def record_parameter_rejection(self, field: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.parameter_rejections[field] = self.parameter_rejections.get(field, 0) + 1  # v2: added
+
+    def record_search_timeout(self) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.search_timeouts += 1  # v2: added
 
     def record_llm_failure(self, kind: str) -> None:  # v2: new
         with self._lock:  # v2: added
@@ -148,6 +158,8 @@ class _MetricsRegistry:
                 "tool_failures": self.tool_failures,
                 "rate_limit_events": self.rate_limit_events,
                 "room_data_rejections": self.room_data_rejections,  # v2: added
+                "parameter_rejections": dict(self.parameter_rejections),  # v2: added
+                "search_timeouts": self.search_timeouts,  # v2: added
                 "llm_failures": dict(self.llm_failures),  # v2: added
                 "llm_events": dict(self.llm_events),  # v2: added
                 "session_store_events": dict(self.session_store_events),  # v2: added
@@ -256,6 +268,16 @@ def record_llm_latency(latency_ms: float, model: str) -> None:
 def record_room_data_rejection() -> None:  # v2: new
     """One call whenever validate_room_data rejects a rooms API response."""  # v2: added
     _metrics.record_room_data_rejection()  # v2: added
+
+
+def record_parameter_rejection(field: str) -> None:  # v2: new
+    """One call per search the parameter guardrail refused; ``field`` is a fixed field name, never a value."""  # v2: added
+    _metrics.record_parameter_rejection(field)  # v2: added
+
+
+def record_search_timeout() -> None:  # v2: new
+    """One call when the whole rooms search hit its time bound."""  # v2: added
+    _metrics.record_search_timeout()  # v2: added
 
 
 def record_llm_failure(kind: str) -> None:  # v2: new

@@ -14,27 +14,30 @@ non-empty token connects; a valid demo token is redeemed for the server credenti
 The rooms API always uses ``KANGAROO_TOKEN`` from the server environment.
 
 Heavy imports (torch) happen only inside ``pipeline.preload()`` and the knowledge-base
-preload, at startup, unless ``LLM_APPROACH_SKIP_PRELOAD=1``.
+preload, unless ``LLM_APPROACH_SKIP_PRELOAD=1``. They run in the background: the server listens at once,
+``/health`` answers 200 from the first second, ``/ready`` and ``/chat`` return 503 until both are loaded.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Literal, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from pathlib import Path
 
-from llm_approach import config, pipeline, responder, reuse, rooms_client, switches, turn_context
+from llm_approach import config, observability, pipeline, responder, reuse, rooms_client, switches, turn_context
 from llm_approach.security.secrets_check import validate_secrets
 
 logger = logging.getLogger(__name__)
@@ -48,6 +51,7 @@ SKIP_SECRET_CHECK_ENV = "LLM_APPROACH_SKIP_SECRET_CHECK"  # tests only: never se
 # suite flips this switch (tests/conftest.py); nothing in the app does.
 ALLOW_SECRET_CHECK_SKIP = False
 CORS_ENV = "LLM_APPROACH_CORS_ORIGINS"
+METRICS_TOKEN_ENV = "LLM_APPROACH_METRICS_TOKEN"  # optional: without it /metrics is off (404)
 
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 _TOKEN_IN_TEXT = re.compile(r"(token=)[^&\s\"']*", re.IGNORECASE)
@@ -75,6 +79,11 @@ _demo = reuse.get_demo_auth_module()
 
 # What /ready reports. Set by the startup preload.
 _readiness = {"guardrails": False, "knowledge_base": False}
+# True only while the background preload runs. Chat is refused (503) while it is set; once it ends, even after a
+# failed preload, chat is served as before (the models then load on first use). Never set when the preload is skipped.
+_startup = {"loading": False}
+STARTING_REPLY = "I'm just starting up. Please try again in a moment."
+STARTING_RETRY_AFTER_S = 5
 
 
 class _RedactTokenFilter(logging.Filter):
@@ -108,16 +117,62 @@ def _env_flag(name: str) -> bool:
 
 def _preload_blocking() -> None:
     """Load the guardrails and the knowledge base once. Failures are logged by class only."""
+    started = time.monotonic()
     try:
         pipeline.preload()
         _readiness["guardrails"] = True
+        logger.info("startup step=guardrails_and_gate seconds=%.1f", time.monotonic() - started)
     except Exception as exc:  # noqa: BLE001
         logger.error("guardrail preload failed: %s", type(exc).__name__)
+    started = time.monotonic()
     try:
         reuse.get_knowledge_preload()()
         _readiness["knowledge_base"] = True
+        logger.info("startup step=knowledge_base seconds=%.1f", time.monotonic() - started)
     except Exception as exc:  # noqa: BLE001
         logger.error("knowledge base preload failed: %s", type(exc).__name__)
+
+
+async def _preload_background() -> None:
+    """Run the blocking preload off the event loop; always clear the loading flag. Never raises."""
+    try:
+        await asyncio.to_thread(_preload_blocking)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("startup preload crashed: %s", type(exc).__name__)
+    finally:
+        _startup["loading"] = False
+
+
+def _still_loading() -> list[str]:
+    """Names of the components not loaded yet, while the background preload runs (else empty)."""
+    if not _startup["loading"]:
+        return []
+    return [name for name, loaded in _readiness.items() if not loaded]
+
+
+def _starting_response() -> JSONResponse | None:
+    """The polite 503 for a chat request that arrives before the models are loaded."""
+    if not _startup["loading"]:
+        return None
+    return JSONResponse(
+        status_code=503,
+        content={"success": False, "status": "starting", "message": STARTING_REPLY, "detail": STARTING_REPLY},
+        headers={"Retry-After": str(STARTING_RETRY_AFTER_S)},
+    )
+
+
+def _metrics_token() -> str:
+    """The dedicated metrics token, or "" when metrics are off. Blank or whitespace counts as not set."""
+    return (os.getenv(METRICS_TOKEN_ENV) or "").strip()
+
+
+def _metrics_authorized(request: Request, expected: str) -> bool:
+    """Only the dedicated metrics token opens /metrics: not a demo token, not the server credential."""
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    token = token.strip()
+    if scheme.lower() != "bearer" or not token or not expected:
+        return False
+    return hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8"))
 
 
 @asynccontextmanager
@@ -128,10 +183,13 @@ async def _lifespan(app: FastAPI):
         logger.warning("secret check skipped by %s: do not use this on a real server", SKIP_SECRET_CHECK_ENV)
     else:
         validate_secrets()  # refuses to start when the provider key or KANGAROO_TOKEN is missing (names only, never values)
+    if not _metrics_token():
+        logger.warning("%s is not set: /metrics is disabled (404)", METRICS_TOKEN_ENV)
     before = (pipeline._full_guardrails, switches.snapshot())
     pipeline.get_store()  # fail fast on a bad STATE_BACKEND or a missing redis package; Redis being down is not fatal
     logger.info("session store backend=%s", "redis" if pipeline.get_store().is_shared else "memory")
     pipeline.configure_production()  # full guardrails + room data check + search-argument check, for this app's lifetime
+    preload_task = None
     try:
         logging.getLogger("uvicorn.access").addFilter(_RedactTokenFilter())
         provider, model = config.label()
@@ -139,9 +197,12 @@ async def _lifespan(app: FastAPI):
         if _env_flag(SKIP_PRELOAD_ENV):
             logger.info("startup preload skipped by %s", SKIP_PRELOAD_ENV)
         else:
-            await asyncio.to_thread(_preload_blocking)
+            _startup["loading"] = True  # listen now; /ready and /chat answer 503 until the background load ends
+            preload_task = asyncio.create_task(_preload_background())
         yield
     finally:
+        if preload_task is not None:
+            await preload_task  # a shutdown during the load waits for it: the worker thread cannot be cancelled
         pipeline.configure(full_guardrails=before[0])
         switches.configure(**before[1])
 
@@ -282,6 +343,10 @@ def create_app() -> FastAPI:
         # The rooms token is reported but not required: offline-fixture runs work without it.
         is_ready = all(v for k, v in checks.items() if k != "kangaroo_token_present")
         content = {"status": "ready" if is_ready else "not_ready", "checks": checks, **_llm_label()}
+        loading = _still_loading()
+        if loading:
+            content["loading"] = loading  # which components the background load has not finished
+            content["message"] = "Starting up: still loading " + ", ".join(loading) + "."
         store = pipeline.get_store()
         if hasattr(store, "ping"):  # Redis sessions: report the state. Not part of "ready": with Redis down the
             # turns still answer (from a fresh state each time), so a load balancer should not drain the server.
@@ -289,6 +354,21 @@ def create_app() -> FastAPI:
             content["session_store"] = {"backend": "redis", "redis_reachable": reachable,
                                         "sessions_survive_restart": reachable}
         return JSONResponse(status_code=200 if is_ready else 503, content=content)
+
+    @app.get("/metrics")
+    async def metrics(request: Request, _limit: None = Depends(_rl.enforce_rate_limit)):
+        """Counters and latency stats, JSON. Opened only by LLM_APPROACH_METRICS_TOKEN; 404 when it is not set.
+        Fixed words and numbers only: no message text, no room contents, no keys, no session ids."""
+        expected = _metrics_token()
+        if not expected:
+            raise HTTPException(status_code=404, detail="Not Found")
+        if not _metrics_authorized(request, expected):
+            raise HTTPException(status_code=401, detail="Authentication required.", headers={"WWW-Authenticate": "Bearer"})
+        try:
+            active = await asyncio.to_thread(pipeline.get_store().count)
+        except Exception:  # noqa: BLE001
+            active = None
+        return {"active_sessions": active, **observability.get_metrics_snapshot()}
 
     @app.get("/chat-ui/demo-token")
     def demo_token():
@@ -308,6 +388,9 @@ def create_app() -> FastAPI:
 
     @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_rl.enforce_rate_limit)])
     async def chat(request: ChatRequest, credentials: HTTPAuthorizationCredentials = Depends(_bearer)):
+        starting = _starting_response()
+        if starting is not None:
+            return starting
         # Same as the current backend: the bearer value is a demo token (redeemed for the server credential) or
         # the caller's own Homilivo token. It is bound to this request only and never stored or logged.
         handle = rooms_client.set_rooms_token(_demo.redeem_demo_token(credentials.credentials) or credentials.credentials)
@@ -379,6 +462,9 @@ def create_app() -> FastAPI:
                     await send_error("Too many requests. Please slow down.")
                     continue
 
+                if _startup["loading"]:  # not ready yet: tell the user, keep the connection
+                    await send_error(STARTING_REPLY)
+                    continue
                 await websocket.send_json({"event": "typing"})
                 handle = rooms_client.set_rooms_token(rooms_token)
                 try:

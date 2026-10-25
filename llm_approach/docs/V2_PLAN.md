@@ -197,9 +197,31 @@ Open after Phase 3B:
 
 - **Gate latency and cold start**: measured with the real model on the developer machine (CPU): median about 19 ms and p95 about 29 ms per check after warm-up; first load about 70 s. Re-measure on the server hardware.
 - **Shadow week**: set `LLM_APPROACH_SEMANTIC_GATE=enforce` only after a week of shadow logs show no legitimate message that would be blocked. Known risk seen with the real model: with no rooms on screen, short messages such as "2bhk in pune" or "my name is Rahul" are labelled ACKNOWLEDGMENT (allowed), but "what did I say my budget was" is labelled OUT_OF_SCOPE, so enforce mode would refuse memory questions that come before any search.
-- **No /metrics route**: server_app.py has no /metrics endpoint (earlier phases mention counters "in /metrics"); the counters are in `observability.get_metrics_snapshot()`. Add the route, or use the log lines with `gate_report.py --log`.
+- **No /metrics route** (**closed in Phase 4B**): the route now exists, with a token.
 - Original tests that stay in app/ only: `test_guardrail_wiring` (needs agent_modes and the LangGraph router) and sections 1 to 3 of `test_security_hardblock` (need app.api); not copied.
 - D4 (different city with rooms on screen), the quality gates, the held-out set and every item of the Phase 3A and 4A "open" lists are unchanged.
+
+## Phase 4B status (readiness and metrics)
+
+Built with fakes only: no Gemini, Groq or rooms API call. Nothing is committed.
+
+| Part | Status | Where |
+| --- | --- | --- |
+| Background startup | **done**: the lifespan no longer waits for the preload. The server listens at once and loads the guardrails (security model, output guardrail, semantic gate warm-up) and the knowledge base in a background task. A shutdown during the load waits for it to end | server_app._lifespan, _preload_background |
+| /health | unchanged, no I/O: 200 from the first second | server_app |
+| /ready while loading | 503 with the usual `checks` plus `loading` (names still loading) and a `message`. 200 once `guardrails` and `knowledge_base` are loaded. Redis down still leaves it at 200 (reported only, as decided in 4A) | server_app.ready |
+| Chat before ready | `POST /chat` answers 503 `{success: false, status: "starting", message: "I'm just starting up. Please try again in a moment."}` with `Retry-After: 5`; a WebSocket message gets an `error` event with the same text and the connection stays open. No turn runs. If the preload **fails**, loading ends and chat is served as before (models load on first use); if the preload is skipped (tests), chat is never blocked | server_app |
+| /metrics | **done**: `GET /metrics` returns `active_sessions` (a count) and `observability.get_metrics_snapshot()`. Needs `Authorization: Bearer` with `LLM_APPROACH_METRICS_TOKEN` (constant-time compare); wrong or other tokens 401, unset 404. Behind the per-IP rate limit | server_app.metrics |
+| Missing counters | **added**: `parameter_rejections` (by field name) and `search_timeouts`. All the others already existed: `llm_failures` (kinds), `llm_events` (breaker_open / breaker_close / breaker_skip / recovered_5xx_retry / fallback_switch), `room_data_rejections`, `semantic_gate` (gate_checked, gate_would_block, gate_blocked, gate_error), `session_store_events` (redis_unavailable and the other redis events) | observability.py, actions/search.py, rooms_client.py |
+| gate_report.py | reads `/metrics` with `--token` (or `HOMILIVO_METRICS_TOKEN`); the token goes in a header and is never printed | scripts/gate_report.py |
+
+Open after Phase 4B:
+
+- **/metrics auth (decided):** only the dedicated `LLM_APPROACH_METRICS_TOKEN` opens it (demo tokens and the server credential do not); unset means 404 and one startup WARNING, and `validate_secrets` does not require it. app/'s own route has no authentication.
+- Startup timing on the real server hardware and a cold disk (about 70 s on the developer machine before; about 21 s with warm files): measure again, and set the host's health-check path to `/health` and its readiness gate to `/ready`.
+- The frontend must show the 503 "starting up" reply as a retry, not as a failure.
+- Redis check time at startup was not measured (no real Redis): the ping is bounded by `LLM_APPROACH_REDIS_TIMEOUT_S` (1.0 s).
+- Metrics are per process and reset on restart, as in app/.
 
 ## Quality gates
 

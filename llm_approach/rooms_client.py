@@ -416,6 +416,10 @@ def search_rooms(
         logger.warning("rooms search timed out after %ss request_id=%s session=%s",
                        timeout, turn_context.request_id(), turn_context.session_hash())
         result = _fail("search_timeout")
+        try:
+            observability.record_search_timeout()
+        except Exception:  # noqa: BLE001 - metrics never break a search
+            pass
     elif "error" in holder:
         raise holder["error"]
     else:

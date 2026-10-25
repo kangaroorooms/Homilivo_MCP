@@ -24,6 +24,7 @@ WHOLE_FILE_COPIES = [
     ("app/guardrails/common.py", "llm_approach/guardrails/common.py"),
     ("app/guardrails/output_guardrail.py", "llm_approach/guardrails/output_guardrail.py"),
     ("app/guardrails/parameter_guardrail.py", "llm_approach/guardrails/parameter_guardrail.py"),
+    ("app/guardrails/input_guardrail.py", "llm_approach/guardrails/input_guardrail.py"),
     ("app/guardrails/api_data_guardrail.py", "llm_approach/guardrails/api_data_guardrail.py"),
     ("app/fast_parser.py", "llm_approach/fast_parser.py"),
     ("app/demo_auth.py", "llm_approach/security/demo_auth.py"),

@@ -1,5 +1,5 @@
 # Copied from app/guardrails/parameter_guardrail.py at commit 7dbcba3 (copied, not imported).
-# Changes: none (relative import of .common still resolves)
+# Changes: VALID_ROOM_TYPES also allows 4BHK and 5BHK (two lines marked "# v2:"; validators.py already allows 1 to 5 BHK)
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -43,6 +43,8 @@ VALID_ROOM_TYPES = {
     "1BHK",
     "2BHK",
     "3BHK",
+    "4BHK",  # v2: team lead decision, 4 and 5 BHK are valid searches
+    "5BHK",  # v2: same
     "1RK",
     "SINGLE",
 }

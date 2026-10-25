@@ -51,13 +51,13 @@ Every guardrail and security stage of the plan already exists in app/ and is cop
 | 1 | React Chatbot, WebSocket | Unchanged frontend, start-frontend-llm.ps1 | Unchanged | Frontend repo |
 | 2 | FastAPI /ws/chat | Own server_app.py, which already has its own `_RedactTokenFilter` and `ChatRequest` (500-character cap) | Keep server_app.py; `_normalize_session_id` is copied to security/secrets_check.py (Phase 1) and wired in Phase 2 | api.py: _normalize_session_id (the filter and ChatRequest already match) |
 | 3 | Authentication | demo_auth and rate_limit imported through reuse.py | Copy both (done in Phase 1); add the fail-fast secret check, requiring GEMINI_API_KEY (or GROQ_API_KEY when the provider is groq) and KANGAROO_TOKEN; wiring into server_app.py is Phase 2 | demo_auth.py, rate_limit.py, api.validate_secrets |
-| 4 | Input Guardrail | Security hard block imported, plus extra_security.py; semantic gate not used | Copy input_guardrail.py whole; hard block and extra_security before the LLM as today. **The semantic gate has no conversation-context parameter and wrongly blocks follow-ups** ("does it have wifi", "show cheaper ones", "under 15k"), so D2 must define a gating rule first, for example: gate only when no rooms are on screen and no question is pending; shadow mode first (decision D2) | input_guardrail.py: is_security_blocked, validate_user_input |
-| 5 | LangGraph Router | Keyword router replaced by one LLM decision, validators.py and a dispatcher in pipeline.py | **Replaced**: the router node becomes the LLM decision (prompt, schema-checked JSON, confidence threshold), routing by validated intent (decision D1) | Graph shell only; keyword routing not reused |
+| 4 | Input Guardrail | Security hard block imported, plus extra_security.py; semantic gate not used | Copy input_guardrail.py whole; hard block and extra_security before the LLM as today. **The semantic gate has no conversation-context parameter and wrongly blocks follow-ups** ("does it have wifi", "show cheaper ones", "under 15k"). **Decided (D2) and built in Phase 3B**: the copy runs only when no rooms are on screen and no question is pending, in shadow mode (log only) by default | input_guardrail.py: is_security_blocked, validate_user_input |
+| 5 | LangGraph Router | Keyword router replaced by one LLM decision, validators.py and a dispatcher in pipeline.py | **Replaced**: the router node becomes the LLM decision (prompt, schema-checked JSON, confidence threshold), routing by validated intent. **Decided (D1): keep the current dispatcher, no LangGraph** | Graph shell only; keyword routing not reused |
 | 6 | FAQ/RAG | actions/platform.py answers PLATFORM_INFO through app/knowledge, reached by reuse.py | **Copy and decouple**: llm_approach already uses app/knowledge through reuse.py, so copy the retriever, answer path, embeddings.py and the documents (rag/documents/) and give v2 its own CHROMA_PERSIST_DIR | app/knowledge/, app/embeddings.py |
 | 7 | Conversation | conversation.py, clarify.py, recall.py, conversation_answerer.py | **Keep** (memory, recall and verified chat answers are new); keep the reused fact-grounding and injection-defence prompt rules | agent_modes: FACT_GROUNDING_RULE, PROMPT_INJECTION_DEFENSE_RULE |
 | 8 | API Request, Pydantic Extraction | Slots extracted inside the LLM decision (schema.py, Pydantic) | **Keep**: the decision call is the extraction step, so one call, not two | None |
 | 9 | Parameter Guardrail | Re-implemented as validators.validate_slots | Copy parameter_guardrail.py as the single slot check; validators.py keeps only LLM-specific checks (allowed intent, room index, confidence) | parameter_guardrail.validate_search_arguments |
-| 10 | MCP Tool | rooms_client.py calls the Rooms API directly | **Needs a decision**: (a) copy app/server.py and add the mcp package, or (b) keep rooms_client.py and copy only the timeout and token behaviour (**recommended: b**) | agent_modes._call_search_rooms_with_timeout, app/server.py |
+| 10 | MCP Tool | rooms_client.py calls the Rooms API directly | **Decided: (b)** keep rooms_client.py and add only the missing whole-search timeout and per-request token (built in Phase 3B); no mcp package, no app/server.py copy | agent_modes._call_search_rooms_with_timeout, app/server.py |
 | 11 | Homilivo API | Rooms API GET | Unchanged | None |
 | 12 | API Guardrail | Not used; only a field allowlist and sanitiser in state.clean_room | Copy api_data_guardrail.py (done in Phase 1); run validate_room_data on every Rooms API response before rooms reach state or the prompt. **validate_room_data rejects the whole result on one bad room**, so log the failing field when it is wired in. `sanitize_room_for_llm_context` is in agent_modes, not api_data_guardrail, and is copied to prompt_safety.py | api_data_guardrail.validate_room_data; agent_modes.sanitize_room_for_llm_context |
 | 13 | Response Generation | Templates per action; the LLM only drafts chat-memory answers, verified in code | **Keep**; delimiter neutraliser copied (already wrapped) | agent_modes._neutralize_prompt_delimiters |
@@ -94,12 +94,12 @@ llm_approach/
 
 ## Design decisions
 
-Six choices shape v2. Each has a recommendation; D1, D2 and D4 need the team lead's confirmation.
+Six choices shaped v2. On 25 October 2026 the team lead decided D1, D2, stage 10 and the 4/5 BHK rule (marked below); D4 is still open.
 
 | # | Decision | Options | Recommendation and why |
 | --- | --- | --- | --- |
-| D1 | Orchestration shell | LangGraph StateGraph, or the plain dispatcher in pipeline.py | **LangGraph**, matching the agreed diagram and production. Each node wraps an existing tested pipeline function, so behaviour does not change; the parity test must stay identical. Cost: a refactor of pipeline.py and a LangGraph dependency. |
-| D2 | Semantic input gate | Block before the LLM, or advise only | **Shadow mode first**: run it before the LLM with the conversation state passed in, log its verdict but do not block, for one full evaluation. Switch to blocking only if it raises 0 false positives on the 144 general messages and the 166 eval items. Reason: a follow-up such as "does it have wifi" looks off-topic without context. The LLM's OUT_OF_SCOPE intent stays as the second line. |
+| D1 | Orchestration shell | LangGraph StateGraph, or the plain dispatcher in pipeline.py | **DECIDED: keep the plain dispatcher, no LangGraph.** (Original recommendation: LangGraph, matching the agreed diagram and production. Each node wraps an existing tested pipeline function, so behaviour does not change; the parity test must stay identical. Cost: a refactor of pipeline.py and a LangGraph dependency.) |
+| D2 | Semantic input gate | Block before the LLM, or advise only | **DECIDED: copy it and run it in shadow mode, only when no rooms are on screen and no question is pending** (built in Phase 3B; `enforce` exists but is not the default). Original text: **Shadow mode first**: run it before the LLM with the conversation state passed in, log its verdict but do not block, for one full evaluation. Switch to blocking only if it raises 0 false positives on the 144 general messages and the 166 eval items. Reason: a follow-up such as "does it have wifi" looks off-topic without context. The LLM's OUT_OF_SCOPE intent stays as the second line. |
 | D3 | Slot checks | Keep validators.validate_slots, or use the app/ parameter guardrail | **One source of truth: the app/ parameter guardrail.** Run both side by side in Phase 3; any rule that exists only in validators.py moves into the copy as a marked v2 change. |
 | D4 | Different city with rooms on screen | Carry over old filters, or start fresh | **Start fresh**: a new city clears the old budget, BHK and area; short refinements ("under 15k") keep them. Today handle_refinement merges old filters, so "bhopal me 1bhk" can inherit a Bangalore budget. |
 | D5 | LLM calls per message | As today, or more | **Unchanged**: one decision call; a second call only for questions about the chat; the RAG answer path counts inside the same per-turn budget. |
@@ -129,7 +129,7 @@ Seven phases, each ending in a check that must pass before the next starts. Dura
 | 16 Observability | **done**: one record_turn per turn, LLM latency and usage, rooms API latency | pipeline.handle_turn, llm_client, rooms_client |
 | Production switch | pipeline.configure_production() at server start | server_app._lifespan |
 
-Still open: the semantic input gate (D2), RAG copy (stage 6), MCP/search tool (stage 10), LangGraph (D1), the copied input guardrail. Known gaps from Phase 2: (1) the parameter guardrail accepts only PG, 1BHK, 2BHK, 3BHK, 1RK and SINGLE, so a 4 or 5 BHK search (allowed by validators.py) now asks again instead of searching: team-lead decision; (2) the API data guardrail's closed idealFor and availability lists may reject real rooms, so check a live sample before go-live; (3) eight older tests build rooms that lack required fields, so the two new checks are off by default and on only under configure_production().
+Still open: the semantic input gate (D2), RAG copy (stage 6), MCP/search tool (stage 10), LangGraph (D1), the copied input guardrail. Known gaps from Phase 2: (1) the parameter guardrail accepts only PG, 1BHK, 2BHK, 3BHK, 1RK and SINGLE, so a 4 or 5 BHK search (allowed by validators.py) now asks again instead of searching (**closed in Phase 3B**: 4BHK and 5BHK added); (2) the API data guardrail's closed idealFor and availability lists may reject real rooms, so check a live sample before go-live; (3) eight older tests build rooms that lack required fields, so the two new checks are off by default and on only under configure_production().
 
 ## Phase 3A status (failure handling and RAG copy, 1,538 tests passing)
 
@@ -146,7 +146,7 @@ Still open: the semantic input gate (D2), RAG copy (stage 6), MCP/search tool (s
 Still open after Phase 3A:
 
 - Live checks, run by hand: the 40-item golden and golden_slots evaluation with the current prompt fingerprint; scripts/check_room_data.py against one real rooms response.
-- The semantic input gate (D2) still comes from app/ (`reuse.get_is_security_blocked`, the only remaining app/ import); it also loads its own copy of the embedding model, so two copies are in memory until the gate is copied.
+- The semantic input gate (D2) came from app/ and loaded its own embedding model (**closed in Phase 3B**: copied, one shared model, no app/ import left).
 - Load test, latency (p95), frontend wiring. (Redis sessions: Phase 4A, below.)
 - Fallback provider quality: run the evaluation with `LLM_APPROACH_PROVIDER` set to the fallback before turning it on.
 - homilivo_faq.md is a placeholder document (not official content): replace it before go-live.
@@ -178,6 +178,28 @@ Open after Phase 4A:
 - Add `redis` to the llm_approach requirements (it is in the repo-root requirements.txt).
 - Redis memory per session: states hold up to 200 transcript entries and the rooms on screen; measure a long session before sizing Redis.
 - The load test (about 20 concurrent users) should now run with `STATE_BACKEND=redis` and two server processes.
+
+## Phase 3B status (decisions applied, 1,698 tests passing)
+
+Built with fakes only: no Gemini, Groq or rooms API call. Nothing is committed.
+
+| Part | Status | Where |
+| --- | --- | --- |
+| 1 4BHK / 5BHK | **done**: `VALID_ROOM_TYPES` also holds 4BHK and 5BHK (two lines marked `# v2:`); the Phase 2 test that pinned the difference now checks that validators and guardrail agree (1 to 5 pass, 6 fails) | guardrails/parameter_guardrail.py, tests/test_phase2_wiring.py |
+| 2 Search timeout | **done**: the whole live search is bounded by `LLM_APPROACH_SEARCH_TIMEOUT_SECONDS` (default 15 s, same as `MCP_TOOL_TIMEOUT_SECONDS`). On timeout: `error_class=search_timeout`, the existing "Room search is unavailable right now" reply, the previous session state kept. The worker thread only talks to the rooms API and never touches state, and it sends no retry after the timeout. The existing retry (one retry, timeout or connection error only) is unchanged | rooms_client.py, config.py |
+| 2 Token handling | **done**: the original binds the caller's token per request (a demo token is swapped for the server credential, any other bearer value is the caller's own Homilivo token). llm_approach used `KANGAROO_TOKEN` for everyone. Now `/chat` and `/ws/chat` bind the same value in a ContextVar; `KANGAROO_TOKEN` is the fallback. Never logged | rooms_client.set_rooms_token, server_app.py |
+| 3 Input guardrail copy | **done**: `guardrails/input_guardrail.py`, one changed line (embedding import, marked `# v2:`), drift-tested. Uses `rag/embeddings.get_shared_model`, so one model copy is in memory; loaded lazily once, warmed at startup with the other preloads when the gate is not off | guardrails/input_guardrail.py, reuse.py, pipeline.preload |
+| 3 No app/ imports | **done**: `reuse.get_is_security_blocked` is the local copy; a test fails if any llm_approach module imports from `app` | tests/test_no_app_imports.py |
+| 3 Semantic gate | **done**: `LLM_APPROACH_SEMANTIC_GATE` = off / shadow / enforce. Default shadow under `configure_production()`, off in bare `handle_turn` and tests. Runs after the length and security checks and before the LLM call, only with no rooms on screen and no pending question. Shadow records `gate_checked`, `gate_would_block` and the label; enforce answers with the out-of-scope reply (status blocked, category `semantic_gate`, no LLM call). A classifier failure never blocks (`gate_error`). Logs: hashed session id, request id, verdict, label; never the text | semantic_gate.py, pipeline.py, switches.py, observability.py |
+| 3 Report script | **written, not run**: `scripts/gate_report.py` counts the gate's log lines (`--log`) or reads `/metrics` if a server has one | scripts/gate_report.py |
+
+Open after Phase 3B:
+
+- **Gate latency and cold start**: measured with the real model on the developer machine (CPU): median about 19 ms and p95 about 29 ms per check after warm-up; first load about 70 s. Re-measure on the server hardware.
+- **Shadow week**: set `LLM_APPROACH_SEMANTIC_GATE=enforce` only after a week of shadow logs show no legitimate message that would be blocked. Known risk seen with the real model: with no rooms on screen, short messages such as "2bhk in pune" or "my name is Rahul" are labelled ACKNOWLEDGMENT (allowed), but "what did I say my budget was" is labelled OUT_OF_SCOPE, so enforce mode would refuse memory questions that come before any search.
+- **No /metrics route**: server_app.py has no /metrics endpoint (earlier phases mention counters "in /metrics"); the counters are in `observability.get_metrics_snapshot()`. Add the route, or use the log lines with `gate_report.py --log`.
+- Original tests that stay in app/ only: `test_guardrail_wiring` (needs agent_modes and the LangGraph router) and sections 1 to 3 of `test_security_hardblock` (need app.api); not copied.
+- D4 (different city with rooms on screen), the quality gates, the held-out set and every item of the Phase 3A and 4A "open" lists are unchanged.
 
 ## Quality gates
 
@@ -227,13 +249,24 @@ Guardrails are not enough for production. Each item is marked with who must act.
 | Frontend wiring | Point the frontend at the v2 server | engineering task |
 | Evaluation after every phase | Rerun the full evaluation: pooled at least 92%, invalid searches 0, safety unchanged | rule |
 
+## Handover checklist: switching to the paid Gemini key
+
+Decided on 25 October 2026: production uses a paid Gemini key later. The free-tier limits and the evaluation results in this plan belong to the free key, so do these in order before go-live:
+
+- [ ] **Paid key and data terms.** Get the paid key from the team lead. Read the paid tier's data terms (whether prompts are used for training or retained) and have them approved. Set `GEMINI_API_KEY` in the server environment only, never in the repo or logs.
+- [ ] **Update the free-tier limits in config.py** to the paid tier's published limits: the 5 s spacing between requests, the 450 requests per day cap, and the 12 requests and 200K tokens per 60 s window. Change them through the existing environment settings or the constants in config.py and gemini_limits.py, and update the tests that pin the old numbers.
+- [ ] **Rerun the full evaluation, the live scenarios and the consistency check** (3 runs) on the paid key. Compare with the quality gates above (pooled accuracy at least 92.0%, ctxY at least 67.7%, invalid searches 0, safety unchanged, at least 95% identical decisions across runs). Record the new prompt fingerprint.
+- [ ] **Decide the Groq fallback.** It stays off (`LLM_APPROACH_FALLBACK_PROVIDER` unset) until its answers have been evaluated with the same sets. Switch it on only after that evaluation passes and the team lead agrees.
+- [ ] **Set `LLM_APPROACH_SEMANTIC_GATE` from a week of shadow logs.** Keep `shadow` while the log shows would-blocks on legitimate messages; move to `enforce` only when a week shows none (see Phase 3B, open items). Use `scripts/gate_report.py --log <server log>`.
+
 ## Decisions needed from the team lead
 
 - [x] Branch: experiment/llm-approach_v2, cut from experiment/llm-approach so the llm_approach/ work carries over (name left to us)
-- [ ] D1: LangGraph shell matching the diagram, or keep the plain dispatcher
-- [ ] D2: semantic gate in shadow mode first, blocking only after 0 false positives
+- [x] D1: keep the plain dispatcher, no LangGraph (decided 25 Oct 2026)
+- [x] D2: semantic gate copied, shadow mode, applied only with no rooms on screen and no pending question (decided 25 Oct 2026); blocking only after a week of shadow logs show 0 false positives
 - [ ] D4: a different city with rooms on screen starts a fresh search, without the old filters
 - [ ] The quality gates above, especially the 2-point tolerance on accuracy
 - [ ] Approval to build the held-out context set
-- [ ] Stage 10: copy app/server.py and add the mcp package, or keep rooms_client.py and copy only the timeout and token behaviour (recommended)
-- [ ] LLM provider for production: paid Gemini key, or Groq as primary
+- [x] Stage 10: keep rooms_client.py, add only the timeout and token handling (decided 25 Oct 2026)
+- [x] 4BHK and 5BHK are valid searches in the parameter guardrail (decided 25 Oct 2026)
+- [x] LLM provider for production: a paid Gemini key later (decided 25 Oct 2026); see the handover checklist

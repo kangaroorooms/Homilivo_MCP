@@ -110,6 +110,30 @@ ROOMS_API_TIMEOUT_S = 15.0
 ROOMS_RETRY_JITTER_S = (2.0, 4.0)  # one retry, timeout or connection error only
 ROOMS_LIMIT = 10
 ROOMS_SORT = "latest"
+SEARCH_TIMEOUT_ENV = "LLM_APPROACH_SEARCH_TIMEOUT_SECONDS"  # whole search, retry included (app/server.py MCP_TOOL_TIMEOUT_SECONDS)
+DEFAULT_SEARCH_TIMEOUT_S = 15.0
+
+
+def search_timeout_s() -> float:
+    """The most one rooms search may take end to end, read fresh each call. A bad value falls back to 15 s."""
+    return _positive_float_env_default(SEARCH_TIMEOUT_ENV, DEFAULT_SEARCH_TIMEOUT_S)
+
+
+# Semantic input gate (copied input guardrail's intent classifier). off: not run; shadow: run and record, never block;
+# enforce: block off-topic first messages. configure_production() sets shadow; bare handle_turn and tests run off.
+SEMANTIC_GATE_ENV = "LLM_APPROACH_SEMANTIC_GATE"
+SEMANTIC_GATE_MODES = ("off", "shadow", "enforce")
+
+
+def semantic_gate_setting() -> str | None:
+    """The mode named by ``LLM_APPROACH_SEMANTIC_GATE``, or None when unset. An unknown value is an error
+    (not echoed), so a typo never silently leaves the gate off in production."""
+    value = os.getenv(SEMANTIC_GATE_ENV, "").strip().lower()
+    if not value:
+        return None
+    if value not in SEMANTIC_GATE_MODES:
+        raise ValueError(f"{SEMANTIC_GATE_ENV} must be one of: {', '.join(SEMANTIC_GATE_MODES)}")
+    return value
 
 
 # The API has no area filter, so an area search fetches this many rooms and

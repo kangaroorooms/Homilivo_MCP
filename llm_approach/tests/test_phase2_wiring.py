@@ -138,6 +138,26 @@ def test_production_server_rejects_a_bad_rooms_response(monkeypatch, live_rooms)
     assert r.json()["message"] == rooms_client.UNAVAILABLE_MESSAGE and r.json()["rooms"] == []
 
 
+@pytest.mark.parametrize("bhk", [4, 5])
+def test_production_server_searches_4_and_5_bhk(monkeypatch, live_rooms, bhk):
+    """Phase 3B: 4 and 5 BHK pass the parameter guardrail, so the rooms API is called."""
+    monkeypatch.setenv(server_app.SKIP_PRELOAD_ENV, "1")
+    live_rooms["body"] = body(good_room(1, roomType=f"{bhk}BHK"))
+
+    async def fake_decide(user_message, state_summary, budget):
+        from llm_approach.schema import parse_decision
+
+        return parse_decision(dec("NEW_SEARCH", city="Bangalore", bhk=bhk))
+
+    monkeypatch.setattr(llm_client, "decide", fake_decide)
+    monkeypatch.setattr(pipeline, "_input_blocked", lambda m: False)
+    monkeypatch.setattr(pipeline, "_output_ok", lambda r: True)
+    with TestClient(server_app.create_app()) as client:
+        r = client.post("/chat", json={"message": f"{bhk} bhk in bangalore", "session_id": str(uuid.uuid4())},
+                        headers={"Authorization": "Bearer x"})
+    assert live_rooms["calls"] == 1 and len(r.json()["rooms"]) == 1
+
+
 def test_production_server_asks_again_for_invalid_arguments(monkeypatch, live_rooms):
     """C is active in a running server: no rooms API call for an invalid search."""
     monkeypatch.setenv(server_app.SKIP_PRELOAD_ENV, "1")
@@ -145,13 +165,13 @@ def test_production_server_asks_again_for_invalid_arguments(monkeypatch, live_ro
     async def fake_decide(user_message, state_summary, budget):
         from llm_approach.schema import parse_decision
 
-        return parse_decision(dec("NEW_SEARCH", city="Bangalore", bhk=4))
+        return parse_decision(dec("NEW_SEARCH", city="Bangalore", bhk=6))
 
     monkeypatch.setattr(llm_client, "decide", fake_decide)
     monkeypatch.setattr(pipeline, "_input_blocked", lambda m: False)
     monkeypatch.setattr(pipeline, "_output_ok", lambda r: True)
     with TestClient(server_app.create_app()) as client:
-        r = client.post("/chat", json={"message": "4 bhk in bangalore", "session_id": str(uuid.uuid4())},
+        r = client.post("/chat", json={"message": "6 bhk in bangalore", "session_id": str(uuid.uuid4())},
                         headers={"Authorization": "Bearer x"})
     assert live_rooms["calls"] == 0 and "BHK" in r.json()["message"]
 
@@ -232,7 +252,9 @@ def test_api_latency_is_recorded_for_the_live_api_only(live_rooms, monkeypatch):
     {"city": "Bangalore", "max_price": -5},
     {"city": "Bangalore", "min_price": -1},
     {"city": "Bangalore", "ideal_for": "Bachelors"},
-    {"city": "Bangalore", "bhk": 4},
+    {"city": "Bangalore", "bhk": 6},  # 4 and 5 are valid since Phase 3B
+    {"city": "Bangalore", "bhk": 7},
+    {"city": "Bangalore", "room_types": ["VILLA"]},
     {"city": "x" * 101},
 ])
 def test_invalid_search_arguments_clarify_and_never_call_the_rooms_api(bad, guards_on, monkeypatch, caplog):
@@ -246,6 +268,15 @@ def test_invalid_search_arguments_clarify_and_never_call_the_rooms_api(bad, guar
     assert result.action == "ask_slot" and result.rooms is None and not result.tool_called
     assert state.pending_question and state.pending_question["type"] == "clarify"
     assert "search arguments rejected" in caplog.text and "Bachelors" not in caplog.text
+
+
+@pytest.mark.parametrize("bhk", [4, 5])
+def test_4_and_5_bhk_pass_the_parameter_guardrail_and_search(bhk, guards_on, live_rooms):
+    live_rooms["body"] = body(good_room(1, roomType=f"{bhk}BHK"))
+    state = LLMConversationState()
+    result = search._run_search({"city": "Bangalore", "bhk": bhk}, state, TurnBudget(), "new_search")
+    assert result.action == "new_search" and result.tool_called and live_rooms["calls"] == 1
+    assert state.pending_question is None and len(state.rooms_on_screen) == 1
 
 
 def test_valid_arguments_are_not_touched(guards_on, live_rooms):
@@ -279,13 +310,13 @@ def test_every_gold_slot_set_passes_the_parameter_guardrail():
     assert not failures, failures
 
 
-def test_known_difference_four_and_five_bhk():
-    """validators allows 1 to 5 BHK; the copied guardrail's room types stop at 3BHK. See the Phase 2 report."""
+def test_validators_and_parameter_guardrail_agree_on_bhk():
+    """Phase 3B closed the Phase 2 difference: 1 to 5 BHK pass both checks, 6 fails the guardrail."""
     from llm_approach import validators
 
-    rejected = [b for b in range(validators.BHK_MIN, validators.BHK_MAX + 1)
+    rejected = [b for b in range(validators.BHK_MIN, validators.BHK_MAX + 2)
                 if not search.validate_search_arguments(search.guardrail_arguments({"city": "Pune", "bhk": b}))[0]]
-    assert rejected == [4, 5]
+    assert validators.BHK_MAX == 5 and rejected == [6]
 
 
 # ---- D: observability ------------------------------------------------------------------------------

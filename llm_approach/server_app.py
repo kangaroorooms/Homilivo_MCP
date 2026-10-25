@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 
 from pathlib import Path
 
-from llm_approach import config, pipeline, responder, reuse, switches, turn_context
+from llm_approach import config, pipeline, responder, reuse, rooms_client, switches, turn_context
 from llm_approach.security.secrets_check import validate_secrets
 
 logger = logging.getLogger(__name__)
@@ -308,14 +308,17 @@ def create_app() -> FastAPI:
 
     @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_rl.enforce_rate_limit)])
     async def chat(request: ChatRequest, credentials: HTTPAuthorizationCredentials = Depends(_bearer)):
-        # Same as the current backend: the bearer value is a demo token or the caller's own
-        # credential. It is accepted but never stored or logged; rooms use KANGAROO_TOKEN.
-        _demo.redeem_demo_token(credentials.credentials)
-        session_id = normalize_session_id(request.session_id)
-        if request.session_id:
-            _session_limit(session_id)
-        turn = await run_turn(session_id, request.message, request.mode)
-        return ChatResponse(**build_done(turn, session_id, request.mode))
+        # Same as the current backend: the bearer value is a demo token (redeemed for the server credential) or
+        # the caller's own Homilivo token. It is bound to this request only and never stored or logged.
+        handle = rooms_client.set_rooms_token(_demo.redeem_demo_token(credentials.credentials) or credentials.credentials)
+        try:
+            session_id = normalize_session_id(request.session_id)
+            if request.session_id:
+                _session_limit(session_id)
+            turn = await run_turn(session_id, request.message, request.mode)
+            return ChatResponse(**build_done(turn, session_id, request.mode))
+        finally:
+            rooms_client.reset_rooms_token(handle)
 
     @app.post("/chat/reset")
     def reset(session_id: str):
@@ -335,7 +338,7 @@ def create_app() -> FastAPI:
             return
 
         await websocket.accept()
-        _demo.redeem_demo_token(token)  # validity only; the result (the real credential) is not kept
+        rooms_token = _demo.redeem_demo_token(token) or token  # held for this connection only, never logged
         session_id: str | None = None
 
         async def send_error(detail: str) -> None:
@@ -377,7 +380,11 @@ def create_app() -> FastAPI:
                     continue
 
                 await websocket.send_json({"event": "typing"})
-                turn = await run_turn(session_id, message, mode)
+                handle = rooms_client.set_rooms_token(rooms_token)
+                try:
+                    turn = await run_turn(session_id, message, mode)
+                finally:
+                    rooms_client.reset_rooms_token(handle)
                 done = build_done(turn, session_id, mode)
 
                 delay = _float_env("STREAM_CHUNK_DELAY_SECONDS", 0.02)

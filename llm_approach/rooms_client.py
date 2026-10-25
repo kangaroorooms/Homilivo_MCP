@@ -6,6 +6,10 @@ logged. Retry once, only on timeout or connection error. Never on 4xx/5xx.
 Amenity and area are not API parameters: they are filtered here, on the result.
 An area search fetches ``config.ROOMS_AREA_FETCH_LIMIT`` rooms and shows at most
 ``config.ROOMS_LIMIT`` of the matches.
+
+Two behaviours match the original: the whole search is bounded by ``config.search_timeout_s()``
+(``MCP_TOOL_TIMEOUT_SECONDS``, 15 s), and the token can be bound per request (``set_rooms_token``,
+the original's ``set_kangaroo_token``), falling back to ``KANGAROO_TOKEN``.
 """
 
 from __future__ import annotations
@@ -15,7 +19,9 @@ import logging
 import os
 import random
 import re
+import threading
 import time
+from contextvars import ContextVar, Token, copy_context
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -57,6 +63,24 @@ class RawResponse:
 
 
 HttpGet = Callable[..., Any]
+
+# The Homilivo token of the current request. A ContextVar, not os.environ: concurrent requests share one
+# process, so a global write from one request could reach another's search (see app/server.py).
+_rooms_token_var: ContextVar[str | None] = ContextVar("llm_approach_rooms_token", default=None)
+
+
+def set_rooms_token(token: str | None) -> Token:
+    """Bind the Homilivo token to the current request's task only. Never logged."""
+    return _rooms_token_var.set(token or None)
+
+
+def reset_rooms_token(handle: Token) -> None:
+    _rooms_token_var.reset(handle)
+
+
+def get_rooms_token() -> str | None:
+    """The per-request token if one was bound, otherwise the process ``KANGAROO_TOKEN``."""
+    return _rooms_token_var.get() or os.getenv("KANGAROO_TOKEN") or None
 
 
 def _httpx_get(url: str, params: dict, headers: dict, timeout: float) -> Any:
@@ -360,14 +384,46 @@ def search_rooms(
     sleep: Callable[[float], None] = time.sleep,
     jitter: Callable[[float, float], float] = random.uniform,
 ) -> RoomsResult:
-    """Run one search and record its latency (live API only, not the offline fixture)."""
+    """Run one search and record its latency (live API only, not the offline fixture).
+
+    The live search is bounded by ``config.search_timeout_s()`` for the whole call, retry included. On
+    timeout it returns ``error_class="search_timeout"`` (shown as ``UNAVAILABLE_MESSAGE``). The worker
+    is left to finish on its own: it only talks to the rooms API and never touches session state, so a
+    late result is dropped and cannot half-save anything.
+    """
     started = time.monotonic()
-    result = _search_rooms(search, budget, limit=limit, page=page, http_get=http_get, sleep=sleep, jitter=jitter)
-    if offline_path() is None:
+    if offline_path() is not None:
+        return _search_rooms(search, budget, limit=limit, page=page, http_get=http_get, sleep=sleep, jitter=jitter)
+    cancelled = threading.Event()
+    holder: dict[str, Any] = {}
+    done = threading.Event()
+
+    def work() -> None:
         try:
-            observability.record_api_latency((time.monotonic() - started) * 1000, result.ok)
-        except Exception:  # noqa: BLE001 - metrics never break a search
-            pass
+            holder["result"] = _search_rooms(
+                search, budget, limit=limit, page=page, http_get=http_get, sleep=sleep, jitter=jitter,
+                cancelled=cancelled,
+            )
+        except BaseException as exc:  # noqa: BLE001 - re-raised in the caller
+            holder["error"] = exc
+        finally:
+            done.set()
+
+    timeout = config.search_timeout_s()
+    threading.Thread(target=copy_context().run, args=(work,), name="rooms-search", daemon=True).start()
+    if not done.wait(timeout):
+        cancelled.set()
+        logger.warning("rooms search timed out after %ss request_id=%s session=%s",
+                       timeout, turn_context.request_id(), turn_context.session_hash())
+        result = _fail("search_timeout")
+    elif "error" in holder:
+        raise holder["error"]
+    else:
+        result = holder["result"]
+    try:
+        observability.record_api_latency((time.monotonic() - started) * 1000, result.ok)
+    except Exception:  # noqa: BLE001 - metrics never break a search
+        pass
     return result
 
 
@@ -380,6 +436,7 @@ def _search_rooms(
     http_get: HttpGet | None = None,
     sleep: Callable[[float], None] = time.sleep,
     jitter: Callable[[float, float], float] = random.uniform,
+    cancelled: threading.Event | None = None,
 ) -> RoomsResult:
     """Run one search. Counts as the turn's single tool call.
 
@@ -399,7 +456,7 @@ def _search_rooms(
     if path is not None:
         return _offline_search(path, search, limit, display_limit, page)
 
-    token = os.getenv("KANGAROO_TOKEN")
+    token = get_rooms_token()  # v2: per request first, like app/server.py _get_kangaroo_token
     if not token:
         return _fail("no_token")
 
@@ -409,8 +466,10 @@ def _search_rooms(
         try:
             raw = request_once(params, token=token, http_get=http_get)
         except (httpx.TimeoutException, httpx.TransportError) as exc:
-            if attempt == 1:
+            if attempt == 1 and not (cancelled and cancelled.is_set()):
                 sleep(jitter(*config.ROOMS_RETRY_JITTER_S))
+                if cancelled and cancelled.is_set():  # timed out while waiting: no second request
+                    return _fail("search_timeout")
                 continue
             return _fail("timeout" if isinstance(exc, httpx.TimeoutException) else "connection_error")
         except Exception as exc:  # anything else: no retry

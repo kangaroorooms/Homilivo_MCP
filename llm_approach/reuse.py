@@ -1,10 +1,7 @@
-"""Adapter for the pieces of ``app/`` that llm_approach does not own yet.
+"""Lazy getters for llm_approach's own copies of the guardrails, security helpers and RAG.
 
-Phase 1 (part A) moved the safe components into local copies (``prompt_safety``,
-``fast_parser``, ``guardrails.output_guardrail``, ``security.demo_auth``,
-``security.rate_limit``); the getters for them below now return the local copies, so llm_approach
-no longer reads those from ``app/``. What still comes from ``app/`` through lazy getters:
-``is_security_blocked`` (input guardrail) and the knowledge base / RAG.
+Everything here is a local copy (``prompt_safety``, ``fast_parser``, ``guardrails.*``, ``security.*``,
+``rag.*``); nothing is imported from ``app/``. The heavy ones (torch, the embedding model) load on first use.
 """
 
 from __future__ import annotations
@@ -75,15 +72,31 @@ def get_extract_search_parameters() -> Callable[[str], dict]:
     return fast_parser.extract_search_parameters
 
 
-# ---- guardrails: output guardrail is local; the input guardrail still comes from app/ (torch) -------------------
+# ---- guardrails (local copies; the input guardrail imports torch, so it loads on first use) -----------------
 
 
 @lru_cache(maxsize=1)
 def get_is_security_blocked() -> Callable[[str], tuple[bool, str]]:
     """``is_security_blocked(message) -> (blocked, refusal_text)``."""
-    from app.guardrails import is_security_blocked
+    from llm_approach.guardrails.input_guardrail import is_security_blocked
 
     return is_security_blocked
+
+
+@lru_cache(maxsize=1)
+def get_semantic_classifier() -> Callable[[str], str]:
+    """``classify_user_intent(normalised_text) -> label`` of the copied input guardrail (the semantic gate).
+    It uses the one shared embedding model (``rag.embeddings.get_shared_model``)."""
+    from llm_approach.guardrails.input_guardrail import classify_user_intent
+
+    return classify_user_intent
+
+
+def get_semantic_gate_warmup() -> Callable[[], Any]:
+    """Loads the shared embedding model and the gate's example embeddings (once per process)."""
+    from llm_approach.guardrails.input_guardrail import get_intent_embeddings
+
+    return get_intent_embeddings
 
 
 @lru_cache(maxsize=1)

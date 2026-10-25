@@ -28,6 +28,7 @@ from llm_approach import (
     prompts,
     responder,
     reuse,
+    semantic_gate,
     switches,
     turn_context,
     validators,
@@ -78,10 +79,13 @@ def configure(*, full_guardrails: bool = True) -> None:
 
 
 def configure_production() -> None:
-    """Everything a server must run with: the full input/output guardrails, the rooms API data check
-    and the search-argument check. ``server_app`` calls this at startup."""
+    """Everything a server must run with: the full input/output guardrails, the rooms API data check,
+    the search-argument check and the semantic gate (shadow unless ``LLM_APPROACH_SEMANTIC_GATE`` says
+    otherwise). ``server_app`` calls this at startup."""
     configure(full_guardrails=True)
-    switches.configure(room_data_check=True, search_arg_check=True)
+    switches.configure(
+        room_data_check=True, search_arg_check=True, semantic_gate=config.semantic_gate_setting() or "shadow"
+    )
 
 
 def get_store() -> SessionStoreBackend:
@@ -102,6 +106,8 @@ def preload() -> None:
         return
     reuse.get_is_security_blocked()("hello")
     reuse.get_output_guardrail()("Hello")
+    if switches.semantic_gate() != "off":
+        reuse.get_semantic_gate_warmup()()  # the shared embedding model and the gate's example embeddings
 
 
 # ---- guardrails ----------------------------------------------------------
@@ -135,6 +141,7 @@ def _status_for(m: metrics_mod.TurnMetrics) -> tuple[str, str | None]:
         "too_long": "message_too_long",
         "security_block": "security_hard_block",
         "output_blocked": "output_guardrail",
+        "semantic_block": "semantic_gate",
     }
     if m.action in blocked:
         return "blocked", blocked[m.action]
@@ -151,7 +158,7 @@ def _record_observability(
     """One observability.record_turn per turn: ids, names and numbers only. Never raises."""
     try:
         status, category = _status_for(m)
-        pre_llm = m.action in ("empty", "too_long", "security_block")
+        pre_llm = m.action in ("empty", "too_long", "security_block", "semantic_block")
         observability.record_turn(
             request_id=request_id,
             session_id=turn_context.hash_session_id(session_id),
@@ -322,9 +329,29 @@ async def _decide_action(
     return action, validated, rejected
 
 
+async def _semantic_gate(
+    message: str, state: LLMConversationState, m: metrics_mod.TurnMetrics
+) -> ActionResult | None:
+    """The semantic input gate. Runs only with the full guardrails on, when no rooms are on screen and no
+    question is pending (a follow-up such as "does it have wifi" has no meaning without them). Shadow mode
+    only records; enforce mode answers an off-topic message with the fixed out-of-scope reply, no LLM call."""
+    mode = switches.semantic_gate()
+    if mode == "off" or not _full_guardrails or state.rooms_on_screen or state.pending_question:
+        return None
+    verdict = await asyncio.to_thread(semantic_gate.evaluate, message, mode)
+    if verdict is None or not verdict.blocked:
+        return None
+    m.intent = Intent.OUT_OF_SCOPE.value
+    state.set_last_query_intent(m.intent)
+    return ActionResult(reuse.get_out_of_scope_response(), None, "semantic_block")
+
+
 async def _run_turn(
     message: str, state: LLMConversationState, m: metrics_mod.TurnMetrics
 ) -> tuple[ActionResult, dict[str, Any] | None]:
+    blocked = await _semantic_gate(message, state, m)
+    if blocked is not None:
+        return blocked, None
     budget = TurnBudget()
     llm_budget = llm_client.LLMBudget()
     summary = prompts.build_state_summary(state.to_prompt_state())

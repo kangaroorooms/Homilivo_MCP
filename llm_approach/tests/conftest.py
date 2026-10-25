@@ -55,6 +55,18 @@ def _skip_secret_check(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _semantic_gate_off(monkeypatch):
+    """The semantic gate is shadow in a production-configured app: tests must not load the embedding model
+    unless they say so (tests/test_semantic_gate.py sets the mode itself)."""
+    from llm_approach import switches
+
+    monkeypatch.setenv("LLM_APPROACH_SEMANTIC_GATE", "off")
+    before = switches.semantic_gate()
+    yield
+    switches.configure(semantic_gate=before)
+
+
+@pytest.fixture(autouse=True)
 def _llm_failure_env(monkeypatch):
     """No test inherits the developer's fallback or breaker settings, or another test's breaker state."""
     from llm_approach import llm_resilience

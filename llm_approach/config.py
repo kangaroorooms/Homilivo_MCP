@@ -119,6 +119,17 @@ def search_timeout_s() -> float:
     return _positive_float_env_default(SEARCH_TIMEOUT_ENV, DEFAULT_SEARCH_TIMEOUT_S)
 
 
+# How the rooms search reaches the Rooms API. mcp: through the copied in-process MCP tool (tools/mcp_search.py, which owns
+# the retries); direct: rooms_client's own httpx client. Anything else falls back to mcp.
+SEARCH_TRANSPORT_ENV = "LLM_APPROACH_SEARCH_TRANSPORT"
+SEARCH_TRANSPORTS = ("mcp", "direct")
+
+
+def search_transport() -> str:
+    value = os.getenv(SEARCH_TRANSPORT_ENV, "").strip().lower()
+    return value if value in SEARCH_TRANSPORTS else "mcp"
+
+
 # Semantic input gate (copied input guardrail's intent classifier). off: not run; shadow: run and record, never block;
 # enforce: block off-topic first messages. configure_production() sets shadow; bare handle_turn and tests run off.
 SEMANTIC_GATE_ENV = "LLM_APPROACH_SEMANTIC_GATE"

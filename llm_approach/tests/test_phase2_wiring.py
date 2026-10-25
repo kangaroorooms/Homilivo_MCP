@@ -48,6 +48,7 @@ def live_rooms(monkeypatch):
         return Resp()
 
     monkeypatch.setattr(rooms_client, "_httpx_get", fake_get)
+    monkeypatch.setenv("LLM_APPROACH_SEARCH_TRANSPORT", "direct")  # v2 mcp: this fixture fakes the direct httpx client
     return holder
 
 

@@ -57,7 +57,7 @@ Every guardrail and security stage of the plan already exists in app/ and is cop
 | 7 | Conversation | conversation.py, clarify.py, recall.py, conversation_answerer.py | **Keep** (memory, recall and verified chat answers are new); keep the reused fact-grounding and injection-defence prompt rules | agent_modes: FACT_GROUNDING_RULE, PROMPT_INJECTION_DEFENSE_RULE |
 | 8 | API Request, Pydantic Extraction | Slots extracted inside the LLM decision (schema.py, Pydantic) | **Keep**: the decision call is the extraction step, so one call, not two | None |
 | 9 | Parameter Guardrail | Re-implemented as validators.validate_slots | Copy parameter_guardrail.py as the single slot check; validators.py keeps only LLM-specific checks (allowed intent, room index, confidence) | parameter_guardrail.validate_search_arguments |
-| 10 | MCP Tool | rooms_client.py calls the Rooms API directly | **Decided: (b)** keep rooms_client.py and add only the missing whole-search timeout and per-request token (built in Phase 3B); no mcp package, no app/server.py copy | agent_modes._call_search_rooms_with_timeout, app/server.py |
+| 10 | MCP Tool | rooms_client.py calls the Rooms API directly | **DONE as MCP (team lead changed the Phase 3B decision, 25 Oct 2026)**: v2 uses the MCP tool for room search, like the main chatbot. `app/server.py` is copied to `tools/mcp_search.py` and `_call_search_rooms_with_timeout` to `tools/mcp_timeout.py`; `rooms_client` calls them through an in-process MCP client. The tool's 3 attempts are the only retry layer; the 15 s whole-search limit stays the outer limit. `LLM_APPROACH_SEARCH_TRANSPORT=direct` keeps the old httpx client (see Stage 10 status) | agent_modes._call_search_rooms_with_timeout, app/server.py |
 | 11 | Homilivo API | Rooms API GET | Unchanged | None |
 | 12 | API Guardrail | Not used; only a field allowlist and sanitiser in state.clean_room | Copy api_data_guardrail.py (done in Phase 1); run validate_room_data on every Rooms API response before rooms reach state or the prompt. **validate_room_data rejects the whole result on one bad room**, so log the failing field when it is wired in. `sanitize_room_for_llm_context` is in agent_modes, not api_data_guardrail, and is copied to prompt_safety.py | api_data_guardrail.validate_room_data; agent_modes.sanitize_room_for_llm_context |
 | 13 | Response Generation | Templates per action; the LLM only drafts chat-memory answers, verified in code | **Keep**; delimiter neutraliser copied (already wrapped) | agent_modes._neutralize_prompt_delimiters |
@@ -94,7 +94,7 @@ llm_approach/
 
 ## Design decisions
 
-Six choices shaped v2. On 25 October 2026 the team lead decided D1, D2, stage 10 and the 4/5 BHK rule (marked below); D4 is still open.
+Six choices shaped v2. On 25 October 2026 the team lead decided D1, D2, stage 10 and the 4/5 BHK rule (marked below); D4 is still open. Stage 10 was first decided as "keep rooms_client.py" (Phase 3B) and then changed by the team lead to "use the MCP tool" (see Stage 10 status).
 
 | # | Decision | Options | Recommendation and why |
 | --- | --- | --- | --- |
@@ -178,6 +178,27 @@ Open after Phase 4A:
 - Add `redis` to the llm_approach requirements (it is in the repo-root requirements.txt).
 - Redis memory per session: states hold up to 200 transcript entries and the rooms on screen; measure a long session before sizing Redis.
 - The load test (about 20 concurrent users) should now run with `STATE_BACKEND=redis` and two server processes.
+
+## Stage 10 status (MCP tool, 1,798 tests passing)
+
+Built with fakes only: no Gemini, Groq or rooms API call. Nothing is committed. This replaces the Phase 3B choice (b) "keep rooms_client.py, no mcp package, no app/server.py copy".
+
+| Part | Status | Where |
+| --- | --- | --- |
+| Copy of the MCP server and `search_rooms` tool | **done**: `app/server.py` copied whole (source commit `ed0406a`, its last change; the older copies cite `7dbcba3`). Marked `# v2:` changes: observability import, API URL from `config.ROOMS_API_URL`, a `page` argument, and the API's `meta` (total, hasNextPage) returned, which SHOW_MORE needs. Retries (3 attempts, 0.3 s backoff, 5xx and timeouts retried, 4xx not), the 10 s HTTP timeout, status handling and token handling are unchanged | tools/mcp_search.py |
+| Copy of the 15 s wrapper | **done**: `_call_search_rooms_with_timeout` from `app/experiments/agent_modes.py` (commit `fca91ac`), unchanged | tools/mcp_timeout.py |
+| Wiring | **done**: `rooms_client._search_rooms` calls the tool through `mcp.Client` in the search worker thread. Unchanged around it: offline fixture, `validate_room_data` right after the rooms are extracted, `clean_room`, paging meta, `room_data_rejections`, `search_timeouts`, request ids, error classes (`http_500`, `timeout`, `bad_payload`, `invalid_room_data`, `no_token`, `search_timeout`, ...) and the "Room search is unavailable right now" reply. The tool returns only an error string, so `mcp_failure` maps it back to the same error classes | rooms_client.py |
+| One retry layer | **done**: on the MCP transport rooms_client's own retry is not used at all (its retry code is only in the direct path); the tool's 3 attempts are the only retries. The 15 s limit (`LLM_APPROACH_SEARCH_TIMEOUT_SECONDS`) stays the outer limit, and the copied 15 s wrapper is inside it | rooms_client._mcp_request |
+| Switch | **done**: `LLM_APPROACH_SEARCH_TRANSPORT` = `mcp` (default) or `direct`; any other value means `mcp`. An injected `http_get` always means direct. `direct` is the old client with its single retry (timeout or connection error only) | config.py, rooms_client.py |
+| Latency | **done**: the tool records API latency; `search_rooms` no longer records it a second time on the MCP path (it still does on a whole-search timeout and on the direct path) | rooms_client.search_rooms |
+| Requirements | **done**: `requirements-mcp.txt` (mcp 2.0.0, mcp-types 2.0.0); the repo-root `requirements.txt` already pins the same versions | requirements-mcp.txt |
+| Tests | **done**: 37 copied tests (tests/copied: api reliability, P2-12 failure handling, P2-11 MCP timeout, token context, MCP discovery) and 37 new ones (`test_mcp_transport.py`); drift entries for both copies | tests/ |
+
+User-visible behaviour: unchanged replies for a normal search, no results, a 5xx, a timeout, a bad room and a missing token. Differences that are not replies: a 5xx is now retried (up to 3 attempts) instead of failing at once; a failing search can take a little longer; after the 15 s limit the tool's thread may still send its remaining retries (its result is dropped and nothing is saved; no cancel logic was added, by instruction); `rooms_client` no longer sends the 2 to 4 s jittered retry on the MCP path. The `mcp` package is loaded only when a live search runs (a test checks the pipeline and server import without it).
+
+Existing tests: no assertion changed. Nine fixture lines in six test files that fake the direct httpx client now also set `LLM_APPROACH_SEARCH_TRANSPORT=direct` (marked `# v2 mcp:`): test_area, test_fallback, test_log_audit (2), test_paging, test_phase2_wiring, test_search_timeout (3). The offline runners (`run_scenarios`, `run_robustness`) now fake the rooms API for both transports through `eval/fake_rooms_api.py`.
+
+Robustness (offline, `run_robustness`): 7 of 7 clean on the MCP transport and on `direct`, with identical rows. The 300-turn stub baseline still matches.
 
 ## Phase 3B status (decisions applied, 1,698 tests passing)
 
@@ -289,6 +310,6 @@ Decided on 25 October 2026: production uses a paid Gemini key later. The free-ti
 - [ ] D4: a different city with rooms on screen starts a fresh search, without the old filters
 - [ ] The quality gates above, especially the 2-point tolerance on accuracy
 - [ ] Approval to build the held-out context set
-- [x] Stage 10: keep rooms_client.py, add only the timeout and token handling (decided 25 Oct 2026)
+- [x] Stage 10: ~~keep rooms_client.py, add only the timeout and token handling~~ (Phase 3B) **changed by the team lead: v2 uses the MCP tool for room search; done, see Stage 10 status**
 - [x] 4BHK and 5BHK are valid searches in the parameter guardrail (decided 25 Oct 2026)
 - [x] LLM provider for production: a paid Gemini key later (decided 25 Oct 2026); see the handover checklist

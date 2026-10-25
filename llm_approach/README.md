@@ -965,6 +965,7 @@ New `tests/test_conversation_memory.py` (70 tests: transcript caps, order, roles
 
 ```powershell
 pip install -r llm_approach/requirements-gemini.txt      # google-genai, needed only for Gemini
+pip install -r llm_approach/requirements-mcp.txt         # mcp, needed for the default rooms search transport (LLM_APPROACH_SEARCH_TRANSPORT=mcp)
 # in .env at the repo root (the server already loads it with override=False):
 #   GEMINI_API_KEY=...
 python -m llm_approach.smoke_gemini                      # ONE live request, see below

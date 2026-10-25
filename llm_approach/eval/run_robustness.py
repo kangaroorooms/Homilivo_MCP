@@ -22,14 +22,13 @@ from types import SimpleNamespace
 from typing import Any, Callable, Iterator
 from unittest import mock
 
-import httpx
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from llm_approach import config, pipeline, providers, reuse, rooms_client  # noqa: E402
 from llm_approach import state as state_mod  # noqa: E402
+from llm_approach.eval import fake_rooms_api  # noqa: E402
 from llm_approach.state import SessionStore  # noqa: E402
 
 OUT = Path(__file__).resolve().parent / "results" / "robustness.json"
@@ -59,14 +58,6 @@ class _FakeGroq:
             raise reply
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))],
                                usage=SimpleNamespace(prompt_tokens=100, completion_tokens=20))
-
-
-class _FakeResponse:
-    def __init__(self, status: int, body: dict) -> None:
-        self.status_code, self._body = status, body
-
-    def json(self) -> dict:
-        return self._body
 
 
 # case name -> (turn-2 user message, scripted Groq replies for turn 2, rooms mode, output guardrail ok)
@@ -127,12 +118,9 @@ async def run_case(case: dict[str, Any]) -> dict[str, Any]:
         mock.patch.object(config, "ROOMS_RETRY_JITTER_S", (0.0, 0.0)),
     ]
     if case["rooms"] == "http500":
-        patches.append(mock.patch.object(rooms_client, "_httpx_get",
-                                         lambda *a, **k: _FakeResponse(500, {"success": False, "message": PRISMA_MESSAGE})))
+        patches.append(fake_rooms_api.failing_rooms_api(500, {"success": False, "message": PRISMA_MESSAGE}))
     elif case["rooms"] == "timeout":
-        def boom(*a, **k):
-            raise httpx.ReadTimeout("read timed out")
-        patches.append(mock.patch.object(rooms_client, "_httpx_get", boom))
+        patches.append(fake_rooms_api.failing_rooms_api(None))
 
     with contextlib.ExitStack() as stack, _env(LLM_APPROACH_METRICS=None, **{config.PROVIDER_ENV: "groq"}):
         for p in patches:

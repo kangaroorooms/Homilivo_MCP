@@ -40,7 +40,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from llm_approach import config, llm_client, pipeline, reuse, rooms_client  # noqa: E402
 from llm_approach import gemini_limits, prompt_fingerprint  # noqa: E402
-from llm_approach.eval import run_eval, runs as runs_mod  # noqa: E402
+from llm_approach.eval import fake_rooms_api, run_eval, runs as runs_mod  # noqa: E402
 from llm_approach.schema import parse_decision  # noqa: E402
 from llm_approach.state import SessionStore  # noqa: E402
 
@@ -160,14 +160,6 @@ def _env(**values: str | None) -> Iterator[None]:
                 os.environ[key] = value
 
 
-class _FakeResponse:
-    def __init__(self, status: int) -> None:
-        self.status_code = status
-
-    def json(self) -> dict:
-        return {"success": False, "message": "internal error"}
-
-
 @contextlib.contextmanager
 def runtime(
     scenario: dict[str, Any], mode: str, script: list[Any], spy: _Spy, answers: list[Any] | None = None
@@ -214,7 +206,7 @@ def runtime(
             stack.enter_context(_patched(reuse, "get_answer_platform_question", lambda: (lambda q: dict(kb_answer))))
             if scenario.get("rooms_http_status"):
                 status = int(scenario["rooms_http_status"])
-                stack.enter_context(_patched(rooms_client, "_httpx_get", lambda *a, **k: _FakeResponse(status)))
+                stack.enter_context(fake_rooms_api.failing_rooms_api(status))
                 stack.enter_context(_env(**{config.OFFLINE_ROOMS_ENV: None, "KANGAROO_TOKEN": "stub-token-not-real"}))
             elif scenario.get("rooms_fixture"):  # a file under fixtures/, e.g. a larger synthetic list
                 fixture = Path(__file__).resolve().parents[1] / "fixtures" / scenario["rooms_fixture"]

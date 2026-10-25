@@ -168,6 +168,44 @@ def test_extracted_definitions_match_source(source, copy, names):
     assert not problems, f"{copy} drifted from {source}:\n" + "\n".join(problems)
 
 
+# Copies made after the first batch cite the last commit that changed their source (not 7dbcba3).
+# (source, copy, sha in the header)
+MCP_WHOLE_FILE_COPIES = [
+    ("app/server.py", "llm_approach/tools/mcp_search.py", "ed0406a"),
+]
+# (source, copy, sha in the header, names)
+MCP_PARTIAL_COPIES = [
+    ("app/experiments/agent_modes.py", "llm_approach/tools/mcp_timeout.py", "fca91ac", ("_call_search_rooms_with_timeout",)),
+]
+
+
+@pytest.mark.parametrize("source,copy,sha", MCP_WHOLE_FILE_COPIES, ids=[c for _, c, _ in MCP_WHOLE_FILE_COPIES])
+def test_mcp_whole_file_copy_matches_source(source, copy, sha):
+    copy_text = _read(copy)
+    header = copy_text.split(HEADER_END)[0]
+    assert source in header and sha in header and "copied, not imported" in header
+    problems = _drift(_read(source).split("\n"), _body_after_header(copy_text), copy)
+    assert not problems, f"{copy} drifted from {source}:\n" + "\n".join(problems)
+
+
+@pytest.mark.parametrize("source,copy,sha,names", MCP_PARTIAL_COPIES, ids=[c for _, c, _, _ in MCP_PARTIAL_COPIES])
+def test_mcp_extracted_definitions_match_source(source, copy, sha, names):
+    copy_text = _read(copy)
+    header = copy_text.split(HEADER_END)[0]
+    assert source in header and sha in header and "copied, not imported" in header
+    src_segs = _segments(_read(source), names)
+    copy_segs = _segments(copy_text, names)
+    problems: list[str] = []
+    for name in names:
+        if name not in src_segs:
+            problems.append(f"{copy}: {name} no longer exists in {source}")
+        elif name not in copy_segs:
+            problems.append(f"{copy}: {name} is missing from the copy")
+        else:
+            problems += _drift(src_segs[name], copy_segs[name], f"{copy}:{name}")
+    assert not problems, f"{copy} drifted from {source}:\n" + "\n".join(problems)
+
+
 def _member_segments(text: str, class_name: str, names) -> dict[str, list[str]]:
     lines = text.split("\n")
     found: dict[str, list[str]] = {}

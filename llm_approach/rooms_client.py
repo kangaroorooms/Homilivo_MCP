@@ -7,6 +7,11 @@ Amenity and area are not API parameters: they are filtered here, on the result.
 An area search fetches ``config.ROOMS_AREA_FETCH_LIMIT`` rooms and shows at most
 ``config.ROOMS_LIMIT`` of the matches.
 
+Transport (``LLM_APPROACH_SEARCH_TRANSPORT``, default ``mcp``): the live call goes through the copied in-process MCP
+tool (``tools/mcp_search.py``), which is then the only retry layer (3 attempts, 5xx included). ``direct`` keeps this
+module's own httpx client and its single retry. An injected ``http_get`` always means direct. The offline fixture is
+answered here before either transport.
+
 Two behaviours match the original: the whole search is bounded by ``config.search_timeout_s()``
 (``MCP_TOOL_TIMEOUT_SECONDS``, 15 s), and the token can be bound per request (``set_rooms_token``,
 the original's ``set_kangaroo_token``), falling back to ``KANGAROO_TOKEN``.
@@ -14,6 +19,7 @@ the original's ``set_kangaroo_token``), falling back to ``KANGAROO_TOKEN``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -424,11 +430,120 @@ def search_rooms(
         raise holder["error"]
     else:
         result = holder["result"]
-    try:
-        observability.record_api_latency((time.monotonic() - started) * 1000, result.ok)
-    except Exception:  # noqa: BLE001 - metrics never break a search
-        pass
+    if result.error_class == "search_timeout" or not _use_mcp(http_get):  # the MCP tool records its own latency
+        try:
+            observability.record_api_latency((time.monotonic() - started) * 1000, result.ok)
+        except Exception:  # noqa: BLE001 - metrics never break a search
+            pass
     return result
+
+
+def _use_mcp(http_get: HttpGet | None) -> bool:
+    return http_get is None and config.search_transport() == "mcp"
+
+
+def _direct_request(
+    search: dict[str, Any],
+    token: str,
+    limit: int,
+    page: int,
+    http_get: HttpGet | None,
+    sleep: Callable[[float], None],
+    jitter: Callable[[float, float], float],
+    cancelled: threading.Event | None,
+) -> tuple[RoomsResult | None, RawResponse | None]:
+    """The direct httpx client: one GET and one retry on timeout or connection error. ``(failure, None)`` or ``(None, raw)``."""
+    params = build_params(search, limit=limit, page=page)
+    for attempt in (1, 2):
+        try:
+            return None, request_once(params, token=token, http_get=http_get)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            if attempt == 1 and not (cancelled and cancelled.is_set()):
+                sleep(jitter(*config.ROOMS_RETRY_JITTER_S))
+                if cancelled and cancelled.is_set():  # timed out while waiting: no second request
+                    return _fail("search_timeout"), None
+                continue
+            return _fail("timeout" if isinstance(exc, httpx.TimeoutException) else "connection_error"), None
+        except Exception as exc:  # anything else: no retry
+            return _fail(type(exc).__name__), None
+    raise AssertionError("unreachable")
+
+
+_MCP_FAILURES = (  # (text in the tool's error string, error_class); the tool returns only a string
+    ("KANGAROO_TOKEN", "no_token"),
+    ("timed out", "timeout"),
+    ("empty response", "bad_payload"),
+    ("malformed JSON", "bad_payload"),
+    ("unexpected response", "bad_payload"),
+    ("urlopen error", "connection_error"),
+)
+
+
+def mcp_failure(error: Any, search: dict[str, Any], token: str) -> RoomsResult:
+    """Map the copied tool's ``error`` string to the same error classes the direct client uses. The text is scrubbed
+    before it is logged or kept; only the class and status reach the pipeline."""
+    text = error if isinstance(error, str) else ""
+    status = None
+    match = re.search(r"HTTP Error (\d{3})", text)
+    if match:
+        status, error_class = int(match.group(1)), f"http_{match.group(1)}"
+    else:
+        error_class = next((name for needle, name in _MCP_FAILURES if needle in text), "api_error")
+    return _fail(error_class, status, scrub_message(text, search, token)[:200] or None)
+
+
+def _mcp_request(
+    search: dict[str, Any],
+    token: str,
+    limit: int,
+    page: int,
+    cancelled: threading.Event | None,
+) -> tuple[RoomsResult | None, RawResponse | None]:
+    """The search through the copied in-process MCP tool, bounded by the copied 15 s wrapper. The tool owns the
+    retries, so none happen here. Runs in the search worker thread; the token is bound to this thread's context only."""
+    from mcp import Client  # lazy: importing the pipeline or the server must not load the mcp package (tests check this)
+
+    from llm_approach.tools import mcp_search, mcp_timeout
+
+    types = _room_types_param(search)
+    ideal = search.get("ideal_for")
+    arguments = {
+        "city": search.get("city"),
+        "min_price": search.get("min_price"),
+        "max_price": search.get("max_price"),
+        "room_types": types.split(",") if types else None,
+        "ideal_for": [ideal] if ideal else None,
+        "sort": config.ROOMS_SORT,
+        "limit": limit,
+        "page": page,
+    }
+    arguments = {k: v for k, v in arguments.items() if v is not None}
+
+    async def call() -> Any:
+        async with Client(mcp_search.mcp) as client:
+            try:
+                return await mcp_timeout._call_search_rooms_with_timeout(client, arguments)
+            except asyncio.TimeoutError:  # caught inside the client: leaving it would wrap the error in an ExceptionGroup
+                return None
+
+    handle = mcp_search.set_kangaroo_token(token)
+    try:
+        result = asyncio.run(call())
+        if result is None:  # the copied 15 s wrapper timed out
+            if not (cancelled and cancelled.is_set()):  # past the outer limit the caller has already counted it
+                try:
+                    observability.record_search_timeout()
+                except Exception:  # noqa: BLE001 - metrics never break a search
+                    pass
+            return _fail("search_timeout"), None
+        api_data = json.loads(result.content[0].text)
+    except Exception as exc:  # noqa: BLE001 - a broken MCP reply is a failed search, never a crash
+        return _fail(type(exc).__name__), None
+    finally:
+        mcp_search._kangaroo_token_var.reset(handle)
+    if not isinstance(api_data, dict) or api_data.get("success") is not True:
+        return mcp_failure(api_data.get("error") if isinstance(api_data, dict) else None, search, token), None
+    return None, RawResponse(status_code=200, body={"data": api_data.get("rooms"), "meta": api_data.get("meta")})
 
 
 def _search_rooms(
@@ -464,21 +579,14 @@ def _search_rooms(
     if not token:
         return _fail("no_token")
 
-    params = build_params(search, limit=limit, page=page)
-    raw: RawResponse | None = None
-    for attempt in (1, 2):
-        try:
-            raw = request_once(params, token=token, http_get=http_get)
-        except (httpx.TimeoutException, httpx.TransportError) as exc:
-            if attempt == 1 and not (cancelled and cancelled.is_set()):
-                sleep(jitter(*config.ROOMS_RETRY_JITTER_S))
-                if cancelled and cancelled.is_set():  # timed out while waiting: no second request
-                    return _fail("search_timeout")
-                continue
-            return _fail("timeout" if isinstance(exc, httpx.TimeoutException) else "connection_error")
-        except Exception as exc:  # anything else: no retry
-            return _fail(type(exc).__name__)
-        break
+    if _use_mcp(http_get):
+        failure, raw = _mcp_request(search, token, limit, page, cancelled)
+        if failure is not None:
+            return failure
+    else:
+        failure, raw = _direct_request(search, token, limit, page, http_get, sleep, jitter, cancelled)
+        if failure is not None:
+            return failure
     assert raw is not None
 
     if raw.status_code >= 400:

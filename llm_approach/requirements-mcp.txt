@@ -1,0 +1,5 @@
+# Needed for the rooms search through the in-process MCP tool (LLM_APPROACH_SEARCH_TRANSPORT=mcp, the default).
+# Not needed with LLM_APPROACH_SEARCH_TRANSPORT=direct. The repo-root requirements.txt already pins the same versions.
+#   pip install -r llm_approach/requirements-mcp.txt
+mcp==2.0.0
+mcp-types==2.0.0

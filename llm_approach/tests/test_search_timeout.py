@@ -59,6 +59,7 @@ def api(monkeypatch):
     monkeypatch.setenv("KANGAROO_TOKEN", TOKEN)
     fake = Api()
     monkeypatch.setattr(rooms_client, "_httpx_get", fake.get)
+    monkeypatch.setenv("LLM_APPROACH_SEARCH_TRANSPORT", "direct")  # v2 mcp: this fixture fakes the direct httpx client
     yield fake
     if fake.block is not None:
         fake.block.set()
@@ -139,6 +140,7 @@ def test_a_retry_waiting_when_the_timeout_hits_sends_no_second_request(api, monk
         raise httpx.ConnectError("down")
 
     monkeypatch.setattr(rooms_client, "_httpx_get", failing)
+    monkeypatch.setenv("LLM_APPROACH_SEARCH_TRANSPORT", "direct")  # v2 mcp: this fixture fakes the direct httpx client
     monkeypatch.setenv(config.SEARCH_TIMEOUT_ENV, "0.2")
     gate = threading.Event()
     result = rooms_client.search_rooms({"city": "Bangalore"}, TurnBudget(), sleep=lambda s: gate.wait(1))
@@ -167,6 +169,7 @@ def test_the_existing_retry_is_untouched(api, monkeypatch):
         return api.get(url, params, headers, timeout)
 
     monkeypatch.setattr(rooms_client, "_httpx_get", flaky)
+    monkeypatch.setenv("LLM_APPROACH_SEARCH_TRANSPORT", "direct")  # v2 mcp: this fixture fakes the direct httpx client
     slept = []
     result = rooms_client.search_rooms({"city": "Bangalore"}, TurnBudget(), sleep=slept.append, jitter=lambda a, b: 2.5)
     assert result.ok and len(calls) == 2 and slept == [2.5]

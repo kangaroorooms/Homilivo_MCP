@@ -130,6 +130,7 @@ def test_stub_conversation_leaves_no_text_or_secret_in_logs_or_metrics(audit, mo
             return {"success": False, "message": "Invalid `prisma.room.findMany()` where city = 'Zorbaville' failed"}
 
     monkeypatch.setattr(rooms_client, "_httpx_get", lambda *a, **k: Boom())
+    monkeypatch.setenv("LLM_APPROACH_SEARCH_TRANSPORT", "direct")  # v2 mcp: this fixture fakes the direct httpx client
     failed = audit.turn("rooms in Zorbaville")
     assert failed.metrics["error_class"] == "http_500"
     replies["rooms_failure"] = failed.reply
@@ -164,6 +165,7 @@ def test_rooms_api_message_is_scrubbed_of_search_values(audit, monkeypatch):
             return {"message": "bad where {city: 'Zorbaville', area: 'UMARKalpha'} token=" + ROOMS_TOKEN}
 
     monkeypatch.setattr(rooms_client, "_httpx_get", lambda *a, **k: Boom())
+    monkeypatch.setenv("LLM_APPROACH_SEARCH_TRANSPORT", "direct")  # v2 mcp: this fixture fakes the direct httpx client
     from llm_approach.actions import TurnBudget
 
     result = rooms_client.search_rooms({"city": "Zorbaville", "area": "UMARKalpha"}, TurnBudget())

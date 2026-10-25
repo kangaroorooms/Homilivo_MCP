@@ -567,15 +567,24 @@ def test_the_lock_is_refreshed_while_a_long_turn_runs(server):
 
 
 def test_the_refresh_stops_at_the_max_hold(server):
-    store = make(server, lock_ttl_ms=90, lock_max_hold_s=0.15)
-    rival = make(server, lock_ttl_ms=90, lock_wait_s=0.1)
+    now = [0.0]  # v2: a fake monotonic clock; the refresh loop's sleep advances it, so no wall time decides the outcome
+
+    async def tick(seconds):
+        now[0] += seconds
+        await asyncio.sleep(0)
+
+    store = make(server, lock_ttl_ms=90, lock_max_hold_s=0.15, sleep=tick, monotonic=lambda: now[0])
+    rival = make(server, lock_ttl_ms=90, lock_wait_s=2.0)  # real clock: it only waits for the lapsed lock to free up
     session = sid()
     before = events()
 
     async def main():
         async with store.turn(session):
-            await asyncio.sleep(0.5)  # a hung turn: the lock lapses instead of being held for ever
-            async with rival.turn(session):
+            for _ in range(100_000):  # a hung turn: yield until the refresh loop has hit the cap
+                if delta(before, "lock_hold_cap"):
+                    break
+                await asyncio.sleep(0)
+            async with rival.turn(session):  # the unrefreshed lock lapses instead of being held for ever
                 pass
 
     asyncio.run(main())
@@ -714,7 +723,7 @@ def test_ready_for_the_memory_store_is_unchanged(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "gsk_x")
     with TestClient(server_app.create_app()) as c:
         body = c.get("/ready").json()
-    assert set(body) == {"status", "checks", "provider", "model"}
+    assert set(body) == {"status", "checks", "provider", "model", "knowledge"}
 
 
 def test_chat_endpoint_with_the_redis_store_reads_the_state_from_the_turn(redis_client, server, monkeypatch):

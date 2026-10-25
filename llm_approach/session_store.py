@@ -113,6 +113,7 @@ class RedisSessionStore:
         lock_wait_s: float | None = None,
         lock_max_hold_s: float | None = None,
         sleep: Callable[[float], "asyncio.Future"] = asyncio.sleep,
+        monotonic: Callable[[], float] = time.monotonic,  # v2: injectable for the max-hold test
     ) -> None:
         if redis_client is None and redis_lib is None:
             raise RuntimeError("STATE_BACKEND=redis requires the 'redis' package (pip install -r requirements.txt).")
@@ -130,6 +131,7 @@ class RedisSessionStore:
         self._lock_wait_s = config.session_lock_wait_s() if lock_wait_s is None else lock_wait_s
         self._lock_max_hold_s = config.session_lock_max_hold_s() if lock_max_hold_s is None else lock_max_hold_s
         self._sleep = sleep
+        self._mono = monotonic
         self._locals: dict[str, _Local] = {}
 
     # ---- copied from app/session_store.py -----------------------------------
@@ -282,10 +284,10 @@ class RedisSessionStore:
     async def _keep_lock(self, session_id: str, token: str, lease: _Lease) -> None:
         """Refresh the lock every third of its life until cancelled, lost, or past the max hold."""
         interval = self._lock_ttl_ms / 3000.0
-        give_up = time.monotonic() + self._lock_max_hold_s
+        give_up = self._mono() + self._lock_max_hold_s
         while True:
             await self._sleep(interval)
-            if time.monotonic() >= give_up:
+            if self._mono() >= give_up:
                 lease.capped = True
                 logger.warning("session store: turn passed the max lock hold, no longer refreshing session=%s",
                                turn_context.hash_session_id(session_id))

@@ -33,6 +33,7 @@ Secrets (names only): `GEMINI_API_KEY` or `GROQ_API_KEY` (the active provider's)
 | `LLM_APPROACH_GEMINI_THINKING` | `level:LOW` | `level:LOW/MINIMAL/MEDIUM/HIGH`, `budget:<int>` or `none`. |
 | `LLM_APPROACH_GEMINI_MAX_OUTPUT_TOKENS` | 1024 | Thinking tokens count toward it. |
 | `LLM_APPROACH_GEMINI_TIMEOUT_S` | 20 | Per call; minimum 10. |
+| `LLM_APPROACH_GEMINI_TURN_DEADLINE_S` | 20 | Time a turn may spend in the LLM step. The Gemini limiter never sleeps past it (window wait or 429 retry delay): it gives up at once and the rule-based fallback answers. |
 | `LLM_APPROACH_FALLBACK_PROVIDER` | off | Second provider used when the first fails. Unset means no fallback (its quality is not evaluated). |
 | `LLM_APPROACH_BREAKER_FAILURES` / `_BREAKER_COOLDOWN_SECONDS` | 5 / 60 | Circuit breaker per provider. |
 | `LLM_APPROACH_5XX_RETRY_DELAY_SECONDS` | 1.0 | Wait before the one retry on a 5xx. |
@@ -81,6 +82,11 @@ Secrets (names only): `GEMINI_API_KEY` or `GROQ_API_KEY` (the active provider's)
   anything else, including `None`, empty, non-strings, over-long or email-like values, with a server-made
   UUID. It runs before the rate limiter, the session store and `handle_turn`. The raw value is never
   logged; logs carry a 12-character hash of the id. Redis keys use the normalised id only.
+- **Slow or limited LLM.** A turn gets 20 s in the LLM step (`LLM_APPROACH_GEMINI_TURN_DEADLINE_S`). The Gemini
+  limiter never sleeps past that: a window wait or a 429 retry delay that does not fit raises `WaitTooLong`
+  at once, nothing is counted against the daily cap, and the rule-based fallback answers (metrics still show
+  `RateLimitError`). A Redis rate limiter or demo-token store that times out fails open (counted, no key or
+  token logged).
 
 ## Search path
 

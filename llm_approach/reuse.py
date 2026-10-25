@@ -131,6 +131,13 @@ def get_knowledge_preload() -> Callable[[], None]:
     return warmup
 
 
+def get_knowledge_index_stats() -> Callable[[], dict]:
+    """``llm_approach.rag.store.index_stats()``: documents, chunks and whether the embedding model loaded. Lazy."""
+    from llm_approach.rag.store import index_stats
+
+    return index_stats
+
+
 @lru_cache(maxsize=1)
 def get_answer_platform_question() -> Callable[[str], dict]:
     """``answer_platform_question(query) -> {grounded, message, sources}``.

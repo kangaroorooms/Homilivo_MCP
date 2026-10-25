@@ -21,8 +21,8 @@ from llm_approach import (
     conversation_answerer,
     extra_security,
     fallback,
+    gemini_limits,
     llm_client,
-    llm_resilience,
     metrics as metrics_mod,
     observability,
     prompts,
@@ -246,7 +246,7 @@ _HANDLERS = {
     Intent.UNCLEAR: clarify.handle_unclear,
     Intent.CONVERSATION_RECALL: recall.handle_recall,
 }  # CONVERSATION_QUESTION is async and is handled in _decide_action
-_THREADED = {Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.PLATFORM_INFO}  # blocking I/O
+_THREADED = {Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.SHOW_MORE, Intent.PLATFORM_INFO}  # blocking I/O
 
 
 async def _decide_action(
@@ -366,21 +366,19 @@ async def _run_turn(
         return blocked, None
     budget = TurnBudget()
     llm_budget = llm_client.LLMBudget()
+    gemini_limits.start_turn_deadline()  # v2: the Gemini limiter never sleeps past this turn's deadline
     summary = prompts.build_state_summary(state.to_prompt_state())
     decision = await llm_client.decide(message, summary, llm_budget)
     m.llm_ms, m.tokens_in, m.tokens_out = llm_budget.latency_ms, llm_budget.tokens_in, llm_budget.tokens_out
     m.llm_calls, m.llm_call_ms = llm_budget.calls, list(llm_budget.call_ms)
 
-    if decision is None and llm_budget.breaker_open:
-        # The circuit breaker is open and no fallback provider answered: a fixed reply at once, no wait.
-        return ActionResult(llm_resilience.LLM_UNAVAILABLE_REPLY, None, "llm_unavailable", error_class="BreakerOpen"), None
-    if decision is None and llm_budget.error_class == "RateLimitError":
-        # Groq is throttling us: say so, rather than asking the user a misleading question.
-        return ActionResult(RATE_LIMIT_REPLY, None, "rate_limited", error_class="RateLimitError"), None
+    # No decision (429, daily cap, open breaker, timeout, bad JSON): the rule-based fallback answers, same wording for all.
     if decision is None:
         m.fallback_used = True
         started = time.perf_counter()
         action = await asyncio.to_thread(fallback.run_fallback, message, state, budget)
+        if llm_budget.error_class in ("RateLimitError", "BreakerOpen"):
+            action.error_class = llm_budget.error_class  # the cause stays countable in metrics; only the reply changed
         m.api_ms = _ms(started) if budget.tool_calls else 0.0
         state.set_last_query_intent(Intent.NEW_SEARCH.value if action.tool_called else Intent.UNCLEAR.value)
         return action, None
@@ -447,7 +445,8 @@ async def handle_turn(
                 m.error_class = action.error_class
 
                 if not await asyncio.to_thread(_output_ok, reply):
-                    reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, None, "output_blocked"
+                    reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, [], "output_blocked"  # [] = no cards (None = unchanged)
+                    state.rooms_on_screen, state.selected_room_index = [], None  # the user never saw these rooms: they must not be referable next turn
                     m.action = "output_blocked"
             except Exception as exc:
                 logger.error("turn failed: %s", type(exc).__name__)

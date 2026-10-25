@@ -1,6 +1,6 @@
 {
   "id": "S24",
-  "title": "Regression: Groq rate limit gives the busy reply, no search, state kept",
+  "title": "Regression: Groq rate limit runs the rule-based fallback, rooms on screen are kept",
   "turns": [
     {
       "user": "rooms in bangalore",
@@ -23,14 +23,13 @@
       "user": "which one is cheapest",
       "llm": "rate_limit",
       "expect": {
-        "action": "rate_limited",
+        "action": "fallback_ask",
         "error_class": "RateLimitError",
         "tool_called": false,
-        "fallback_used": false,
+        "fallback_used": true,
         "rooms_on_screen": 10,
         "reply_contains": [
-          "lot of requests",
-          "try again"
+          "search again"
         ],
         "reply_not_contains": [
           "Which city"

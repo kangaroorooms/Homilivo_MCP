@@ -68,7 +68,7 @@ CASES: list[dict[str, Any]] = [
     {"name": "groq_invalid_json_twice", "message": "rooms in pune", "groq": ["not json", "{still not json"], "rooms": "offline",
      "describe": "Groq answers invalid JSON twice; fallback runs"},
     {"name": "groq_rate_limit", "message": "rooms in pune", "groq": [RateLimitError("429 too many requests")], "rooms": "offline",
-     "describe": "Groq answers 429; friendly busy reply, no fallback search"},
+     "describe": "Groq answers 429; the rule-based fallback answers"},
     {"name": "rooms_api_500_prisma", "message": "rooms in pune", "groq": [SEARCH_PUNE], "rooms": "http500",
      "describe": "rooms API returns 500 with a Prisma-style message; state must stay unchanged"},
     {"name": "rooms_api_timeout", "message": "rooms in pune", "groq": [SEARCH_PUNE], "rooms": "timeout",
@@ -94,8 +94,8 @@ def _env(**values: str | None) -> Iterator[None]:
 
 def reply_kind(result) -> str:
     m = result.metrics
-    if m.get("error_class") == "RateLimitError":
-        return "rate_limit_busy"
+    if m.get("error_class") == "RateLimitError" and not m.get("fallback_used"):
+        return "rate_limit_busy"  # the answerer's 429; a throttled decision call now runs the fallback
     if result.reply == pipeline.OUTPUT_BLOCKED_REPLY:
         return "output_blocked"
     if result.reply == rooms_client.UNAVAILABLE_MESSAGE:

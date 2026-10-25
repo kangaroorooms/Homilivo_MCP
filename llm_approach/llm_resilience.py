@@ -34,7 +34,7 @@ def _http_code(exc: BaseException) -> int | None:
 def classify(exc: BaseException) -> str:
     """timeout | rate_limit | daily_quota | server_error | auth | other."""
     if isinstance(exc, gemini_limits.GeminiLimitError):
-        return "rate_limit" if exc.kind == "rate_limit_retried" else "daily_quota"
+        return "rate_limit" if exc.kind in ("rate_limit_retried", "wait_too_long") else "daily_quota"
     name = type(exc).__name__
     if isinstance(exc, TimeoutError) or "Timeout" in name:  # asyncio.TimeoutError is TimeoutError
         return "timeout"

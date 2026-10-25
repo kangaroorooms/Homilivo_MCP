@@ -39,7 +39,7 @@ class LLMBudget:
     finish_reason: str | None = None  # finish reason of the last reply (Gemini only)
     error_code: int | None = None  # HTTP code of the last API error (Gemini), e.g. 400
     error_status: str | None = None  # its status string, e.g. "INVALID_ARGUMENT"
-    error_kind: str | None = None  # Gemini limits: "request_cap", "daily_quota" or "rate_limit_retried" (see gemini_limits)
+    error_kind: str | None = None  # Gemini limits: "request_cap", "daily_quota", "rate_limit_retried" or "wait_too_long" (see gemini_limits)
     error_message: str | None = None  # redacted, cut to 200 chars; for the smoke test only, never logged
     failure_kind: str | None = None  # llm_resilience kind of the last failure: timeout, rate_limit, bad_json, ...
     use_provider: str | None = None  # set once the turn switched to the fallback provider: later calls stay on it

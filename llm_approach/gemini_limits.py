@@ -17,6 +17,10 @@ counter file):
    prompt-size estimate before any call.
 3. On a 429: wait the retry delay named in the error (at most 60 s) and retry the same call once. A 429 that
    says the daily quota is used up is never retried.
+4. A turn deadline (``turn_deadline``, set by the pipeline at the start of the LLM step, about 20 s): before any
+   sleep (window wait, 429 retry delay) the limiter checks that the wait still fits. If not it raises
+   ``WaitTooLong`` instead of sleeping, so the rule-based fallback answers at once. A request that was never
+   sent is not counted against the daily cap.
 
 Nothing secret is stored or logged: no key, no prompt text, no reply text.
 """
@@ -24,6 +28,7 @@ Nothing secret is stored or logged: no key, no prompt text, no reply text.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import datetime as dt
 import json
 import logging
@@ -50,6 +55,9 @@ DEFAULT_RETRY_WAIT_S = 60.0  # a 429 that names no delay
 EST_COMPLETION_TOKENS = 250
 USAGE_WINDOW_S = 24 * 3600.0  # the rolling window for requests and tokens
 MAX_SEED_REQUESTS = RPD_LIMIT
+
+DEFAULT_TURN_DEADLINE_S = 20.0  # v2: how long a turn may spend in the LLM step, waits included
+TURN_DEADLINE_ENV = "LLM_APPROACH_GEMINI_TURN_DEADLINE_S"
 
 COUNTER_PATH = Path(__file__).resolve().parent / "eval" / "results" / "gemini_requests.json"  # git-ignored
 
@@ -82,6 +90,15 @@ class DailyQuotaExhausted(GeminiLimitError):
                          "Gemini reports the daily request quota is exhausted")
 
 
+class WaitTooLong(GeminiLimitError):
+    """The wait the limiter needs (window or 429 retry delay) would pass the turn's deadline, so it did not sleep."""
+
+    kind = "wait_too_long"
+
+    def __init__(self, wait: float, remaining: float) -> None:
+        super().__init__(f"Gemini limiter would wait {wait:.1f}s but only {max(0.0, remaining):.1f}s of the turn remain")
+
+
 class RateLimitRetried(GeminiLimitError):
     """The call was already retried once after a 429 and got a second one."""
 
@@ -89,6 +106,30 @@ class RateLimitRetried(GeminiLimitError):
 
     def __init__(self, original: BaseException | None = None) -> None:
         super().__init__(str(original) if original else "Gemini rate limit (429) persisted after one retry")
+
+
+def turn_deadline_s() -> float:
+    """Seconds a turn may spend in the LLM step (env override; an unreadable or non-positive value uses the default)."""
+    try:
+        value = float(os.getenv(TURN_DEADLINE_ENV, "").strip())
+    except ValueError:
+        return DEFAULT_TURN_DEADLINE_S
+    return value if value > 0 else DEFAULT_TURN_DEADLINE_S
+
+
+# The time (on the limiter's clock, monotonic seconds) by which the current turn's LLM step must be done, or None.
+# A context variable, so the pipeline sets it once and the limiter sees it without any signature change.
+_turn_deadline: contextvars.ContextVar[float | None] = contextvars.ContextVar("gemini_turn_deadline", default=None)
+
+
+def start_turn_deadline(seconds: float | None = None, now: float | None = None) -> None:
+    """Start the deadline for the current turn (``seconds`` default: ``turn_deadline_s()``)."""
+    now = get_limiter().clock() if now is None else now
+    _turn_deadline.set(now + (turn_deadline_s() if seconds is None else seconds))
+
+
+def clear_turn_deadline() -> None:
+    _turn_deadline.set(None)
 
 
 def _utc_now() -> dt.datetime:
@@ -319,6 +360,15 @@ class GeminiLimiter:
             wait = started + WINDOW_S - now
         return max(0.0, wait)
 
+    async def _sleep_within_deadline(self, wait: float) -> None:
+        """Sleep ``wait`` seconds, or raise ``WaitTooLong`` (without sleeping) when that would pass the turn deadline."""
+        deadline = _turn_deadline.get()
+        if deadline is not None:
+            remaining = deadline - self.clock()
+            if wait > remaining:
+                raise WaitTooLong(wait, remaining)
+        await self.sleep(wait)
+
     def remaining_requests(self, budget: int) -> int:
         return max(0, budget - self.counter.used_requests())
 
@@ -332,7 +382,7 @@ class GeminiLimiter:
         estimate = self._last_tokens if self._last_tokens is not None else prompt_estimate
         wait = self._wait_needed(estimate)
         while wait > 0:
-            await self.sleep(wait)
+            await self._sleep_within_deadline(wait)
             wait = self._wait_needed(estimate)
         if self.counter.used_requests() >= budget:  # another task may have used the last request while we waited
             raise RequestCapReached()
@@ -358,7 +408,7 @@ class GeminiLimiter:
                 if attempt == 2:
                     raise RateLimitRetried(exc) from exc
                 delay = retry_delay(exc)
-                await self.sleep(min(DEFAULT_RETRY_WAIT_S if delay is None else delay, MAX_RETRY_WAIT_S))
+                await self._sleep_within_deadline(min(DEFAULT_RETRY_WAIT_S if delay is None else delay, MAX_RETRY_WAIT_S))
                 continue
             used = tokens_of(result)
             if used:

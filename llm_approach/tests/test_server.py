@@ -460,11 +460,11 @@ def _real_client_turn(monkeypatch, fake_groq, replies, message="find me a room i
 
 
 @pytest.mark.parametrize("exc", [RateLimitError("429 too many"), Err429("throttled")])
-def test_groq_rate_limit_gets_the_busy_message(monkeypatch, fake_groq, exc):
+def test_groq_rate_limit_runs_the_rule_based_fallback(monkeypatch, fake_groq, exc):
     r = _real_client_turn(monkeypatch, fake_groq, [exc])
-    assert r.reply == "I'm getting a lot of requests right now, please try again in a minute."
-    assert r.metrics["error_class"] == "RateLimitError" and r.metrics["tool_called"] is False
-    assert r.rooms is None and r.success is True
+    assert r.reply != "I'm getting a lot of requests right now, please try again in a minute."
+    assert r.metrics["error_class"] == "RateLimitError" and r.metrics["fallback_used"] is True
+    assert r.metrics["tool_called"] is True and r.success is True
 
 
 def test_other_groq_errors_still_use_the_fallback(monkeypatch, fake_groq):

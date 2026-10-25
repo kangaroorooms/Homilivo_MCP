@@ -334,3 +334,22 @@ Implemented in `actions/city_change.py` (pure helpers), `actions/search.py` (the
 - Tests: `tests/test_sort_state.py` (26 new). The stub baseline is unchanged from the D4 state (only S22[3]). Suite: 1854 before this follow-up, 1880 after.
 
 **Open.** With the model unavailable the fallback always searches fresh. Whether the real model returns usable slots for replies like "2bhk under 15k" while the pending state reads `clarify` is checked only with fakes; confirm in the next live scenario run. Sort cues are English and Hinglish keywords only.
+
+## Hardening fixes and the limiter deadline (25 Oct 2026)
+
+Five hardening fixes (tests in `tests/test_hardening.py`, fakes only):
+1. **SHOW_MORE off the event loop.** The rooms call for "show more" runs in a worker thread, so a slow rooms API no longer blocks other turns.
+2. **Rule-based fallback on 429, the daily cap and an open breaker.** All three use the same wording as any other LLM failure; the cause stays countable (`error_class` `RateLimitError` / `BreakerOpen`). The 300-turn stub baseline moved only for the no-decision rate-limit case.
+3. **Redis rate limiter and demo-token store fail open** (`security/fail_open.py`). A Redis timeout or error allows the request (tokens fall back to process memory); one fixed-word counter (`rate_limit_redis_failopen`, `demo_token_redis_failopen`) and a log line with the exception class only. Redis clients get the short timeout from `config.redis_timeout_s()`.
+4. **A blocked reply drops its cards.** A blocked search sends no cards and keeps none on screen.
+5. **`/ready` reports the real knowledge-base state.** Not ready when the embedding model did not load or the collection is empty.
+
+**Limiter deadline (new).** A turn used to be able to sit in the Gemini limiter for up to 60 s (window wait) plus 60 s (429 retry delay) while the user waited. Now `pipeline._run_turn` starts a deadline of 20 s (`LLM_APPROACH_GEMINI_TURN_DEADLINE_S`, default 20; unreadable or non-positive values use 20) when the LLM step begins, held in a context variable (`gemini_limits.start_turn_deadline`), so no function signature changed. Before **any** sleep in `gemini_limits.py` (the window wait in `_begin` and the 429 retry delay in `call`) the limiter checks `wait <= deadline - now`; if not, it raises `WaitTooLong` (a `GeminiLimitError`, `kind="wait_too_long"`, code 429) and does not sleep.
+- It maps to `RateLimitError`, so the rule-based fallback (fix 2) answers at once. `llm_resilience.classify` calls it `rate_limit`.
+- Nothing is counted against the daily cap for a request that was never sent: the window wait raises before the counter is touched, and a 429 retry delay raises before the second `_begin`.
+- Short waits behave exactly as before. Without a deadline (calls outside the pipeline, e.g. `llm_client.decide` alone) nothing changes.
+- The deadline is on the limiter's own clock, so tests with a fake clock stay deterministic.
+- Tests: 11 new in `tests/test_gemini_limits.py` (short wait sleeps and succeeds; window wait over the deadline raises and does not sleep; 429 with a 55 s hint raises with no sleep and no retry; short hint retries once; counters unchanged; no sleep exceeds the remaining deadline; no deadline means old behaviour; env override; fallback reply at once).
+- Live eval runs go through the pipeline too, so a window wait over 20 s there now ends that turn in the fallback instead of waiting. With the 5 s spacing the waits are short; raise the env value if a long eval needs the old behaviour.
+
+**Flaky test fixed.** `test_the_refresh_stops_at_the_max_hold` used wall time. `RedisSessionStore` now takes an injectable `monotonic` (default `time.monotonic`, marked `# v2:`) used only by the lock-refresh loop; the test drives it with a fake clock and a fake sleep. 20 runs in a row passed.

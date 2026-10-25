@@ -1,5 +1,5 @@
 # Copied from app/rate_limit.py at commit 7dbcba3 (copied, not imported).
-# Changes: two lazy imports of record_rate_limit_event now point to llm_approach.observability
+# Changes: two lazy imports of record_rate_limit_event now point to llm_approach.observability; the Redis client gets a short timeout and the Redis limiter is wrapped so a Redis error allows the request (fail open)
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from fastapi import HTTPException, Request
+
+from llm_approach.security import fail_open  # v2: added
 
 try:
     import redis as redis_lib
@@ -130,6 +132,7 @@ class RedisRateLimiter:
         self._redis = redis_client or redis_lib.Redis.from_url(
             url or os.getenv("REDIS_URL", "redis://localhost:6379/0"),
             decode_responses=True,
+            socket_connect_timeout=fail_open.redis_timeout_s(), socket_timeout=fail_open.redis_timeout_s(),  # v2: added
         )
         self._prefix = key_prefix
 
@@ -202,7 +205,7 @@ def _create_default_backend() -> RateLimiterBackend:
     """STATE_BACKEND=redis|memory, default memory - read once at import,
     same as every other env-driven constant in this module."""
     if os.getenv("STATE_BACKEND", "memory").strip().lower() == "redis":
-        return RedisRateLimiter()
+        return fail_open.FailOpenRateLimiter(RedisRateLimiter())  # v2: was: return RedisRateLimiter()
     return InMemoryRateLimiter()
 
 

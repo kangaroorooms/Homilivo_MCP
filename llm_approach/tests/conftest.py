@@ -55,6 +55,18 @@ def _skip_secret_check(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _knowledge_stats_healthy(monkeypatch):
+    """The startup preload now reads the knowledge-base index stats: tests must not load the embedding model or
+    build Chroma. Tests of the real readiness logic (test_ready_knowledge.py) override this."""
+    from llm_approach import reuse
+
+    monkeypatch.setattr(
+        reuse, "get_knowledge_index_stats",
+        lambda: (lambda: {"documents_loaded": 2, "chunks_indexed": 7, "embedding_model_available": True}),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _semantic_gate_off(monkeypatch):
     """The semantic gate is shadow in a production-configured app: tests must not load the embedding model
     unless they say so (tests/test_semantic_gate.py sets the mode itself)."""

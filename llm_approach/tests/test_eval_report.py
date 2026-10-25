@@ -163,7 +163,7 @@ def test_robustness_cases_are_clean():
     rep = run_robustness.run_all()
     assert rep["n"] == 7 and rep["clean"] == 7
     kinds = {r["case"]: r["reply_kind"] for r in rep["rows"]}
-    assert kinds["groq_rate_limit"] == "rate_limit_busy"
+    assert kinds["groq_rate_limit"].startswith("fallback")
     assert kinds["rooms_api_500_prisma"] == "rooms_unavailable" == kinds["rooms_api_timeout"]
     assert kinds["output_guardrail_blocks"] == "output_blocked"
     assert kinds["groq_timeout"].startswith("fallback") and kinds["groq_invalid_json_twice"].startswith("fallback")

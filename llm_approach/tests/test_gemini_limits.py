@@ -151,7 +151,7 @@ def test_cap_blocks_the_call_and_reports_a_rate_limit(fake_gemini, monkeypatch, 
     assert len(client.calls) == 2 and used(_gemini_limiter) == 2  # nothing was sent, nothing counted
 
 
-def test_cap_uses_the_pipelines_normal_rate_limit_fallback(fake_gemini, monkeypatch, _gemini_limiter):
+def test_cap_uses_the_pipelines_rule_based_fallback(fake_gemini, monkeypatch, _gemini_limiter):
     monkeypatch.setattr(reuse, "get_is_security_blocked", lambda: (lambda m: (False, "")))
     monkeypatch.setattr(reuse, "get_output_guardrail", lambda: (lambda t: (True, t)))
     monkeypatch.setenv(config.OFFLINE_ROOMS_ENV, "1")
@@ -162,8 +162,9 @@ def test_cap_uses_the_pipelines_normal_rate_limit_fallback(fake_gemini, monkeypa
     first = run(pipeline.handle_turn(str(uuid.uuid4()), "rooms in pune", store=SessionStore()))
     assert first.reply != pipeline.RATE_LIMIT_REPLY
     second = run(pipeline.handle_turn(str(uuid.uuid4()), "rooms in pune", store=SessionStore()))
-    assert second.reply == pipeline.RATE_LIMIT_REPLY and second.metrics["action"] == "rate_limited"
-    assert second.metrics["fallback_used"] is False and len(client.calls) == 1
+    assert second.reply != pipeline.RATE_LIMIT_REPLY and second.metrics["action"].startswith("fallback_")
+    assert second.metrics["fallback_used"] is True and second.metrics["error_class"] == "RateLimitError"
+    assert len(client.calls) == 1  # the fallback searched with rules; no second model call
 
 
 def test_counter_is_shared_by_the_pipeline_and_the_eval_runner(fake_gemini, monkeypatch, _gemini_limiter):
@@ -763,3 +764,110 @@ def test_seed_refuses_more_than_500_and_bad_input(tmp_path, capsys, monkeypatch)
     assert "HH:MM" in capsys.readouterr().out
     with pytest.raises(SystemExit):
         llm_info.main(["--seed-tokens", "5"])
+
+
+# ---- v2: the turn deadline inside the limiter ----------------------------------------------------------
+
+
+def call_with_deadline(lim, send, seconds=20.0):
+    """Run one limited call with a turn deadline of ``seconds`` on the limiter's clock (set inside the task)."""
+    async def main():
+        gemini_limits.start_turn_deadline(seconds, now=lim.clock())
+        return await lim.call(send, budget=450, prompt_estimate=100)
+
+    return asyncio.run(main())
+
+
+def fill_window(lim, t, n=12):
+    """12 requests made now, so the next one waits about 60 s for the oldest to leave the window."""
+    for _ in range(n):
+        asyncio.run(lim.call(ok, budget=10_000, prompt_estimate=10))
+    t["now"] += 1.0
+
+
+def test_a_short_window_wait_under_the_deadline_still_sleeps_and_succeeds(tmp_path):
+    lim, t, sleeps = make_limiter(tmp_path)
+    fill_window(lim, t)
+    t["now"] += 45.0  # the oldest request leaves the window in about 14 s: that fits in 20 s
+    assert call_with_deadline(lim, ok) == "r"
+    assert len(sleeps) == 1 and 0 < sleeps[0] < 20 and lim.counter.used_today() == 13
+
+
+def test_a_window_wait_over_the_deadline_raises_wait_too_long_and_does_not_sleep(tmp_path):
+    lim, t, sleeps = make_limiter(tmp_path)
+    fill_window(lim, t)  # the next call would wait about 59 s
+    with pytest.raises(gemini_limits.WaitTooLong):
+        call_with_deadline(lim, ok)
+    assert sleeps == [] and lim.counter.used_today() == 12  # nothing slept, the unsent request was not counted
+
+
+def test_a_429_with_a_55_second_hint_raises_wait_too_long_without_sleeping_or_retrying(tmp_path):
+    lim, t, sleeps = make_limiter(tmp_path)
+    send = flaky(ClientError(429, "RESOURCE_EXHAUSTED", "Please retry in 55s."), "never")
+    with pytest.raises(gemini_limits.WaitTooLong):
+        call_with_deadline(lim, send)
+    assert sleeps == [] and len(send.calls) == 1
+    assert lim.counter.used_today() == 1  # only the request that was really sent
+
+
+def test_a_429_with_a_short_hint_retries_once_under_the_deadline(tmp_path):
+    lim, t, sleeps = make_limiter(tmp_path)
+    send = flaky(ClientError(429, "RESOURCE_EXHAUSTED", "Please retry in 4.5s."), "fine")
+    assert call_with_deadline(lim, send) == "fine"
+    assert sleeps == [pytest.approx(4.5)] and len(send.calls) == 2
+
+
+def test_the_daily_counter_is_unchanged_when_wait_too_long_is_raised(tmp_path):
+    lim, t, sleeps = make_limiter(tmp_path)
+    fill_window(lim, t)
+    before = (lim.counter.used_requests(), lim.counter.used_tokens())
+    with pytest.raises(gemini_limits.WaitTooLong):
+        call_with_deadline(lim, ok)
+    assert (lim.counter.used_requests(), lim.counter.used_tokens()) == before
+
+
+def test_no_sleep_exceeds_the_remaining_deadline(tmp_path):
+    lim, t, sleeps = make_limiter(tmp_path)
+    for hint in (3, 9, 19, 21, 55):
+        send = flaky(ClientError(429, "RESOURCE_EXHAUSTED", f"retry in {hint}s"), "x")
+        try:
+            call_with_deadline(lim, send, seconds=20.0)
+        except gemini_limits.WaitTooLong:
+            pass
+    assert sleeps and all(s <= 20.0 for s in sleeps) and [round(s) for s in sleeps] == [3, 9, 19]
+
+
+def test_without_a_deadline_long_waits_still_sleep(tmp_path):
+    lim, t, sleeps = make_limiter(tmp_path)
+    gemini_limits.clear_turn_deadline()
+    send = flaky(ClientError(429, "RESOURCE_EXHAUSTED", "retry in 55s"), "fine")
+    assert call(lim, send) == "fine" and sleeps == [pytest.approx(55)]
+
+
+def test_wait_too_long_is_a_rate_limit_error_for_the_pipeline(tmp_path):
+    exc = gemini_limits.WaitTooLong(55, 20)
+    assert isinstance(exc, gemini_limits.GeminiLimitError) and llm_client.is_rate_limit_error(exc)
+    b = LLMBudget()
+    llm_client._record_error(b, exc)
+    assert b.error_class == "RateLimitError" and b.error_kind == "wait_too_long"
+
+
+def test_the_deadline_env_override(monkeypatch):
+    assert gemini_limits.turn_deadline_s() == 20.0
+    monkeypatch.setenv(gemini_limits.TURN_DEADLINE_ENV, "7.5")
+    assert gemini_limits.turn_deadline_s() == 7.5
+    monkeypatch.setenv(gemini_limits.TURN_DEADLINE_ENV, "junk")
+    assert gemini_limits.turn_deadline_s() == 20.0
+
+
+def test_a_429_with_a_55_second_hint_gives_the_fallback_reply_at_once(fake_gemini, monkeypatch, _gemini_limiter):
+    monkeypatch.setattr(reuse, "get_is_security_blocked", lambda: (lambda m: (False, "")))
+    monkeypatch.setattr(reuse, "get_output_guardrail", lambda: (lambda t: (True, t)))
+    monkeypatch.setenv(config.OFFLINE_ROOMS_ENV, "1")
+    monkeypatch.delenv("LLM_APPROACH_METRICS", raising=False)
+    pipeline.configure(full_guardrails=True)
+    client = fake_gemini([ClientError(429, "RESOURCE_EXHAUSTED", "Please retry in 55s."), GOOD])
+    result = run(pipeline.handle_turn(str(uuid.uuid4()), "rooms in pune", store=SessionStore()))
+    assert result.reply != pipeline.RATE_LIMIT_REPLY and result.metrics["action"].startswith("fallback_")
+    assert result.metrics["fallback_used"] is True and result.metrics["error_class"] == "RateLimitError"
+    assert len(client.calls) == 1 and _gemini_limiter.fake_clock.sleeps == []  # no retry, no sleep

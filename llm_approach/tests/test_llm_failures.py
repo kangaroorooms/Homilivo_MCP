@@ -110,11 +110,12 @@ def test_bad_json_twice_is_counted_and_the_session_stays_usable(env):
     assert env.turn("hello").success
 
 
-def test_daily_quota_and_rate_limit_keep_their_existing_polite_reply(env):
-    env.script["gemini"] = [gemini_limits.DailyQuotaExhausted()]
-    assert env.turn().reply == pipeline.RATE_LIMIT_REPLY
-    env.script["gemini"] = [HttpError(429, "RESOURCE_EXHAUSTED")]
-    assert env.turn().reply == pipeline.RATE_LIMIT_REPLY
+def test_daily_quota_and_rate_limit_run_the_rule_based_fallback(env):
+    for exc in (gemini_limits.DailyQuotaExhausted(), HttpError(429, "RESOURCE_EXHAUSTED")):
+        env.script["gemini"] = [exc]
+        result = env.turn()
+        assert result.reply != pipeline.RATE_LIMIT_REPLY and result.metrics["fallback_used"] is True
+        assert result.metrics["action"].startswith("fallback_") and result.metrics["error_class"] == "RateLimitError"
 
 
 def test_failure_logs_are_warnings_without_user_text(env, caplog):
@@ -248,11 +249,12 @@ def test_breaker_opens_after_n_failures_and_answers_fast(env, clock, monkeypatch
     before = counters()
     result = env.turn()
     assert env.count("gemini") == 3  # skipped: no provider call, so no 20 s wait
-    assert result.reply == llm_resilience.LLM_UNAVAILABLE_REPLY
+    assert result.reply != llm_resilience.LLM_UNAVAILABLE_REPLY  # the rule-based fallback answers instead
     assert delta(before[1], counters()[1]) == {"breaker_skip": 1}
-    assert result.metrics["llm_calls"] == 0 and result.metrics["fallback_used"] is False
+    assert result.metrics["llm_calls"] == 0 and result.metrics["fallback_used"] is True
+    assert result.metrics["error_class"] == "BreakerOpen"
     state = env.store.peek(env.sid)
-    assert len(state.history) == 8 and state.history[-1]["content"] == llm_resilience.LLM_UNAVAILABLE_REPLY
+    assert len(state.history) == 8 and state.history[-1]["content"] == result.reply
 
 
 def test_a_success_resets_the_failure_count(env, clock, monkeypatch):
@@ -270,7 +272,8 @@ def test_breaker_closes_after_a_successful_trial(env, clock, monkeypatch):
     monkeypatch.setenv("LLM_APPROACH_BREAKER_COOLDOWN_SECONDS", "60")
     env.script["gemini"] = [asyncio.TimeoutError(), asyncio.TimeoutError()]
     env.turn(), env.turn()
-    assert env.turn().reply == llm_resilience.LLM_UNAVAILABLE_REPLY
+    skipped = env.turn()
+    assert skipped.metrics["error_class"] == "BreakerOpen" and skipped.metrics["fallback_used"] is True
     clock.now += 61
     before = counters()
     env.script["gemini"] = [SEARCH]  # the trial succeeds
@@ -288,7 +291,7 @@ def test_a_failed_trial_reopens_the_breaker(env, clock, monkeypatch):
     env.script["gemini"] = [asyncio.TimeoutError()]  # the trial fails
     env.turn()
     calls = env.count("gemini")
-    assert env.turn().reply == llm_resilience.LLM_UNAVAILABLE_REPLY
+    assert env.turn().metrics["error_class"] == "BreakerOpen"
     assert env.count("gemini") == calls  # open again, nothing sent
 
 

@@ -1,5 +1,5 @@
 # Copied from app/demo_auth.py at commit 7dbcba3 (copied, not imported).
-# Changes: none
+# Changes: the Redis client gets a short timeout and the Redis backend is wrapped so a Redis error falls back to this process's memory (fail open)
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -32,6 +32,8 @@ import secrets
 import threading
 import time
 from typing import Protocol
+
+from llm_approach.security import fail_open  # v2: added
 
 try:
     import redis as redis_lib
@@ -102,6 +104,7 @@ class RedisDemoAuthBackend:
         self._redis = redis_client or redis_lib.Redis.from_url(
             url or os.getenv("REDIS_URL", "redis://localhost:6379/0"),
             decode_responses=True,
+            socket_connect_timeout=fail_open.redis_timeout_s(), socket_timeout=fail_open.redis_timeout_s(),  # v2: added
         )
 
     def issue(self, token: str, now: float) -> None:
@@ -119,7 +122,7 @@ class RedisDemoAuthBackend:
 
 def _create_default_backend() -> DemoAuthBackend:
     if os.getenv("STATE_BACKEND", "memory").strip().lower() == "redis":
-        return RedisDemoAuthBackend()
+        return fail_open.FailOpenDemoAuthBackend(RedisDemoAuthBackend(), InMemoryDemoAuthBackend())  # v2: was: return RedisDemoAuthBackend()
     return InMemoryDemoAuthBackend()
 
 

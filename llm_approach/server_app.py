@@ -79,6 +79,7 @@ _demo = reuse.get_demo_auth_module()
 
 # What /ready reports. Set by the startup preload.
 _readiness = {"guardrails": False, "knowledge_base": False}
+_knowledge = {"embedding_model": False, "chunks_indexed": 0}  # what the knowledge-base load found; numbers and booleans only
 # True only while the background preload runs. Chat is refused (503) while it is set; once it ends, even after a
 # failed preload, chat is served as before (the models then load on first use). Never set when the preload is skipped.
 _startup = {"loading": False}
@@ -127,7 +128,11 @@ def _preload_blocking() -> None:
     started = time.monotonic()
     try:
         reuse.get_knowledge_preload()()
-        _readiness["knowledge_base"] = True
+        stats = reuse.get_knowledge_index_stats()()
+        _knowledge.update(embedding_model=bool(stats.get("embedding_model_available")),
+                          chunks_indexed=int(stats.get("chunks_indexed") or 0))
+        # warmup() does not raise when the embedding model is missing or the collection is empty: check the result.
+        _readiness["knowledge_base"] = _knowledge["embedding_model"] and _knowledge["chunks_indexed"] > 0
         logger.info("startup step=knowledge_base seconds=%.1f", time.monotonic() - started)
     except Exception as exc:  # noqa: BLE001
         logger.error("knowledge base preload failed: %s", type(exc).__name__)
@@ -342,7 +347,8 @@ def create_app() -> FastAPI:
         }
         # The rooms token is reported but not required: offline-fixture runs work without it.
         is_ready = all(v for k, v in checks.items() if k != "kangaroo_token_present")
-        content = {"status": "ready" if is_ready else "not_ready", "checks": checks, **_llm_label()}
+        content = {"status": "ready" if is_ready else "not_ready", "checks": checks, **_llm_label(),
+                   "knowledge": dict(_knowledge)}
         loading = _still_loading()
         if loading:
             content["loading"] = loading  # which components the background load has not finished

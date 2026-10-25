@@ -310,12 +310,12 @@ def real_pipeline(monkeypatch):
     return turn
 
 
-def test_quota_error_gives_the_rate_limit_reply_and_no_fallback_search(fake_gemini, real_pipeline):
+def test_quota_error_runs_the_rule_based_fallback(fake_gemini, real_pipeline):
     fake_gemini([ClientError(429, "RESOURCE_EXHAUSTED", "Quota exceeded")] * 2)  # the call and its one retry
     result = real_pipeline("rooms in pune")
-    assert result.reply == pipeline.RATE_LIMIT_REPLY
-    assert result.metrics["action"] == "rate_limited" and result.metrics["error_class"] == "RateLimitError"
-    assert result.metrics["fallback_used"] is False and result.rooms is None
+    assert result.reply != pipeline.RATE_LIMIT_REPLY
+    assert result.metrics["action"].startswith("fallback_") and result.metrics["error_class"] == "RateLimitError"
+    assert result.metrics["fallback_used"] is True
 
 
 def test_invalid_twice_uses_the_existing_fallback(fake_gemini, real_pipeline):

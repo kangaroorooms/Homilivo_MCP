@@ -256,7 +256,7 @@ null,
 ],
 [
 null,
-"rate_limited"
+"fallback_ask"
 ],
 [
 "ROOM_FOLLOWUP",

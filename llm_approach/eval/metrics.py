@@ -19,6 +19,7 @@ import math
 from collections import defaultdict
 from typing import Any, Iterable
 
+from llm_approach import config
 from llm_approach.eval import label_map
 
 SEARCH_INTENTS = {"NEW_SEARCH", "REFINEMENT"}
@@ -74,6 +75,43 @@ def coverage(results: Iterable[dict], totals: dict[str, int]) -> dict[str, dict[
         else:
             done[r["dataset"]].add(r["item"])
     return {d: {"done": len(done[d]), "total": t, "rate_limit_misses": misses[d]} for d, t in totals.items()}
+
+
+FAILED_STATUSES = ("rate_limit_miss", "error")  # no answer was obtained
+FAILURE_KINDS = ("rate_limit", "timeout", "server_error", "other")
+
+
+def failure_kind(r: dict) -> str:
+    """Why a call produced no answer: rate_limit, timeout, server_error or other.
+
+    A ``failure_kind`` field wins when a record has one. Older result files do not: the kind is then read from the
+    fields they already hold (``status``, ``error_class``, ``error_code``, ``error_status``), and a record with
+    nothing to read from is ``other``."""
+    kind = r.get("failure_kind")
+    if kind in FAILURE_KINDS:
+        return kind
+    cls = str(r.get("error_class") or "").lower()
+    code, status = r.get("error_code"), str(r.get("error_status") or "").upper()
+    if r.get("status") == "rate_limit_miss" or "ratelimit" in cls or code == 429 or status == "RESOURCE_EXHAUSTED":
+        return "rate_limit"
+    if "timeout" in cls or status == "DEADLINE_EXCEEDED":
+        return "timeout"
+    if (isinstance(code, int) and 500 <= code <= 599) or "server" in cls or status in ("UNAVAILABLE", "INTERNAL"):
+        return "server_error"
+    return "other"
+
+
+def failed_calls(results: Iterable[dict]) -> dict[str, Any]:
+    """Calls that gave no answer (rate limit, timeout, server error, other), in total and per dataset."""
+    by_kind = {k: 0 for k in FAILURE_KINDS}
+    by_dataset: dict[str, dict[str, int]] = {}
+    for r in results:
+        if r.get("status") in FAILED_STATUSES:
+            kind = failure_kind(r)
+            by_kind[kind] += 1
+            d = by_dataset.setdefault(r.get("dataset", "?"), {k: 0 for k in FAILURE_KINDS})
+            d[kind] += 1
+    return {"total": sum(by_kind.values()), "by_kind": by_kind, "by_dataset": by_dataset}
 
 
 # ---- intent / operation ---------------------------------------------------
@@ -182,14 +220,66 @@ def decision_key(r: dict) -> tuple:
             tuple(sorted((k, _norm(v)) for k, v in slots.items() if v not in (None, [], ""))))
 
 
-def consistency(results: Iterable[dict]) -> dict[str, Any]:
-    """Items with 2+ scored runs whose decisions are all identical."""
+def _consistency_by(results: Iterable[dict], key, min_runs: int) -> dict[str, Any]:
     groups: dict[tuple, list[dict]] = defaultdict(list)
     for r in scored(results):
         groups[(r["dataset"], r["item"])].append(r)
-    multi = [g for g in groups.values() if len(g) >= 2]
-    same = sum(len({decision_key(r) for r in g}) == 1 for g in multi)
+    multi = [g for g in groups.values() if len(g) >= min_runs]
+    same = sum(len({key(r) for r in g}) == 1 for g in multi)
     return proportion(same, len(multi))
+
+
+def consistency(results: Iterable[dict], min_runs: int = 2) -> dict[str, Any]:
+    """Items with ``min_runs``+ scored runs (default 2) whose decisions are all identical (strict: ``decision_key``)."""
+    return _consistency_by(results, decision_key, min_runs)
+
+
+FIXTURE_CITY = "Bangalore"  # the city of the rooms on screen in the evaluation (datasets.build_state)
+
+
+def action_key(r: dict) -> tuple:
+    """The user-visible action a decision leads to, not the decision itself.
+
+    Class: search, clarify, followup (with its operation and room), show_more, reject, platform, chat, unsupported,
+    blocked (out of scope), recall. A search carries the filters that reach the rooms API; a refinement with rooms on
+    screen inherits their city, as the pipeline merges it. A confidence below the threshold, an UNCLEAR intent, a
+    search with no city, or a refinement that changes nothing is a clarifying question. Confidence, the label (for
+    example NEW_SEARCH versus UNCLEAR when both end in a question) and the ask flag of a search are not part of it."""
+    if r.get("status") != "ok":
+        return ("none",)
+    intent = r.get("intent")
+    conf = r.get("confidence")
+    if (conf is not None and conf < config.CONFIDENCE_THRESHOLD) or intent == "UNCLEAR":
+        return ("clarify",)
+    if intent in SEARCH_INTENTS:
+        if not r.get("would_search"):
+            return ("clarify",)
+        filters = {k: _norm(v) for k, v in (r.get("validated_slots") or {}).items()
+                   if v not in (None, [], "") and k != "room_reference"}
+        if intent == "REFINEMENT" and r.get("ctx"):
+            filters.setdefault("city", _norm(FIXTURE_CITY))
+            if filters == {"city": _norm(FIXTURE_CITY)}:
+                return ("clarify",)  # nothing new to filter by: the pipeline asks which area
+        if not filters.get("city"):
+            return ("clarify",)
+        return ("search", tuple(sorted(filters.items())))
+    if intent == "ROOM_FOLLOWUP":
+        return ("followup", r.get("operation"), r.get("room_reference"))
+    return {"OUT_OF_SCOPE": ("blocked",), "PLATFORM_INFO": ("platform",), "GENERAL_CHAT": ("chat",)}.get(
+        intent, (str(intent).lower(),))
+
+
+def same_action_consistency(results: Iterable[dict], min_runs: int = 2) -> dict[str, Any]:
+    """Items with ``min_runs``+ scored runs whose runs all lead to the same user-visible action (``action_key``)."""
+    return _consistency_by(results, action_key, min_runs)
+
+
+def expected_runs(results: Iterable[dict]) -> int:
+    """The most runs any item has (failed calls included): the number of runs that were planned."""
+    counts: dict[tuple, int] = defaultdict(int)
+    for r in results:
+        counts[(r["dataset"], r["item"])] += 1
+    return max(counts.values(), default=0)
 
 
 def calibration(results: Iterable[dict]) -> list[dict[str, Any]]:

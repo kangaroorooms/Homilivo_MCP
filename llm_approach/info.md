@@ -14,6 +14,9 @@ cd "C:\Faizal\AI intern"
 
 .\start-frontend-llm.ps1
 
+to find the value (LLM_APPROACH_METRICS_TOKEN=<any long random string>)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
 
 Gemini free-tier limits (gemini-3.5-flash-lite): 15 requests/min, 250K tokens/min, 500 requests/day (binding). No daily token limit from Google; LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET is our own safety cap.
 

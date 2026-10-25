@@ -43,7 +43,8 @@ TARGETS = [  # PLAN.md section 8.3
     ("E1 scenario pass rate", "100% of turns, or each failure explained"),
     ("Intent accuracy, E2 pooled (133)", "clearly above the current pipeline's 53.4% (harness: 57.9%)"),
     ("Intent accuracy, E2 ctxY", "clearly above 21.2% (harness: 27.3%)"),
-    ("Consistency across 3 runs", ">= 95% identical decisions"),
+    ("Consistency across 3 runs", ">= 95% identical decisions (strict: intent, operation, room, slots)"),
+    ("Same action across 3 runs", ">= 95% of items lead to the same user-visible action and filters (proposed)"),
     ("p95 LLM latency", "<= 3 s (rooms API excluded)"),
 ]
 
@@ -205,6 +206,13 @@ def build_data(
     every = [r for r in flat]
     data["invalid_json_rate"] = metrics.invalid_json_rate(every)
     data["consistency"] = metrics.consistency(every)
+    data["same_action"] = metrics.same_action_consistency(every)
+    runs_planned = metrics.expected_runs(every)
+    data["runs_planned"] = runs_planned
+    data["consistency_all_runs"] = metrics.consistency(every, runs_planned) if runs_planned > 2 else data["consistency"]
+    data["same_action_all_runs"] = metrics.same_action_consistency(every, runs_planned) if runs_planned > 2 else data["same_action"]
+    data["consistency_items_short"] = data["consistency"]["n"] - data["consistency_all_runs"]["n"]
+    data["failed_calls"] = metrics.failed_calls(every)
     data["calibration"] = metrics.calibration(first_166)
     data["latency"] = metrics.latency_percentiles(every)
     data["tokens"] = metrics.tokens_per_call(every)
@@ -254,11 +262,15 @@ def banner(data: dict[str, Any]) -> list[str]:
              "different pairs are never merged or compared in one table.", ""]
     if done < total:
         lines += [f"> **PARTIAL RESULTS: {done} of {total} items evaluated.** Every number below covers only the items done so far.", ""]
-    lines += [table(["Dataset", "Items done", "Total", "Rate-limit misses"],
+    lines += [table(["Dataset", "Items done", "Total", "Failed calls (rate limit, timeout, other)"],
                     [[n, cov[n]["done"], cov[n]["total"], cov[n]["rate_limit_misses"]] for n in datasets.DATASETS]), ""]
-    if data["rate_limit_misses"]:
-        lines += [f"Rate-limit misses ({data['rate_limit_misses']}) are not counted as wrong answers anywhere. "
-                  "Re-run with `--only-missing` to retry them.", ""]
+    failed = data["failed_calls"]
+    if failed["total"]:
+        k = failed["by_kind"]
+        lines += [f"Failed calls: {failed['total']} (rate limit {k['rate_limit']}, timeout {k['timeout']}, "
+                  f"server error {k['server_error']}, other {k['other']}). They are not counted as wrong answers anywhere. "
+                  "Result files from before the kind was recorded are classified from their error fields; a record with "
+                  "none shows as other. Re-run with `--only-missing` to retry them.", ""]
     return lines
 
 
@@ -331,8 +343,18 @@ def other_metrics_section(data: dict[str, Any]) -> list[str]:
                  ["Invalid-slot rate (search intents, validators rejected a slot)", pct(data["invalid_slot_rate"])],
                  ["Invalid-search rate (a search would carry a rejected slot; target 0)", pct(data["invalid_search_rate"])],
                  ["No usable decision (invalid JSON twice, timeout, API error)", pct(data["invalid_json_rate"])],
-                 ["Consistency across runs (items with 2+ runs, identical decision)", pct(data["consistency"])],
+                 ["Consistency across runs (strict: identical intent, operation, room and slots)", pct(data["consistency"])],
+                 ["Same action across runs (same user-visible action and filters)", pct(data["same_action"])],
+                 [f"Strict consistency, only items with all {data['runs_planned']} runs", pct(data["consistency_all_runs"])],
+                 [f"Same action, only items with all {data['runs_planned']} runs", pct(data["same_action_all_runs"])],
              ]), "",
+             "**Consistency.** *Strict* needs identical intent, operation, room reference and slots in every run (confidence is ignored). "
+             "*Same action* needs the runs to lead to the same user-visible action: search (with the filters sent to the rooms API), "
+             "clarifying question, follow-up (operation and room), show more, platform answer, chat or blocked. A different label or "
+             "confidence that ends in the same action does not count against it. "
+             f"Both use the items with at least 2 usable runs; an item with a failed call is judged on its remaining runs "
+             f"({data['consistency_items_short']} item(s) have fewer than {data['runs_planned']}). "
+             "The last two rows count only items with every planned run usable.", "",
              "The clarification gold is only the UNCLEAR label; the sets have no other 'should ask' labels, so read these as a proxy. "
              "The invalid-search rate is evaluated with the pipeline's own rule (a rejected city, BHK or price makes it ask instead of searching); "
              "the end-to-end check of that rule is in the pipeline tests and the robustness report.", "",
@@ -430,6 +452,7 @@ def targets_section(data: dict[str, Any]) -> list[str]:
         "Intent accuracy, E2 pooled (133)": pct(acc["pooled_133"]["strict"]),
         "Intent accuracy, E2 ctxY": pct(acc["ctxY"]["strict"]),
         "Consistency across 3 runs": pct(data["consistency"]),
+        "Same action across 3 runs": pct(data["same_action"]),
         "p95 LLM latency": ms(data["latency"]["p95"]),
     }
     lines = ["## Proposed targets (PLAN section 8.3)", "",

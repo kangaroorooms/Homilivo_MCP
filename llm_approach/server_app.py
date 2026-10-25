@@ -22,12 +22,15 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import importlib.util
+import ipaddress
 import logging
 import os
 import re
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -35,12 +38,31 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
-from pathlib import Path
-
-from llm_approach import config, observability, pipeline, responder, reuse, rooms_client, switches, turn_context
-from llm_approach.security.secrets_check import validate_secrets
-
 logger = logging.getLogger(__name__)
+
+REPO_ROOT = Path(__file__).resolve().parents[1]  # same .env lookup as cli.py
+ENV_FILE_ENV = "LLM_APPROACH_ENV_FILE"  # optional: another .env path (default: the repo-root .env)
+
+
+def load_env(path: Path | str | None = None) -> bool:
+    """Load the repo-root ``.env`` into ``os.environ`` without overriding variables that are
+    already set. Returns whether a file was read. Logs and prints nothing from the file."""
+    try:
+        from dotenv import load_dotenv
+
+        return bool(load_dotenv(Path(path) if path else Path(os.environ.get(ENV_FILE_ENV) or REPO_ROOT / ".env"), override=False))
+    except Exception as exc:  # noqa: BLE001 - class name only, never file content
+        logger.error(".env could not be loaded: %s", type(exc).__name__)
+        return False
+
+
+# v2: before llm_approach.config is imported below: config, pricing_client and the rate limiter read the environment
+# when they are imported, so a value that lives only in .env would otherwise be ignored.
+load_env()
+
+from llm_approach import config, observability, pipeline, responder, reuse, rooms_client, switches, turn_context, turn_deadline  # noqa: E402
+from llm_approach import gemini_limits  # noqa: E402
+from llm_approach.security.secrets_check import validate_secrets  # noqa: E402
 
 SERVER_ERROR_REPLY = "Something went wrong on our side, please try again."
 WS_MAX_MESSAGE_LENGTH = 500
@@ -55,24 +77,6 @@ METRICS_TOKEN_ENV = "LLM_APPROACH_METRICS_TOKEN"  # optional: without it /metric
 
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z", re.IGNORECASE)  # \Z, not $: "$" would accept a trailing newline
 _TOKEN_IN_TEXT = re.compile(r"(token=)[^&\s\"']*", re.IGNORECASE)
-
-REPO_ROOT = Path(__file__).resolve().parents[1]  # same .env lookup as cli.py
-
-
-def load_env(path: Path | str | None = None) -> bool:
-    """Load the repo-root ``.env`` into ``os.environ`` without overriding variables that are
-    already set. Returns whether a file was read. Logs and prints nothing from the file."""
-    try:
-        from dotenv import load_dotenv
-
-        return bool(load_dotenv(Path(path) if path else REPO_ROOT / ".env", override=False))
-    except Exception as exc:  # noqa: BLE001 - class name only, never file content
-        logger.error(".env could not be loaded: %s", type(exc).__name__)
-        return False
-
-
-# Before anything below reads the environment (rate limiter, demo auth, LLM provider, rooms client).
-load_env()
 
 _rl = reuse.get_rate_limit_module()
 _demo = reuse.get_demo_auth_module()
@@ -114,6 +118,117 @@ def _llm_label() -> dict[str, str]:
 
 def _env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
+
+
+# ---- logging (v2) ------------------------------------------------------------------------
+
+LOG_LEVEL_ENV = "LLM_APPROACH_LOG_LEVEL"
+
+
+class _AppInfoFilter(logging.Filter):
+    """INFO and DEBUG only from this package; every other library keeps WARNING and above."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno >= logging.WARNING or record.name == "llm_approach" or record.name.startswith("llm_approach.")
+
+
+def configure_logging(root: logging.Logger | None = None) -> bool:
+    """Make the INFO lines of ``llm_approach.*`` visible: one stderr handler on the root logger with a timestamp, level
+    and logger name. Does nothing when the host already configured logging (the root logger has a handler), so it
+    never duplicates lines. It adds no log line that carries request data. Returns whether it installed the handler."""
+    root = root if root is not None else logging.getLogger()
+    if root.handlers:
+        return False
+    level = getattr(logging, os.getenv(LOG_LEVEL_ENV, "").strip().upper() or "INFO", None)
+    level = level if isinstance(level, int) else logging.INFO
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    handler.addFilter(_AppInfoFilter())
+    root.addHandler(handler)
+    root.setLevel(level)
+    return True
+
+
+# ---- client address (v2) -----------------------------------------------------------------
+
+
+def forwarded_client(peer: str | None, forwarded: list[str], hops: int) -> str:
+    """The key a request is rate-limited under. ``hops`` 0: the TCP peer, as always. ``hops`` N > 0: the Nth entry from
+    the right of X-Forwarded-For, i.e. the address the Nth trusted proxy saw; entries to its left are client-supplied
+    and never used. A missing header, fewer than N entries or an entry that is not an IP address falls back to the peer."""
+    fallback = _rl.client_host_identifier(peer)
+    if hops <= 0:
+        return fallback
+    entries = [part.strip() for value in forwarded for part in value.split(",")]
+    if len(entries) < hops:
+        return fallback
+    try:
+        return str(ipaddress.ip_address(entries[-hops]))
+    except ValueError:
+        return fallback
+
+
+def client_key(connection: Request | WebSocket) -> str:
+    try:
+        hops = config.trusted_proxy_hops()
+    except ValueError:  # startup already refused a bad value; never let a request fail on it
+        hops = 0
+    peer = connection.client.host if connection.client else None
+    return forwarded_client(peer, connection.headers.getlist("x-forwarded-for") if hops else [], hops)
+
+
+async def _enforce_ip_limit(request: Request) -> None:
+    """The per-IP limit of /chat and /metrics (the copied ``enforce_rate_limit`` always keys on the TCP peer).
+    The limiter may be Redis: it runs off the event loop."""
+    result = await asyncio.to_thread(_rl.check_rate_limit, client_key(request))
+    if not result.allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Please slow down and try again shortly.",
+            headers={"Retry-After": str(max(1, int(result.retry_after_seconds) + 1))},
+        )
+
+
+# ---- startup checks (v2) -----------------------------------------------------------------
+
+RATE_LIMIT_OFF_WARNING = "RATE_LIMIT_ENABLED is off: per-IP and per-session limits are disabled."
+COUNTER_PATH_WARNING = gemini_limits.WRITE_FAILED_WARNING
+DEV_MODE_WARNING = "Running in development mode: set LLM_APPROACH_ENV=production on a real server."
+_deadline_sleep = asyncio.sleep  # the turn deadline's timer; tests replace it so they need no real waiting
+REDIS_DOWN_WARNING = "Redis is not reachable at startup: sessions are not shared or saved until it is back."
+
+
+def _package_available(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):  # a broken parent package counts as missing
+        return False
+
+
+def _providers_in_use() -> list[str]:
+    try:
+        names = [config.provider()]
+        fallback = config.fallback_provider()
+    except ValueError:
+        return []
+    return names + ([fallback] if fallback else [])
+
+
+def production_problems() -> list[str]:
+    """What stops a production start, as fixed sentences that name settings and packages, never values."""
+    problems: list[str] = []
+    if os.getenv(config.OFFLINE_ROOMS_ENV, "").strip():
+        problems.append(f"{config.OFFLINE_ROOMS_ENV} is set: it serves fixture rooms and must not be set in production.")
+    providers_used = _providers_in_use()
+    for name, package in (("gemini", "google.genai"), ("groq", "groq")):
+        if name in providers_used and not _package_available(package):
+            problems.append(f"The {name} provider is configured but its package ({package}) is not installed.")
+    if config.search_transport() == "mcp" and not _package_available("mcp"):
+        problems.append("The rooms search uses the MCP transport but the mcp package is not installed.")
+    fallback = config.fallback_provider() if providers_used else None
+    if fallback and not config.key_present(fallback):
+        problems.append(f"The fallback provider is configured but {config.key_env(fallback)} is not set.")
+    return problems
 
 
 def _preload_blocking() -> None:
@@ -188,11 +303,28 @@ async def _lifespan(app: FastAPI):
         logger.warning("secret check skipped by %s: do not use this on a real server", SKIP_SECRET_CHECK_ENV)
     else:
         validate_secrets()  # refuses to start when the provider key or KANGAROO_TOKEN is missing (names only, never values)
+    configure_logging()  # v2
+    production = config.production_mode()  # v2: an unknown LLM_APPROACH_ENV value stops the start here
+    config.trusted_proxy_hops()  # v2: a bad value stops the start
+    if production:  # v2
+        problems = production_problems()
+        if problems:
+            for problem in problems:
+                logger.error("startup check failed: %s", problem)
+            raise RuntimeError("Production startup checks failed: " + " ".join(problems))
+    else:  # v2
+        logger.warning(DEV_MODE_WARNING)
+    if not _rl.RATE_LIMIT_ENABLED:  # v2
+        logger.warning(RATE_LIMIT_OFF_WARNING)
+    if "gemini" in _providers_in_use() and not gemini_limits.get_limiter().counter.writable():  # v2
+        logger.warning(COUNTER_PATH_WARNING)
     if not _metrics_token():
         logger.warning("%s is not set: /metrics is disabled (404)", METRICS_TOKEN_ENV)
     before = (pipeline._full_guardrails, switches.snapshot())
     pipeline.get_store()  # fail fast on a bad STATE_BACKEND or a missing redis package; Redis being down is not fatal
     logger.info("session store backend=%s", "redis" if pipeline.get_store().is_shared else "memory")
+    if production and hasattr(pipeline.get_store(), "ping") and not await asyncio.to_thread(pipeline.get_store().ping):  # v2
+        logger.warning(REDIS_DOWN_WARNING)  # warn, start anyway: the turns still answer, from a fresh state
     pipeline.configure_production()  # full guardrails + room data check + search-argument check, for this app's lifetime
     preload_task = None
     try:
@@ -263,7 +395,13 @@ async def run_turn(session_id: str, message: str, mode: str = "fast") -> pipelin
     """One pipeline turn. Never raises: any escape becomes a normal bot message."""
     turn_context.set_requested(str(uuid.uuid4()), mode)  # read by handle_turn (observability) and build_done
     try:
-        turn = await pipeline.handle_turn(session_id, message)
+        try:
+            turn = await turn_deadline.run(
+                pipeline.handle_turn(session_id, message), config.turn_deadline_s(), sleep=_deadline_sleep
+            )
+        except turn_deadline.DeadlineExceeded:  # the turn was cancelled and its state put back (pipeline.handle_turn)
+            observability.record_turn_event("deadline_exceeded")
+            turn = pipeline.TurnResult(reply=pipeline.DEADLINE_REPLY, rooms=None, success=False)
         store = pipeline.get_store()
         if store.is_shared and not turn.state_resolved:  # a shared store is a network read: keep it off the event loop
             turn.state, turn.state_resolved = await asyncio.to_thread(store.peek, session_id), True
@@ -313,13 +451,25 @@ def _short(value: Any, limit: int = 32) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
+async def _keepalive(websocket: WebSocket) -> None:
+    """While a turn runs, send the ping event every heartbeat interval so a proxy does not close a quiet connection.
+    ``{"event": "ping"}`` is what the idle heartbeat already sends; clients ignore it. Ends when cancelled or the send fails."""
+    try:
+        while True:
+            await asyncio.sleep(_float_env("WS_HEARTBEAT_INTERVAL_SECONDS", 20.0, minimum=0.01))
+            await websocket.send_json({"event": "ping"})
+    except Exception:  # noqa: BLE001 - a closed connection ends the turn's reply, not the keepalive's business
+        return
+
+
 # ---- app -----------------------------------------------------------------------
 
 _bearer = HTTPBearer(description="Homilivo API token (a demo token or the caller's own)")
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Homilivo LLM-approach API", version="0.1.0", debug=False, lifespan=_lifespan)
+    docs_off = {"docs_url": None, "redoc_url": None, "openapi_url": None} if config.production_mode() else {}  # v2
+    app = FastAPI(title="Homilivo LLM-approach API", version="0.1.0", debug=False, lifespan=_lifespan, **docs_off)
 
     origins = [o.strip() for o in os.getenv(CORS_ENV, "").split(",") if o.strip()]
     if origins:  # off by default: the current backend has no CORS middleware either
@@ -339,6 +489,12 @@ def create_app() -> FastAPI:
 
     @app.get("/ready")
     def ready():
+        if not _readiness["knowledge_base"] and not _startup["loading"]:  # v2: a start that failed may have recovered since
+            recovered = reuse.get_knowledge_cached_stats()()
+            if recovered and recovered.get("chunks_indexed"):
+                _knowledge.update(embedding_model=bool(recovered.get("embedding_model_available")),
+                                  chunks_indexed=int(recovered["chunks_indexed"]))
+                _readiness["knowledge_base"] = _knowledge["embedding_model"]
         checks = {
             "llm_key_present": _llm_key_present(),  # the active provider's key; booleans only, never values
             "kangaroo_token_present": bool(os.getenv("KANGAROO_TOKEN")),
@@ -357,12 +513,13 @@ def create_app() -> FastAPI:
         if hasattr(store, "ping"):  # Redis sessions: report the state. Not part of "ready": with Redis down the
             # turns still answer (from a fresh state each time), so a load balancer should not drain the server.
             reachable = store.ping()
+            content["redis"] = "up" if reachable else "down"  # v2
             content["session_store"] = {"backend": "redis", "redis_reachable": reachable,
                                         "sessions_survive_restart": reachable}
         return JSONResponse(status_code=200 if is_ready else 503, content=content)
 
     @app.get("/metrics")
-    async def metrics(request: Request, _limit: None = Depends(_rl.enforce_rate_limit)):
+    async def metrics(request: Request, _limit: None = Depends(_enforce_ip_limit)):
         """Counters and latency stats, JSON. Opened only by LLM_APPROACH_METRICS_TOKEN; 404 when it is not set.
         Fixed words and numbers only: no message text, no room contents, no keys, no session ids."""
         expected = _metrics_token()
@@ -377,14 +534,25 @@ def create_app() -> FastAPI:
         return {"active_sessions": active, **observability.get_metrics_snapshot()}
 
     @app.get("/chat-ui/demo-token")
-    def demo_token():
+    def demo_token(request: Request):
+        if not config.demo_token_enabled():  # v2: LLM_APPROACH_DEMO_TOKEN_ENABLED=false
+            raise HTTPException(status_code=404, detail="Not Found")
+        if _rl.RATE_LIMIT_ENABLED:  # v2: a strict budget of its own, apart from the chat limit
+            result = _rl.get_rate_limiter().hit(f"demo-token:{client_key(request)}", config.demo_token_limit(), 60.0)
+            if not result.allowed:
+                observability.record_rate_limit_event()
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many requests. Please slow down and try again shortly.",
+                    headers={"Retry-After": str(max(1, int(result.retry_after_seconds) + 1))},
+                )
         token = _demo.issue_demo_token()
         if token is None:
             raise HTTPException(status_code=404, detail="No server-side demo credential is configured.")
         return {"token": token}
 
-    def _session_limit(session_id: str) -> None:
-        result = _rl.check_session_rate_limit(session_id)
+    async def _session_limit(session_id: str) -> None:
+        result = await asyncio.to_thread(_rl.check_session_rate_limit, session_id)  # v2: may be Redis
         if not result.allowed:
             raise HTTPException(
                 status_code=429,
@@ -392,18 +560,19 @@ def create_app() -> FastAPI:
                 headers={"Retry-After": str(max(1, int(result.retry_after_seconds) + 1))},
             )
 
-    @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_rl.enforce_rate_limit)])
+    @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_enforce_ip_limit)])
     async def chat(request: ChatRequest, credentials: HTTPAuthorizationCredentials = Depends(_bearer)):
         starting = _starting_response()
         if starting is not None:
             return starting
         # Same as the current backend: the bearer value is a demo token (redeemed for the server credential) or
         # the caller's own Homilivo token. It is bound to this request only and never stored or logged.
-        handle = rooms_client.set_rooms_token(_demo.redeem_demo_token(credentials.credentials) or credentials.credentials)
+        redeemed = await asyncio.to_thread(_demo.redeem_demo_token, credentials.credentials)  # v2: may be Redis
+        handle = rooms_client.set_rooms_token(redeemed or credentials.credentials)
         try:
             session_id = normalize_session_id(request.session_id)
             if request.session_id:
-                _session_limit(session_id)
+                await _session_limit(session_id)
             turn = await run_turn(session_id, request.message, request.mode)
             return ChatResponse(**build_done(turn, session_id, request.mode))
         finally:
@@ -421,13 +590,13 @@ def create_app() -> FastAPI:
             await websocket.close(code=4401, reason="Missing token")
             return
 
-        client_key = _rl.client_host_identifier(websocket.client.host if websocket.client else None)
-        if not _rl.check_rate_limit(client_key).allowed:
+        ip_key = client_key(websocket)  # v2: was: client_key = _rl.client_host_identifier(...)
+        if not (await asyncio.to_thread(_rl.check_rate_limit, ip_key)).allowed:  # v2: may be Redis
             await websocket.close(code=4429, reason="Rate limit exceeded")
             return
 
         await websocket.accept()
-        rooms_token = _demo.redeem_demo_token(token) or token  # held for this connection only, never logged
+        rooms_token = await asyncio.to_thread(_demo.redeem_demo_token, token) or token  # v2: may be Redis; held for this connection only, never logged
         session_id: str | None = None
 
         async def send_error(detail: str) -> None:
@@ -464,7 +633,8 @@ def create_app() -> FastAPI:
                 if mode not in VALID_MODES:
                     await send_error(f"Invalid mode: {_short(mode)}")
                     continue
-                if not _rl.check_rate_limit(client_key).allowed or not _rl.check_session_rate_limit(session_id).allowed:
+                if (not (await asyncio.to_thread(_rl.check_rate_limit, ip_key)).allowed
+                        or not (await asyncio.to_thread(_rl.check_session_rate_limit, session_id)).allowed):  # v2: may be Redis
                     await send_error("Too many requests. Please slow down.")
                     continue
 
@@ -473,9 +643,12 @@ def create_app() -> FastAPI:
                     continue
                 await websocket.send_json({"event": "typing"})
                 handle = rooms_client.set_rooms_token(rooms_token)
+                keepalive = asyncio.ensure_future(_keepalive(websocket))  # v2: the same {"event": "ping"} the idle heartbeat sends
                 try:
                     turn = await run_turn(session_id, message, mode)
                 finally:
+                    keepalive.cancel()
+                    await asyncio.gather(keepalive, return_exceptions=True)
                     rooms_client.reset_rooms_token(handle)
                 done = build_done(turn, session_id, mode)
 

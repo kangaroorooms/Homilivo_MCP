@@ -368,3 +368,51 @@ Five hardening fixes (tests in `tests/test_hardening.py`, fakes only):
 **Tests.** `tests/test_owner_contact.py` (about 120 cases; fake API with different plans per city). Intentional change: `test_actions.py::test_unsupported_owner_contact` (old: bare subscription sentence from `handle_unsupported`; new: `handle_unsupported` keeps the fixed reply, `handle_owner_contact` shows the plans). `test_copy_drift.py` gains the `pricing_client.py` entry; `conftest.py` gains the network guard. The 300-turn evaluation baseline holds no owner-contact turn and is a decision baseline, so it is unchanged; scenarios S1 to S69 pass in stub mode.
 
 **Open.** The real pricing API has not been called from this code (live check is yours). `price` must be a JSON number; if the live API sends it as a string, the whole response is rejected until the check is relaxed. Detection is keyword based by design (English and Hinglish); a phrasing outside the list, or a model that picks another intent, still gets the old reply.
+
+## Production hardening from the audit (25 Oct 2026)
+
+Done, each with tests (`test_prod_hardening.py`, `test_limiter_breaker.py`, `test_rag_reuse.py`):
+
+- **A3** The rate-limit and demo-token calls of `/chat` and `/ws/chat` run in `asyncio.to_thread`: a slow Redis no longer stalls the event loop. Fail-open is unchanged.
+- **A4** Errors raised by our own Gemini limiter (`WaitTooLong`, `RequestCapReached`) are counted in `/metrics` but do not feed the circuit breaker. Real Google 429, daily quota, 5xx and timeouts still do. The user still gets the rule-based fallback reply.
+- **A5** The counter file is written through a unique temp file and replaced atomically; its path can be set with `LLM_APPROACH_GEMINI_COUNTER_PATH`; startup logs a fixed-wording warning when it cannot be written (no path in the log).
+- **B15** `.env` is loaded before `config` (and `pricing_client`) are imported, so `SESSION_*`, the rooms and pricing URLs and the area-fetch limit honour values set only in `.env`. Real environment variables still win.
+- **A6** The Chroma collection is reused while the document fingerprint (documents, chunking, embedding model, collection name) matches and all chunks are present; otherwise it is rebuilt once, under a lock file, so concurrent starts build it once. A failed first ingest is retried after 60 s instead of being cached for the life of the process; `/ready` notices a knowledge base that loaded later.
+- **C** In production mode the server checks at startup: the provider packages, the `mcp` package (when the transport is `mcp`), the fallback provider's key, and that `LLM_APPROACH_OFFLINE_ROOMS` is not set; any of these stops the start with a fixed message that names the setting, never a value. Redis down warns and starts; `/ready` returns 200 and shows `redis: up` or `redis: down`.
+- **B3** `/docs`, `/redoc` and `/openapi.json` are off in production mode.
+- **Silent defaults** `RATE_LIMIT_ENABLED=false` logs a warning in every mode.
+- **B7** `configure_logging()` installs one root handler (only when none exists) so INFO lines of `llm_approach.*` appear; other libraries stay at WARNING. No log line was added or changed that carries request data.
+- **B1** `/chat-ui/demo-token` has its own per-IP limit (`LLM_APPROACH_DEMO_TOKEN_RATE_LIMIT`, default 10 per minute) and a switch `LLM_APPROACH_DEMO_TOKEN_ENABLED` (default true; false answers 404).
+- **B2** `LLM_APPROACH_TRUSTED_PROXY_HOPS` (default 0: the TCP peer). With N > 0 the Nth entry from the right of `X-Forwarded-For` is the client; a missing, short or malformed header falls back to the peer, and entries to the left (client-supplied) are never used.
+
+**Production checklist** (names only; the full table with defaults is in the README):
+
+1. `LLM_APPROACH_ENV=production` (first, because it turns on the production startup checks and switches the API docs off)
+2. `GEMINI_API_KEY` (or `GROQ_API_KEY`), `KANGAROO_TOKEN`: required, secret
+3. `LLM_APPROACH_METRICS_TOKEN`: required in practice (unset means `/metrics` answers 404)
+4. `STATE_BACKEND=redis` and `REDIS_URL`: required for 2+ instances
+5. `LLM_APPROACH_CORS_ORIGINS` (exact origins), `LLM_APPROACH_TRUSTED_PROXY_HOPS` (behind a proxy), `LLM_APPROACH_DEMO_TOKEN_ENABLED=false`
+6. `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET` (divided per instance), `LLM_APPROACH_GEMINI_COUNTER_PATH`, `LLM_APPROACH_CHROMA_PERSIST_DIR`
+7. Optional: `LLM_APPROACH_TURN_DEADLINE_S` (40), `LLM_APPROACH_SESSION_LOCK_WAIT_S` (10), `LLM_APPROACH_FALLBACK_PROVIDER`, `LLM_APPROACH_LOG_LEVEL`
+8. Unset in production: `LLM_APPROACH_OFFLINE_ROOMS`, `LLM_APPROACH_SKIP_PRELOAD`, `LLM_APPROACH_SKIP_SECRET_CHECK`, `LLM_APPROACH_METRICS`
+
+**Deployment shape:** one instance, one uvicorn worker (`--workers 1 --no-access-log`) behind a TLS proxy; Redis optional for one instance and required for two or more; divide the Gemini daily budget per instance.
+
+**Production mode** is `LLM_APPROACH_ENV=production` (default `development`, so nothing changes for a developer). An unknown value stops the start.
+
+**Deployment shape and env checklist:** see "Production deployment" in the README.
+
+**Still open:** see the next section.
+
+## Turn deadline, keepalive and the log fix (25 Oct 2026)
+
+- **B6 option A.** The server wraps every turn in `LLM_APPROACH_TURN_DEADLINE_S` (default 40 s, counted from the start of the turn, lock wait included). On expiry the turn is cancelled, its clean-up runs, and the reply is "That took too long, please try again" (`success` false). `/metrics` gets `turn_events.deadline_exceeded`. Code: `turn_deadline.py` (new), `server_app.run_turn`, `pipeline.handle_turn` (cancel handler), tests in `test_turn_deadline.py` (fake slow stages, injected timer, no real waiting).
+- **State.** A timed-out turn leaves the state as it was before the turn, plus the user message and the error reply in the history. Threads that work on state (search, owner contact, city-change answer, fallback) run on a private copy that is merged back only when they return in time, so a late thread cannot touch the session. A copy of a full 200-turn state costs about 1.6 ms.
+- **Lock wait.** Redis session-lock wait 30 s to 10 s; the in-memory store now has the same bound (it had none) and counts `lock_timeout`.
+- **Gemini.** The request is counted when sent, a cancel does not retry it (counted once), and a cancel is not a provider failure for the breaker.
+- **Interaction.** Lock wait 10 s, then the LLM step (the limiter's 20 s turn deadline bounds only its sleeps and starts with the LLM step; one Gemini call is 20 s), then one rooms search or pricing call (15 s each; a search worker thread can live about 31 s but is no longer waited for). The old worst case of about 85 s is now cut at 40 s. The 40 s sits under the usual 60 s proxy limit; raise it only together with the proxy.
+- **Keepalive.** While a turn runs the WebSocket gets `{"event": "ping"}` every `WS_HEARTBEAT_INTERVAL_SECONDS`, the event the idle heartbeat already sends (`app/api.py` says clients should ignore it; `app/static/chat_ui.html` does). No new event type.
+- **Mode warning.** Development mode (the default) logs one fixed warning at startup. Production mode logs nothing for it; the earlier "startup checks ok" line was removed.
+- **mcp_search.py.** The two malformed-response log lines now carry the length and an error word (`JSONDecodeError` or `UnexpectedShape`), never part of the body. Marked `# v2: was:`; header updated; drift test green; test in `test_mcp_log.py`.
+
+**Still open:** no real authentication on `/chat` and `/ws/chat` (any non-empty token is accepted, as in the current backend); the WebSocket token is still in the query string.

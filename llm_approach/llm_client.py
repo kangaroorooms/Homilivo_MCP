@@ -169,10 +169,11 @@ def _primary_gate(budget: LLMBudget) -> str | None:
     return "skip"
 
 
-def _fail(budget: LLMBudget, kind: str, prov: str | None) -> None:
-    """Note one failure of the active provider (``prov`` None) or of the fallback provider."""
+def _fail(budget: LLMBudget, kind: str, prov: str | None, local: bool = False) -> None:
+    """Note one failure of the active provider (``prov`` None) or of the fallback provider. ``local``: raised by our own
+    Gemini limiter (window wait, daily cap), so it does not count toward the circuit breaker."""
     budget.failure_kind = kind
-    llm_resilience.note_failure(kind, prov or config.provider(), primary=prov is None)
+    llm_resilience.note_failure(kind, prov or config.provider(), primary=prov is None, local=local)
 
 
 def _switch_to_fallback(budget: LLMBudget) -> str | None:
@@ -218,7 +219,7 @@ async def _decide_on(messages: list[dict[str, str]], budget: LLMBudget, prov: st
             budget.record_latency((time.perf_counter() - started) * 1000, name)
             _record_error(budget, exc)
             logger.warning("llm_decision attempt=%d outcome=error %s", attempt, _error_log(exc))
-            _fail(budget, llm_resilience.classify(exc), prov)
+            _fail(budget, llm_resilience.classify(exc), prov, gemini_limits.is_local_limit(exc))
             return None
 
         latency_ms = (time.perf_counter() - started) * 1000
@@ -291,7 +292,7 @@ async def _generate_on(messages: list[dict[str, str]], budget: LLMBudget, prov: 
         budget.record_latency((time.perf_counter() - started) * 1000, name)
         _record_error(budget, exc)
         logger.warning("llm_answer outcome=error %s", _error_log(exc))
-        _fail(budget, llm_resilience.classify(exc), prov)
+        _fail(budget, llm_resilience.classify(exc), prov, gemini_limits.is_local_limit(exc))
         return None
     latency_ms = (time.perf_counter() - started) * 1000
     budget.record_latency(latency_ms, name)

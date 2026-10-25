@@ -139,6 +139,83 @@ servers; a per-session lock serialises turns. With Redis down, turns still answe
   that one search returned (one page); it does not re-rank the whole city. Showing more pages orders each
   page separately.
 
+## Production deployment
+
+**Shape.** One instance, one uvicorn worker, behind a TLS-terminating proxy:
+
+    uvicorn llm_approach.server_app:app --workers 1 --no-access-log
+
+- `--workers 1`: the Gemini limiter (12 requests per minute window), its daily counter file, the circuit breaker, the
+  metrics registry, the embedding model and the Chroma folder are per process or per machine. Redis does not share them.
+- `--no-access-log`: the WebSocket token travels in the query string. After the first staging run, search every log for `token=`.
+- TLS and `wss://` end at the proxy. Set the proxy body-size limit and its read timeout above the longest turn.
+- Redis is optional for one instance (it keeps sessions across a restart) and **required for two or more instances**
+  (sessions, session locks, per-IP and per-session limits and demo tokens). Redis down is not fatal: turns answer from a fresh
+  state and `/ready` shows `redis: down`.
+- With more than one instance: divide `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET` by the number of instances, give each
+  instance its own Chroma folder and counter file, and scrape `/metrics` of each instance (the counters are per process).
+- Set `LLM_APPROACH_ENV=production`: the API docs are off, and the server refuses to start with `LLM_APPROACH_OFFLINE_ROOMS` set,
+  a missing `google-genai`/`groq`/`mcp` package for the configured provider and transport, or a fallback provider without its key.
+
+**Turn deadline** (`turn_deadline.py`, applied by the server to REST and WebSocket turns; the CLI and eval runners have none).
+
+- `LLM_APPROACH_TURN_DEADLINE_S` (default 40 s, under the usual 60 s proxy limit) is counted from the start of the turn, so the
+  session-lock wait is inside it. The session-lock wait itself is now 10 s (`LLM_APPROACH_SESSION_LOCK_WAIT_S`) for Redis and, new,
+  for the in-memory store; a busy session answers "I'm getting a lot of requests" and counts `lock_timeout`.
+- On expiry the turn is cancelled, its clean-up finishes (Redis lock released, state saved), and the user gets
+  "That took too long, please try again" with `success` false. `/metrics` counts `turn_events.deadline_exceeded` (a fixed word)
+  and the turn is a normal `error` in `status_counts`.
+- State after a timeout: exactly what it was before the turn, plus the user message and the error reply in the history (a
+  placeholder in the query log). A search or fact the turn had already applied is dropped, never kept half way.
+- Threads cannot be cancelled. Every thread that works on session state (search, owner contact, city-change answer, rule-based
+  fallback) gets a private copy of the state, merged back only if the thread returns inside the turn. A thread that finishes after
+  the deadline therefore cannot change the session; it may still finish its HTTP call (a rooms search stops being waited for after
+  15 s and its worker can live up to about 31 s) and its result is dropped.
+- Gemini: the request is counted when it is sent. The cancel does not retry it, so a timed-out turn costs one counted request, and
+  a cancel is not a provider failure (the circuit breaker is not touched).
+- How the limits nest: lock wait 10 s, then the LLM step (the limiter's own 20 s turn deadline bounds only its sleeps, counted from
+  the start of the LLM step; one Gemini call is 20 s), then one rooms search (15 s) or one pricing call (15 s). A normal turn
+  fits well inside 40 s; the pathological sum (two slow Gemini calls plus a search, about 85 s before) is now cut at 40 s.
+- WebSocket: while a turn runs, the server sends `{"event": "ping"}` every `WS_HEARTBEAT_INTERVAL_SECONDS` (20 s). That is the
+  event the idle heartbeat already sends: `app/api.py` documents it ("clients should ignore it") and `app/static/chat_ui.html`
+  ignores it. No new event type was added.
+- Development mode (the default) logs one warning at startup, "Running in development mode: ..."; production mode logs nothing
+  for this.
+
+**Environment checklist** (names only; never put values in this file or in logs).
+
+| Name | Production | Default / safe value |
+|---|---|---|
+| `LLM_APPROACH_ENV` | required: `production` | `development` |
+| `GEMINI_API_KEY` (or `GROQ_API_KEY` when `LLM_APPROACH_PROVIDER=groq`) | required, secret | startup refuses when empty |
+| `KANGAROO_TOKEN` | required, secret | startup refuses when empty; the credential a demo token redeems to |
+| `LLM_APPROACH_METRICS_TOKEN` | required in practice, secret | unset: `/metrics` answers 404 |
+| `STATE_BACKEND` | `redis` (required for 2+ instances) | `memory` |
+| `REDIS_URL` | required with redis, secret | `redis://localhost:6379/0` is wrong in production |
+| `LLM_APPROACH_CORS_ORIGINS` | required if the frontend is on another origin | off; exact origins, never `*` |
+| `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET` | set it per instance | 450 (free tier) |
+| `LLM_APPROACH_GEMINI_COUNTER_PATH` | set to a writable volume | the package's `eval/results/gemini_requests.json`; startup warns when it cannot be written |
+| `LLM_APPROACH_DEMO_TOKEN_ENABLED` | `false` unless a demo page needs it | `true` |
+| `LLM_APPROACH_DEMO_TOKEN_RATE_LIMIT` | optional | 10 per IP per minute |
+| `LLM_APPROACH_TRUSTED_PROXY_HOPS` | number of proxies that append to `X-Forwarded-For` | 0: the TCP peer. Behind a proxy set it, or all users share one limit |
+| `LLM_APPROACH_FALLBACK_PROVIDER` | optional | off; its key is checked at startup |
+| `LLM_APPROACH_PROVIDER`, `LLM_APPROACH_GEMINI_MODEL`, `LLM_APPROACH_GEMINI_THINKING`, `LLM_APPROACH_GEMINI_TIMEOUT_S`, `LLM_APPROACH_GEMINI_TURN_DEADLINE_S`, `LLM_APPROACH_GEMINI_DAY_RESET` | optional | gemini, gemini-3.5-flash-lite, by model family, 20, 20, rolling 24 h |
+| `LLM_APPROACH_BREAKER_FAILURES`, `LLM_APPROACH_BREAKER_COOLDOWN_SECONDS`, `LLM_APPROACH_5XX_RETRY_DELAY_SECONDS` | optional | 5, 60, 1.0 |
+| `LLM_APPROACH_TURN_DEADLINE_S` | optional | 40 |
+| `LLM_APPROACH_REDIS_TIMEOUT_S`, `LLM_APPROACH_SESSION_LOCK_TTL_MS`, `LLM_APPROACH_SESSION_LOCK_WAIT_S`, `LLM_APPROACH_SESSION_LOCK_MAX_HOLD_S` | optional | 1.0, 30000, 10, 120 |
+| `SESSION_TTL_SECONDS`, `SESSION_MAX_COUNT`, `SESSION_MAX_HISTORY_MESSAGES` | size to real traffic | 3600, 1000, 40 |
+| `RATE_LIMIT_ENABLED`, `RATE_LIMIT_MAX_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `SESSION_RATE_LIMIT_MAX_REQUESTS`, `SESSION_RATE_LIMIT_WINDOW_SECONDS` | keep enabled | true, 30, 60, 20, 60 (startup warns when disabled) |
+| `LLM_APPROACH_ROOMS_API_URL`, `PRICING_API_URL` | set explicitly | hard-coded onrender hosts |
+| `LLM_APPROACH_SEARCH_TRANSPORT`, `LLM_APPROACH_SEARCH_TIMEOUT_SECONDS` | optional | mcp, 15 |
+| `LLM_APPROACH_SEMANTIC_GATE` | optional | shadow (records, never blocks); `enforce` blocks off-topic first messages |
+| `LLM_APPROACH_CHROMA_PERSIST_DIR` | absolute path, one per instance | `data/chroma_v2` relative to the working directory; the index is reused while the documents are unchanged |
+| `LLM_APPROACH_LOG_LEVEL` | optional | INFO |
+| `LLM_APPROACH_ENV_FILE` | optional | the repo-root `.env` (now loaded before `config` is imported) |
+| `WS_HEARTBEAT_INTERVAL_SECONDS`, `STREAM_CHUNK_DELAY_SECONDS` | optional | 20, 0.02 |
+
+Must be unset in production: `LLM_APPROACH_OFFLINE_ROOMS` (startup refuses), `LLM_APPROACH_SKIP_PRELOAD` (it leaves `/ready`
+at 503), `LLM_APPROACH_SKIP_SECRET_CHECK` (ignored, logged as an error), `LLM_APPROACH_METRICS` (it appends an unbounded file).
+
 ## Tests
 
 ```powershell

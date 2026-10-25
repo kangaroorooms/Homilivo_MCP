@@ -32,7 +32,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable
 
-from llm_approach import config, reuse, sorting
+from llm_approach import config, observability, reuse, sorting
 from llm_approach.actions import city_change
 from llm_approach.schema import FACT_KEYS
 
@@ -421,7 +421,9 @@ class SessionStore:
         ttl_seconds: float | None = None,
         max_sessions: int | None = None,
         clock: Callable[[], float] = time.monotonic,
+        lock_wait_s: float | None = None,
     ) -> None:
+        self.lock_wait_s = config.session_lock_wait_s() if lock_wait_s is None else lock_wait_s  # longest a turn waits for its session
         self.ttl_seconds = config.SESSION_TTL_SECONDS if ttl_seconds is None else ttl_seconds
         self.max_sessions = config.SESSION_MAX_COUNT if max_sessions is None else max_sessions
         self._clock = clock
@@ -509,11 +511,20 @@ class SessionStore:
         raises before that and ``user_message`` was given, the user message and
         ``ERROR_REPLY`` are recorded so history never ends on an unanswered
         user message; the exception is then re-raised. The lock is always
-        released."""
+        released. A turn waits at most ``lock_wait_s`` for the session, then
+        ``SessionBusyError`` is raised before anything runs."""
         entry = self._get_entry(session_id)  # validates the id
         entry.active += 1
         try:
-            async with entry.lock:
+            try:
+                await asyncio.wait_for(entry.lock.acquire(), self.lock_wait_s)
+            except asyncio.TimeoutError:
+                try:
+                    observability.record_session_store_event("lock_timeout")
+                except Exception:  # noqa: BLE001 - counting must never break a turn
+                    pass
+                raise SessionBusyError("session busy") from None
+            try:
                 state = entry.state
                 turns_before = state.turn_count
                 try:
@@ -524,5 +535,7 @@ class SessionStore:
                     raise
                 finally:
                     entry.last_access = self._clock()
+            finally:
+                entry.lock.release()
         finally:
             entry.active -= 1

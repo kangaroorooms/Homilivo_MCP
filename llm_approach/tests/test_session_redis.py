@@ -666,7 +666,7 @@ def test_unknown_backend_is_an_error_that_does_not_echo_the_value(monkeypatch):
 
 def test_lock_settings_come_from_the_environment_with_safe_fallbacks(monkeypatch):
     assert (config.session_lock_ttl_ms(), config.session_lock_wait_s(), config.session_lock_max_hold_s()) == (
-        30000, 30.0, 120.0)
+        30000, 10.0, 120.0)  # v2: the lock wait is 10 s since the turn deadline
     monkeypatch.setenv(config.LOCK_TTL_ENV, "5000")
     monkeypatch.setenv(config.LOCK_WAIT_ENV, "2.5")
     monkeypatch.setenv(config.LOCK_MAX_HOLD_ENV, "-1")
@@ -708,10 +708,12 @@ def test_ready_reports_the_redis_state(redis_client, server):
     body = redis_client.get("/ready")
     assert body.status_code == 200
     assert body.json()["session_store"] == {"backend": "redis", "redis_reachable": True, "sessions_survive_restart": True}
+    assert body.json()["redis"] == "up"  # v2: a plain up/down word for dashboards
     server.connected = False
     down = redis_client.get("/ready")
     assert down.status_code == 200  # reported, not required: turns still answer
     assert down.json()["session_store"]["redis_reachable"] is False
+    assert down.json()["redis"] == "down"  # v2
     assert "gsk_value_must_not_appear" not in down.text and "redis://" not in down.text
 
 

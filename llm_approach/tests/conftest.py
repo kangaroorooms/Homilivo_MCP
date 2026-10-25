@@ -79,6 +79,14 @@ def _knowledge_stats_healthy(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _knowledge_cache_empty(monkeypatch):
+    """/ready may pick up a knowledge index that loaded after a failed start; no test inherits one from another test."""
+    from llm_approach import reuse
+
+    monkeypatch.setattr(reuse, "get_knowledge_cached_stats", lambda: (lambda: None))
+
+
+@pytest.fixture(autouse=True)
 def _semantic_gate_off(monkeypatch):
     """The semantic gate is shadow in a production-configured app: tests must not load the embedding model
     unless they say so (tests/test_semantic_gate.py sets the mode itself)."""

@@ -1,5 +1,5 @@
 # Copied from app/server.py at commit ed0406a (the last commit that changed it; the other copies cite 7dbcba3) (copied, not imported).
-# Changes (each marked '# v2:'): the observability import points at llm_approach.observability; the API URL comes from
+# Changes (each marked '# v2:'): the two malformed-response log lines carry the length and an error word, not the first 200 characters of the body; the observability import points at llm_approach.observability; the API URL comes from
 # llm_approach.config (so LLM_APPROACH_ROOMS_API_URL still works); the tool takes a `page` argument and returns the API's `meta`
 # (total, hasNextPage), which SHOW_MORE needs. Retries, timeouts, status handling and token handling are unchanged.
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
@@ -229,8 +229,8 @@ def search_rooms(
                 data = json.loads(raw_response)
             except json.JSONDecodeError:
                 logger.warning(
-                    "Homilivo API returned malformed JSON: %s",
-                    raw_response[:200],
+                    "Homilivo API returned malformed JSON: length=%d error=%s",  # v2: was: "Homilivo API returned malformed JSON: %s",
+                    len(raw_response), "JSONDecodeError",  # v2: was: raw_response[:200],
                 )
                 _record_api_latency(_started_at, success=False)
                 return _failure("Homilivo API returned malformed JSON.")
@@ -239,8 +239,8 @@ def search_rooms(
 
             if not isinstance(rooms, list):
                 logger.warning(
-                    "Homilivo API returned unexpected payload shape: %s",
-                    raw_response[:200],
+                    "Homilivo API returned unexpected payload shape: length=%d error=%s",  # v2: was: "Homilivo API returned unexpected payload shape: %s",
+                    len(raw_response), "UnexpectedShape",  # v2: was: raw_response[:200],
                 )
                 _record_api_latency(_started_at, success=False)
                 return _failure("Homilivo API returned an unexpected response.")

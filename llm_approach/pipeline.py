@@ -10,6 +10,7 @@ cost up front.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import time
 import uuid
@@ -31,6 +32,7 @@ from llm_approach import (
     semantic_gate,
     switches,
     turn_context,
+    turn_deadline,
     validators,
 )
 from llm_approach.actions import ActionResult, TurnBudget, clarify, conversation, followup, owner_contact, platform, recall, search
@@ -45,6 +47,7 @@ TOO_LONG_REPLY = (
 )
 EMPTY_REPLY = "Please type a message and I'll help you find a room."
 OUTPUT_BLOCKED_REPLY = "Sorry, I can't share that. I can help you find a room, though. Which city are you looking in?"
+DEADLINE_REPLY = "That took too long, please try again"  # the server's turn deadline fired (turn_deadline.py)
 RATE_LIMIT_REPLY = "I'm getting a lot of requests right now, please try again in a minute."
 BLOCKED_PLACEHOLDER = "[message blocked]"  # stored in history instead of the blocked text
 
@@ -108,6 +111,29 @@ def preload() -> None:
     reuse.get_output_guardrail()("Hello")
     if switches.semantic_gate() != "off":
         reuse.get_semantic_gate_warmup()()  # the shared embedding model and the gate's example embeddings
+
+
+# ---- state copies for threads and for a cancelled turn ----------------------
+
+
+def _snapshot(state: LLMConversationState) -> LLMConversationState:
+    return copy.deepcopy(state)
+
+
+def _restore(state: LLMConversationState, saved: LLMConversationState) -> None:
+    """Put ``saved`` back into the live ``state`` object (the store and the caller hold this very object)."""
+    state.__dict__.clear()
+    state.__dict__.update(saved.__dict__)
+
+
+async def _threaded_on_copy(state: LLMConversationState, call):
+    """Run ``call(state_copy)`` in a thread and, only when it returns, copy the result back into ``state``. A thread
+    cannot be cancelled: after the turn deadline it may still be running, and it must not touch the session state
+    (which is saved right after the cancel). It works on a private copy that is simply dropped."""
+    work = copy.deepcopy(state)
+    result = await asyncio.to_thread(call, work)
+    _restore(state, work)
+    return result
 
 
 # ---- guardrails ----------------------------------------------------------
@@ -273,8 +299,8 @@ async def _decide_action(
         # D4: the reply to "same filters or a new search?". Read from the message and the slots of the
         # one decision call already made; no prompt change and no second call.
         started = time.perf_counter()
-        answered = await asyncio.to_thread(
-            search.handle_city_change_answer, message, decision, validated, state, budget
+        answered = await _threaded_on_copy(
+            state, lambda work: search.handle_city_change_answer(message, decision, validated, work, budget)
         )
         if answered is not None:
             m.api_ms = _ms(started) if budget.tool_calls else 0.0
@@ -334,7 +360,9 @@ async def _decide_action(
         # v2: a contact-the-owner request shows the subscription plans of the city; checked after the LLM call, on the
         # validated intent only (the message is never matched before the model has decided)
         started = time.perf_counter()
-        action = await asyncio.to_thread(owner_contact.handle_owner_contact, decision, validated, state, budget)
+        action = await _threaded_on_copy(
+            state, lambda work: owner_contact.handle_owner_contact(decision, validated, work, budget)
+        )
         m.api_ms = _ms(started)
         return action, validated, rejected
 
@@ -343,7 +371,7 @@ async def _decide_action(
     kwargs = {"user_message": message} if decision.intent in wants_message else {}
     if decision.intent in _THREADED:
         started = time.perf_counter()
-        action = await asyncio.to_thread(handler, decision, validated, state, budget, **kwargs)
+        action = await _threaded_on_copy(state, lambda work: handler(decision, validated, work, budget, **kwargs))
         m.api_ms = _ms(started)
     else:
         action = handler(decision, validated, state, budget, **kwargs)
@@ -385,7 +413,7 @@ async def _run_turn(
     if decision is None:
         m.fallback_used = True
         started = time.perf_counter()
-        action = await asyncio.to_thread(fallback.run_fallback, message, state, budget)
+        action = await _threaded_on_copy(state, lambda work: fallback.run_fallback(message, work, budget))
         if llm_budget.error_class in ("RateLimitError", "BreakerOpen"):
             action.error_class = llm_budget.error_class  # the cause stays countable in metrics; only the reply changed
         m.api_ms = _ms(started) if budget.tool_calls else 0.0
@@ -439,6 +467,7 @@ async def handle_turn(
         async with store.turn(session_id, user_message=text) as state:
             logged = False
             queries_before = state.query_count
+            before_turn = _snapshot(state)  # what a cancelled turn goes back to
             try:
                 if _input_blocked(text):
                     m.action = "security_block"
@@ -457,6 +486,16 @@ async def handle_turn(
                     reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, [], "output_blocked"  # [] = no cards (None = unchanged)
                     state.rooms_on_screen, state.selected_room_index = [], None  # the user never saw these rooms: they must not be referable next turn
                     m.action = "output_blocked"
+            except asyncio.CancelledError:
+                # Cancelled (the server's turn deadline, or a closed connection): drop everything this turn did so far and
+                # keep only the message and a fixed reply, never partial state. Threads still running hold copies.
+                _restore(state, before_turn)
+                deadline = turn_deadline.expired()
+                m.action, m.error_class = ("deadline_exceeded", "DeadlineExceeded") if deadline else ("cancelled", "Cancelled")
+                state.record_query(None)
+                state.record_bot_reply(DEADLINE_REPLY)
+                state.record_turn(text, DEADLINE_REPLY)
+                raise
             except Exception as exc:
                 logger.error("turn failed: %s", type(exc).__name__)
                 m.error_class, m.action = type(exc).__name__, "error"

@@ -1,5 +1,7 @@
 # Copied from app/knowledge/store.py at commit 7dbcba3 (copied, not imported).
-# Changes: own storage (own env variable, default data/chroma_v2, own collection name, never the app's folder); embeddings import (marked '# v2:')
+# Changes: own storage (own env variable, default data/chroma_v2, own collection name, never the app's folder); embeddings import (marked '# v2:');
+# the index is reused when the document fingerprint matches (rebuilt only on change, under a cross-process lock), and a failed first
+# ingest is not cached for the life of the process (tried again after a pause)
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -45,8 +47,12 @@ citation.
 
 from __future__ import annotations
 
+import hashlib  # v2: fingerprint
+import json  # v2: fingerprint
 import logging  # v2: new
 import os
+import threading  # v2: ready state lock
+import time  # v2: build lock and retry pause
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -276,10 +282,9 @@ def ingest() -> dict[str, Any]:
     }
 
 
-@lru_cache(maxsize=1)
 def _ensure_ready() -> dict[str, Any]:
     """Build the collection once per process, exactly like the old lru_cache'd index."""
-    return ingest()
+    return _ready_stats()  # v2: was: return ingest()
 
 
 def _reset_caches() -> None:
@@ -369,3 +374,151 @@ def retrieve(
         retrieved.append(RetrievedChunk(chunk=chunk, score=score))
 
     return retrieved
+
+
+FINGERPRINT_FILE = "doc_fingerprint.txt"  # v2: written next to the collection after a successful build
+LOCK_FILE = ".ingest.lock"  # v2: exists while one process builds the collection
+LOCK_WAIT_S = 120.0  # v2: the longest a start waits for another process's build
+LOCK_STALE_S = 300.0  # v2: a lock older than this was left by a process that died
+RETRY_FAILED_AFTER_S = 60.0  # v2: a failed first ingest is tried again after this pause, not on every question
+
+_ready_lock = threading.Lock()  # v2: new
+_ready_state: dict[str, Any] = {"ok": None, "failed": None, "failed_at": 0.0}  # v2: ok = the cached good result
+_clock = time.monotonic  # v2: replaced in tests
+_sleep = time.sleep  # v2: replaced in tests
+
+
+def _fingerprint(chunks: list[KnowledgeChunk]) -> str:  # v2: new
+    # v2: Same documents, same chunking, same embedding model and collection: the stored index is current.
+    from llm_approach.rag.embeddings import MODEL_NAME  # v2: new
+    digest = hashlib.sha256(f"{MODEL_NAME}|{CHUNK_MAX_CHARS}|{COLLECTION_NAME}".encode("utf-8"))  # v2: new
+    for chunk in chunks:  # v2: new
+        row = [chunk.doc_id, chunk.title, chunk.source, chunk.verified, chunk.text]  # v2: new
+        digest.update(json.dumps(row, default=str, ensure_ascii=False).encode("utf-8"))  # v2: new
+    return digest.hexdigest()  # v2: new
+
+
+def _stored_fingerprint() -> str | None:  # v2: new
+    try:  # v2: new
+        return (_persist_dir() / FINGERPRINT_FILE).read_text(encoding="utf-8").strip() or None  # v2: new
+    except OSError:  # v2: new
+        return None  # v2: new
+
+
+def _forget_fingerprint() -> None:  # v2: new
+    try:  # v2: new
+        (_persist_dir() / FINGERPRINT_FILE).unlink()  # v2: new
+    except OSError:  # v2: new
+        pass  # v2: new
+
+
+def _store_fingerprint(value: str) -> None:  # v2: new
+    path = _persist_dir() / FINGERPRINT_FILE  # v2: new
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")  # v2: new
+    try:  # v2: new
+        tmp.write_text(value, encoding="utf-8")  # v2: new
+        os.replace(tmp, path)  # v2: new
+    except OSError:  # v2: new
+        logging.getLogger(__name__).warning("knowledge index fingerprint could not be saved")  # v2: new
+
+
+def _acquire_build_lock() -> bool:  # v2: new
+    # v2: An exclusive lock file in the persist folder: only one process rebuilds, the others wait and then reuse.
+    path = _persist_dir() / LOCK_FILE  # v2: new
+    deadline = _clock() + LOCK_WAIT_S  # v2: new
+    while True:  # v2: new
+        try:  # v2: new
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))  # v2: new
+            return True  # v2: new
+        except FileExistsError:  # v2: new
+            try:  # v2: new
+                if time.time() - path.stat().st_mtime > LOCK_STALE_S:  # v2: new
+                    path.unlink()  # v2: new
+                    continue  # v2: new
+            except OSError:  # v2: new
+                continue  # v2: new
+            if _clock() >= deadline:  # v2: new
+                return False  # v2: new
+            _sleep(0.2)  # v2: new
+        except OSError:  # v2: new
+            return False  # v2: new
+
+
+def _release_build_lock() -> None:  # v2: new
+    try:  # v2: new
+        (_persist_dir() / LOCK_FILE).unlink()  # v2: new
+    except OSError:  # v2: new
+        pass  # v2: new
+
+
+def _reusable(chunks: list[KnowledgeChunk], fingerprint: str) -> dict[str, Any] | None:  # v2: new
+    # v2: The stored collection is current when the fingerprint matches and every chunk is in it. None: rebuild.
+    if not chunks or _stored_fingerprint() != fingerprint:  # v2: new
+        return None  # v2: new
+    try:  # v2: new
+        collection = _get_collection()  # v2: new
+        if collection is None or collection.count() != len(chunks):  # v2: new
+            return None  # v2: new
+    except Exception:  # noqa: BLE001  # v2: new
+        return None  # v2: new
+    stats = {"documents_loaded": len({c.doc_id for c in chunks}), "chunks_indexed": len(chunks)}  # v2: new
+    try:  # v2: new
+        from llm_approach.rag.embeddings import get_shared_model  # v2: new
+        get_shared_model()  # v2: new, queries need the model: load it now, as a rebuild would
+    except Exception:  # noqa: BLE001  # v2: new
+        return {**stats, "embedding_model_available": False}  # v2: new
+    return {**stats, "embedding_model_available": True}  # v2: new
+
+
+def _sync_index() -> dict[str, Any]:  # v2: new
+    chunks = _load_documents()  # v2: new
+    fingerprint = _fingerprint(chunks)  # v2: new
+    if _get_client() is None:  # v2: new
+        return {"documents_loaded": len({c.doc_id for c in chunks}), "chunks_indexed": 0, "embedding_model_available": False}  # v2: new
+    reused = _reusable(chunks, fingerprint)  # v2: new
+    if reused is not None:  # v2: new
+        return reused  # v2: new
+    if not _acquire_build_lock():  # v2: new
+        return {"documents_loaded": len({c.doc_id for c in chunks}), "chunks_indexed": 0, "embedding_model_available": False}  # v2: new
+    try:  # v2: new
+        reused = _reusable(chunks, fingerprint)  # v2: another process may have built it while this one waited
+        if reused is not None:  # v2: new
+            return reused  # v2: new
+        _forget_fingerprint()  # v2: a build that dies half way must not leave a matching fingerprint
+        stats = ingest()  # v2: new
+        if stats["embedding_model_available"] and stats["chunks_indexed"] == len(chunks):  # v2: new
+            _store_fingerprint(fingerprint)  # v2: new
+        return stats  # v2: new
+    finally:  # v2: new
+        _release_build_lock()  # v2: new
+
+
+def _ready_stats() -> dict[str, Any]:  # v2: new
+    # v2: A good result is kept for the life of the process; a failed one is kept only for RETRY_FAILED_AFTER_S.
+    with _ready_lock:  # v2: new
+        if _ready_state["ok"] is not None:  # v2: new
+            return _ready_state["ok"]  # v2: new
+        failed = _ready_state["failed"]  # v2: new
+        if failed is not None and _clock() - _ready_state["failed_at"] < RETRY_FAILED_AFTER_S:  # v2: new
+            return failed  # v2: new
+        if failed is not None:  # v2: new
+            _get_client.cache_clear()  # v2: a remembered "no client" must not outlive the pause
+        stats = _sync_index()  # v2: new
+        if stats["embedding_model_available"]:  # v2: new
+            _ready_state.update(ok=stats, failed=None)  # v2: new
+        else:  # v2: new
+            _ready_state.update(failed=stats, failed_at=_clock())  # v2: new
+        return stats  # v2: new
+
+
+def cached_stats() -> dict[str, Any] | None:  # v2: new
+    # v2: The good result if one exists, without doing any work (for /ready after a failed start).
+    ok = _ready_state["ok"]  # v2: new
+    return dict(ok) if ok is not None else None  # v2: new
+
+
+def _forget_ready() -> None:  # v2: new
+    _ready_state.update(ok=None, failed=None, failed_at=0.0)  # v2: new
+
+
+_ensure_ready.cache_clear = _forget_ready  # v2: _reset_caches clears it like the lru_cache it replaced

@@ -138,6 +138,14 @@ def get_knowledge_index_stats() -> Callable[[], dict]:
     return index_stats
 
 
+def get_knowledge_cached_stats() -> Callable[[], dict | None]:
+    """``llm_approach.rag.store.cached_stats()``: the good index result if the knowledge base has loaded since, else None.
+    Does no work (for /ready after a failed start). Lazy."""
+    from llm_approach.rag.store import cached_stats
+
+    return cached_stats
+
+
 @lru_cache(maxsize=1)
 def get_answer_platform_question() -> Callable[[str], dict]:
     """``answer_platform_question(query) -> {grounded, message, sources}``.

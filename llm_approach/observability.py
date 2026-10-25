@@ -1,5 +1,5 @@
 # Copied from app/observability.py at commit 7dbcba3 (copied, not imported).
-# Changes: added a semantic-gate counter (checked, would block, blocked, error, labels, latency), a room_data_rejections counter, LLM failure, fallback and breaker counters and a session-store event counter, a parameter-rejection counter and a search-timeout counter (marked '# v2:')
+# Changes: added a turn-event counter (deadline_exceeded), a semantic-gate counter (checked, would block, blocked, error, labels, latency), a room_data_rejections counter, LLM failure, fallback and breaker counters and a session-store event counter, a parameter-rejection counter and a search-timeout counter (marked '# v2:')
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -67,6 +67,7 @@ class _MetricsRegistry:
         self.llm_events: dict[str, int] = {}  # v2: fallback_switch, breaker_open, breaker_skip, breaker_close
         self.session_store_events: dict[str, int] = {}  # v2: redis_unavailable, state_corrupt, lock_timeout, ...
         self.city_change_events: dict[str, int] = {}  # v2: D4 question asked / outcome (fixed words only)
+        self.turn_events: dict[str, int] = {}  # v2: deadline_exceeded (fixed words only)
         self.pricing_events: dict[str, int] = {}  # v2: owner-contact plans (pricing_requested, _ok, _empty, _failed, _no_city)
         self.gate_counts: dict[str, int] = {"gate_checked": 0, "gate_would_block": 0, "gate_blocked": 0, "gate_error": 0}  # v2: semantic gate
         self.gate_labels: dict[str, int] = {}  # v2: classifier label -> count (fixed words only)
@@ -122,6 +123,10 @@ class _MetricsRegistry:
         with self._lock:  # v2: added
             self.session_store_events[event] = self.session_store_events.get(event, 0) + 1  # v2: added
 
+    def record_turn_event(self, event: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.turn_events[event] = self.turn_events.get(event, 0) + 1  # v2: added
+
     def record_city_change(self, event: str) -> None:  # v2: new
         with self._lock:  # v2: added
             self.city_change_events[event] = self.city_change_events.get(event, 0) + 1  # v2: added
@@ -173,6 +178,7 @@ class _MetricsRegistry:
                 "llm_failures": dict(self.llm_failures),  # v2: added
                 "llm_events": dict(self.llm_events),  # v2: added
                 "session_store_events": dict(self.session_store_events),  # v2: added
+                "turn_events": dict(self.turn_events),  # v2: added
                 "city_change": dict(self.city_change_events),  # v2: added
                 "pricing": dict(self.pricing_events),  # v2: added
                 "semantic_gate": {**self.gate_counts, "labels": dict(self.gate_labels), "latency": _latency_stats(self.gate_latencies_ms)},  # v2: added
@@ -305,6 +311,11 @@ def record_llm_event(event: str) -> None:  # v2: new
 def record_session_store_event(event: str) -> None:  # v2: new
     """One call per session-store problem or lock event; ``event`` is a fixed word, never text."""  # v2: added
     _metrics.record_session_store_event(event)  # v2: added
+
+
+def record_turn_event(event: str) -> None:  # v2: new
+    """One call when a turn ends in a way worth counting, e.g. ``deadline_exceeded``; ``event`` is a fixed word, never text."""  # v2: added
+    _metrics.record_turn_event(event)  # v2: added
 
 
 def record_city_change(event: str) -> None:  # v2: new

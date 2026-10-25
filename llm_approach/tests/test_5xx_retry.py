@@ -150,7 +150,7 @@ def test_retry_counts_against_the_gemini_limiter_and_the_cap(env, monkeypatch, t
     assert limiter.counter.used_requests() == (2 if retry_sent else 1)
     assert (decision is not None) is retry_sent
     if not retry_sent:
-        assert budget.failure_kind == "daily_quota" and llm_resilience.breaker("gemini").consecutive == 1
+        assert budget.failure_kind == "daily_quota" and llm_resilience.breaker("gemini").consecutive == 0  # v2: our own cap is not a Gemini failure
 
 
 def test_answerer_call_is_retried_too(env):

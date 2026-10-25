@@ -62,7 +62,7 @@ LOCK_WAIT_ENV = "LLM_APPROACH_SESSION_LOCK_WAIT_S"  # longest a turn waits for t
 LOCK_MAX_HOLD_ENV = "LLM_APPROACH_SESSION_LOCK_MAX_HOLD_S"  # a turn that runs longer stops refreshing and loses the lock
 DEFAULT_REDIS_TIMEOUT_S = 1.0
 DEFAULT_LOCK_TTL_MS = 30_000
-DEFAULT_LOCK_WAIT_S = 30.0
+DEFAULT_LOCK_WAIT_S = 10.0  # also the bound of the in-memory store (was 30 s for Redis, unbounded in memory)
 DEFAULT_LOCK_MAX_HOLD_S = 120.0  # above the 60 s Gemini 429 wait plus the 25 s call budget
 
 
@@ -96,12 +96,69 @@ def session_lock_ttl_ms() -> int:
     return _int_env(LOCK_TTL_ENV, DEFAULT_LOCK_TTL_MS)
 
 
+TURN_DEADLINE_ENV = "LLM_APPROACH_TURN_DEADLINE_S"  # the server's wall for one whole turn, lock wait included
+DEFAULT_TURN_DEADLINE_S = 40.0  # below the usual 60 s proxy limit
+
+
+def turn_deadline_s() -> float:
+    """Seconds one turn may take end to end on the server (default 40; an unreadable or non-positive value uses it)."""
+    return _positive_float_env_default(TURN_DEADLINE_ENV, DEFAULT_TURN_DEADLINE_S)
+
+
 def session_lock_wait_s() -> float:
     return _positive_float_env_default(LOCK_WAIT_ENV, DEFAULT_LOCK_WAIT_S)
 
 
 def session_lock_max_hold_s() -> float:
     return _positive_float_env_default(LOCK_MAX_HOLD_ENV, DEFAULT_LOCK_MAX_HOLD_S)
+
+
+# Deployment mode and the server's edge settings (server_app.py). Development is the default so nothing changes for
+# a developer; a real server sets LLM_APPROACH_ENV=production (docs off, stricter startup checks).
+ENV_ENV = "LLM_APPROACH_ENV"
+ENV_MODES = ("development", "production")
+DEMO_TOKEN_ENABLED_ENV = "LLM_APPROACH_DEMO_TOKEN_ENABLED"
+DEMO_TOKEN_LIMIT_ENV = "LLM_APPROACH_DEMO_TOKEN_RATE_LIMIT"  # per IP per minute for /chat-ui/demo-token
+DEFAULT_DEMO_TOKEN_LIMIT = 10
+TRUSTED_PROXY_HOPS_ENV = "LLM_APPROACH_TRUSTED_PROXY_HOPS"
+COUNTER_PATH_ENV = "LLM_APPROACH_GEMINI_COUNTER_PATH"  # where the Gemini request counter file lives
+
+
+def environment() -> str:
+    """``LLM_APPROACH_ENV`` (development or production), default development. An unknown value is an error (not
+    echoed), so a typo never silently leaves a production server in development mode."""
+    value = os.getenv(ENV_ENV, "").strip().lower() or "development"
+    if value not in ENV_MODES:
+        raise ValueError(f"{ENV_ENV} must be one of: {', '.join(ENV_MODES)}")
+    return value
+
+
+def production_mode() -> bool:
+    return environment() == "production"
+
+
+def demo_token_enabled() -> bool:
+    """``LLM_APPROACH_DEMO_TOKEN_ENABLED`` (default true). Only 0/false/no/off turn the endpoint off."""
+    return os.getenv(DEMO_TOKEN_ENABLED_ENV, "").strip().lower() not in ("0", "false", "no", "off")
+
+
+def demo_token_limit() -> int:
+    return _int_env(DEMO_TOKEN_LIMIT_ENV, DEFAULT_DEMO_TOKEN_LIMIT)
+
+
+def trusted_proxy_hops() -> int:
+    """How many reverse proxies in front of the server append to X-Forwarded-For (default 0: use the TCP peer).
+    A value that is not a non-negative integer is an error (not echoed): a typo must not silently trust nothing."""
+    raw = os.getenv(TRUSTED_PROXY_HOPS_ENV, "").strip()
+    if not raw:
+        return 0
+    try:
+        value = int(raw)
+    except ValueError:
+        value = -1
+    if value < 0:
+        raise ValueError(f"{TRUSTED_PROXY_HOPS_ENV} must be a non-negative integer")
+    return value
 
 
 # Rooms API (mirrors API_URL in app/server.py, which is heavy to import).

@@ -132,11 +132,12 @@ def reset() -> None:
     _breakers.clear()
 
 
-def note_failure(kind: str, provider: str, *, primary: bool) -> None:
-    """Count and log one failure (a fixed kind and the provider name only) and, for the primary, feed the breaker."""
+def note_failure(kind: str, provider: str, *, primary: bool, local: bool = False) -> None:
+    """Count and log one failure (a fixed kind and the provider name only) and, for the primary, feed the breaker.
+    ``local``: our own limiter refused the call, so it is counted but never opens the breaker."""
     observability.record_llm_failure(kind)
     logger.warning("llm failure kind=%s provider=%s role=%s", kind, provider, "primary" if primary else "fallback")
-    if primary:
+    if primary and not local:
         breaker(provider).record_failure()
 
 

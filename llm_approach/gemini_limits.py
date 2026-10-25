@@ -59,7 +59,14 @@ MAX_SEED_REQUESTS = RPD_LIMIT
 DEFAULT_TURN_DEADLINE_S = 20.0  # v2: how long a turn may spend in the LLM step, waits included
 TURN_DEADLINE_ENV = "LLM_APPROACH_GEMINI_TURN_DEADLINE_S"
 
-COUNTER_PATH = Path(__file__).resolve().parent / "eval" / "results" / "gemini_requests.json"  # git-ignored
+COUNTER_PATH = Path(__file__).resolve().parent / "eval" / "results" / "gemini_requests.json"  # git-ignored; the default
+
+
+def counter_path() -> Path:
+    """The counter file: ``LLM_APPROACH_GEMINI_COUNTER_PATH`` when set, else the default inside the package.
+    On a server point it at a writable volume (a read-only or throwaway filesystem would lose the daily count)."""
+    value = os.getenv(config.COUNTER_PATH_ENV, "").strip()
+    return Path(value) if value else COUNTER_PATH
 
 Clock = Callable[[], float]
 Sleep = Callable[[float], Awaitable[None]]
@@ -73,10 +80,12 @@ class GeminiLimitError(Exception):
     code = 429
     status = "RESOURCE_EXHAUSTED"
     kind = "rate_limit"
+    local = False  # True: raised by this limiter without any request reaching Google (not a provider failure)
 
 
 class RequestCapReached(GeminiLimitError):
     kind = "request_cap"
+    local = True
 
     def __init__(self) -> None:
         super().__init__("local daily Gemini request cap reached")
@@ -94,6 +103,7 @@ class WaitTooLong(GeminiLimitError):
     """The wait the limiter needs (window or 429 retry delay) would pass the turn's deadline, so it did not sleep."""
 
     kind = "wait_too_long"
+    local = True
 
     def __init__(self, wait: float, remaining: float) -> None:
         super().__init__(f"Gemini limiter would wait {wait:.1f}s but only {max(0.0, remaining):.1f}s of the turn remain")
@@ -139,6 +149,10 @@ def _utc_now() -> dt.datetime:
 # ---- request and token counter (rolling 24 h, or a fixed daily boundary) -------------------------------
 
 _bad_reset_warned = False
+_write_warned = False
+# Fixed wording, no path: the log must not reveal the layout of the host.
+WRITE_FAILED_WARNING = ("The Gemini request counter file cannot be written: the local daily request cap is not "
+                        "enforced across restarts. Set LLM_APPROACH_GEMINI_COUNTER_PATH to a writable file.")
 
 
 def _day_reset() -> dt.time | None:
@@ -167,7 +181,7 @@ class UsageCounter:
 
     @property
     def path(self) -> Path:
-        return self._path or COUNTER_PATH
+        return self._path or counter_path()
 
     # -- window
 
@@ -217,15 +231,39 @@ class UsageCounter:
         return out
 
     def _write(self, entries: list[dict]) -> None:
+        """Write the file atomically: a private temp file in the same folder (unique per call, so two processes never
+        share one), flushed to disk, then renamed over the real file. A failure never blocks a call."""
+        global _write_warned
         keep = self.wall().timestamp() - USAGE_WINDOW_S
         entries = [e for e in entries if e["t"] > keep]
-        tmp = self.path.with_suffix(".tmp")
+        tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp.write_text(json.dumps({"version": 2, "entries": entries}), encoding="utf-8")
+            with open(tmp, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"version": 2, "entries": entries}))
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(tmp, self.path)
         except OSError:
-            pass  # a write failure never blocks a call
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            if not _write_warned:
+                _write_warned = True
+                logger.warning(WRITE_FAILED_WARNING)
+
+    def writable(self) -> bool:
+        """Whether the counter file can be created and replaced (a probe file in its folder is written and removed).
+        For the startup check; never raises."""
+        probe = self.path.with_name(f"{self.path.name}.{os.getpid()}.probe")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+            return True
+        except OSError:
+            return False
 
     # -- reads
 
@@ -281,6 +319,12 @@ _DELAY_RES = (
     re.compile(r"retry\s+in\s+(\d+(?:\.\d+)?)\s*s", re.I),
     re.compile(r"retry_?delay['\"]?\s*[:=]\s*['\"]?(\d+(?:\.\d+)?)\s*s", re.I),
 )
+
+
+def is_local_limit(exc: BaseException) -> bool:
+    """An error this limiter raised itself (our own cap or wait bound): Google was never asked, so it says nothing
+    about the provider's health."""
+    return isinstance(exc, GeminiLimitError) and exc.local
 
 
 def is_rate_limit(exc: BaseException) -> bool:

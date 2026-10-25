@@ -161,6 +161,43 @@ def test_chat_uppercase_uuid_is_lowercased(client, monkeypatch):
     assert r.json()["session_id"] == sid
 
 
+@pytest.mark.parametrize("bad", [
+    "me@example.com", "a" * 5000, "ABCDEF12-3456-7890-ABCD-EF1234567890\n", " 3b1f0c52-8a7e-4c1d-9e2f-0a1b2c3d4e5f",
+    "not-a-uuid", 12345, ["x"],
+])
+def test_normalize_session_id_replaces_invalid_values(bad):
+    sid = server_app.normalize_session_id(bad)
+    assert sid != bad and str(uuid.UUID(sid)) == sid
+
+
+def test_normalize_session_id_lowercases_and_keeps_valid():
+    sid = str(uuid.uuid4())
+    assert server_app.normalize_session_id(sid.upper()) == sid
+    assert server_app.normalize_session_id(None) != server_app.normalize_session_id("")
+
+
+def test_raw_session_id_reaches_no_limiter_store_or_log(client, monkeypatch, caplog):
+    seen = []
+    real = server_app._rl.check_session_rate_limit
+    monkeypatch.setattr(server_app._rl, "check_session_rate_limit", lambda s: (seen.append(s), real(s))[1])
+    stub = stub_turn(monkeypatch)
+    raw = "victim@example.com"
+    with caplog.at_level(logging.DEBUG):
+        r = client.post("/chat", json={"message": "hi", "session_id": raw}, headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    assert seen and all(str(uuid.UUID(s)) == s for s in seen)
+    assert all(str(uuid.UUID(c[0])) == c[0] for c in stub)
+    assert raw not in caplog.text and "victim" not in caplog.text
+
+
+def test_chat_reset_with_uppercase_id_resets_the_lowercase_session(client):
+    sid = str(uuid.uuid4())
+    pipeline.get_store().get_or_create(sid)
+    body = client.post("/chat/reset", params={"session_id": sid.upper()}).json()
+    assert body["existed"] is True
+    assert client.post("/chat/reset", params={"session_id": "bad\n"}).json()["existed"] is False
+
+
 def test_chat_reset(client):
     sid = str(uuid.uuid4())
     assert client.post("/chat/reset", params={"session_id": sid}).json() == {

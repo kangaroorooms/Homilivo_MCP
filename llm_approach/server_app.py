@@ -53,7 +53,7 @@ ALLOW_SECRET_CHECK_SKIP = False
 CORS_ENV = "LLM_APPROACH_CORS_ORIGINS"
 METRICS_TOKEN_ENV = "LLM_APPROACH_METRICS_TOKEN"  # optional: without it /metrics is off (404)
 
-_SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+_SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z", re.IGNORECASE)  # \Z, not $: "$" would accept a trailing newline
 _TOKEN_IN_TEXT = re.compile(r"(token=)[^&\s\"']*", re.IGNORECASE)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]  # same .env lookup as cli.py

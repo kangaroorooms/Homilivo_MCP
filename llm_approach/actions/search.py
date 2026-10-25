@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from llm_approach import config, observability, responder, reuse, rooms_client, switches, turn_context
-from llm_approach.actions import ActionResult, TurnBudget
+from llm_approach import config, observability, responder, reuse, rooms_client, sorting, switches, turn_context
+from llm_approach.actions import ActionResult, TurnBudget, city_change
 from llm_approach.actions.clarify import ASK_CITY, state_aware_question
 from llm_approach.guardrails.parameter_guardrail import validate_search_arguments
 from llm_approach.schema import Decision
@@ -22,7 +22,7 @@ ALL_SHOWN = (
 MAX_AREA_EXAMPLES = 3
 MAX_AREAS_LISTED = 5
 ASK_CITY_FOR_AREA = "Which city is that area in?"
-SEARCH_KEYS = ("city", "area", "bhk", "min_price", "max_price", "ideal_for", "amenity")
+SEARCH_KEYS = ("city", "area", "bhk", "min_price", "max_price", "ideal_for", "amenity", "sort")
 
 
 def area_examples(state: LLMConversationState) -> list[str]:
@@ -114,7 +114,7 @@ def guardrail_arguments(search: dict[str, Any]) -> dict[str, Any]:
         "max_price": search.get("max_price"),
         "room_types": room_types.split(",") if room_types else None,
         "ideal_for": [search["ideal_for"]] if search.get("ideal_for") else None,
-        "sort": config.ROOMS_SORT,
+        "sort": sorting.api_sort(search),
     }
     return {k: v for k, v in args.items() if v is not None}
 
@@ -173,7 +173,7 @@ def _run_search(
         )
         return ActionResult(reply, None, action, True)
     state.apply_search_result(
-        search, result.rooms, result.api_count, result.truncated,
+        search, sorting.apply(result.rooms, search.get("sort")), result.api_count, result.truncated,
         page=page, has_next=result.has_next, total=result.total,
     )
     rooms = state.rooms_on_screen
@@ -201,8 +201,11 @@ def handle_new_search(
     validated: dict[str, Any],
     state: LLMConversationState,
     budget: TurnBudget,
+    user_message: str | None = None,
 ) -> ActionResult:
     validated = dict(validated)
+    cue = sorting.detect(user_message)  # a new search starts without the old sort; its own words may set one
+    validated["sort"] = None if cue in (None, sorting.RESET) else cue
     stashed = state.current_search
     if not validated.get("city"):
         if validated.get("area") and stashed.get("city"):
@@ -217,12 +220,71 @@ def handle_new_search(
     return _run_search(search, state, budget, "new_search")
 
 
+def _ask_city_change(validated: dict[str, Any], state: LLMConversationState, asked: int = 1) -> ActionResult:
+    """D4: a different city while other filters are remembered. No search, no silent merge: ask."""
+    state.set_pending(city_change.PENDING_TYPE, city_change.pending_context(validated, asked))
+    if asked == 1:
+        observability.record_city_change("city_change_question_asked")
+    text = city_change.question(state.current_search, validated["city"])
+    return ActionResult(text, None, "ask_city_change")
+
+
+def handle_city_change_answer(
+    message: str,
+    decision: Decision,
+    validated: dict[str, Any],
+    state: LLMConversationState,
+    budget: TurnBudget,
+) -> ActionResult | None:
+    """The reply to the D4 question. Returns None when the user moved on to something else (the question
+    is dropped and the turn is handled normally). Blocking: runs the search."""
+    context = (state.pending_question or {}).get("context") or {}
+    original, asked = dict(context.get("new") or {}), int(context.get("asked") or 1)
+    reply_sort = sorting.detect(message)
+    validated = {**validated, "sort": None if reply_sort in (None, sorting.RESET) else reply_sort}
+    kind = city_change.classify_reply(message, decision.intent, validated)
+    reply_slots = {k: validated[k] for k in city_change.REPLY_KEYS if validated.get(k) is not None}
+    old = {key: state.current_search.get(key) for key in SEARCH_KEYS}
+
+    if kind == city_change.OTHER:
+        state.clear_pending()
+        observability.record_city_change("abandoned")
+        return None
+    if kind == city_change.UNCLEAR and asked < city_change.MAX_ASKS:
+        observability.record_city_change("unclear")
+        return _ask_city_change({**original}, state, asked + 1)
+    state.clear_pending()
+    if kind == city_change.UNCLEAR:  # asked twice: fall back to a fresh search
+        observability.record_city_change("unclear")
+        kind = city_change.FRESH
+    if kind == city_change.KEEP:
+        observability.record_city_change("kept")
+        base = {key: old[key] for key in SEARCH_KEYS if key in city_change.FILTER_KEYS}
+        action = "refinement"
+    else:
+        observability.record_city_change("fresh")
+        base = {}
+        action = "new_search"
+    search = {key: None for key in SEARCH_KEYS}
+    search.update(base)
+    search.update(original)
+    search.update(reply_slots)
+    return _run_search(search, state, budget, action)
+
+
 def handle_refinement(
     decision: Decision,
     validated: dict[str, Any],
     state: LLMConversationState,
     budget: TurnBudget,
+    user_message: str | None = None,
 ) -> ActionResult:
+    cue = sorting.detect(user_message)
+    validated = dict(validated)
+    if cue:
+        validated["sort"] = None if cue == sorting.RESET else cue
+    if city_change.needs_question(validated, state.current_search):
+        return _ask_city_change(validated, state)
     previous = {key: state.current_search.get(key) for key in SEARCH_KEYS}
     merged = dict(previous)
     changed = False
@@ -234,6 +296,8 @@ def handle_refinement(
     new_city, old_city = validated.get("city"), previous.get("city")
     if new_city and old_city and new_city.lower() != str(old_city).lower() and not validated.get("area"):
         merged["area"] = None  # a different city: the old area does not apply
+    if cue == sorting.RESET and merged["sort"] is not None:
+        merged["sort"], changed = None, True
     if validated.get("area"):
         changed = True  # an area reply always runs the search
     if not merged.get("city"):

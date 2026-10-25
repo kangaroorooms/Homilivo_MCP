@@ -31,6 +31,11 @@ def make(intent, operation=None, *, ref=None, compare=(), reply=None, question=N
     )
 
 
+def run_answer(state, message, decision):
+    """The reply to the D4 city-change question (the pipeline calls this before the normal handlers)."""
+    return search.handle_city_change_answer(message, decision, validated(decision, state), state, TurnBudget())
+
+
 def validated(decision, state):
     clean, _ = validators.validate_slots(
         decision.slots,
@@ -191,9 +196,12 @@ def test_rejected_city_is_not_searched():
 
 
 def test_refinement_keeps_bhk_and_price_when_only_city_changes(rooms):
+    # D4: a different city with filters remembered asks first; "same filters" then carries them over.
     s = LLMConversationState()
     run(search.handle_new_search, make("NEW_SEARCH", city="Bangalore", bhk=2, max_price=25000), s)
-    r = run(search.handle_refinement, make("REFINEMENT", city="Udupi"), s)
+    asked = run(search.handle_refinement, make("REFINEMENT", city="Udupi"), s)
+    assert asked.action == "ask_city_change" and not asked.tool_called and s.current_search["city"] == "Bangalore"
+    r = run_answer(s, "same filters", make("UNCLEAR"))
     assert r.tool_called and s.current_search["city"] == "Udupi"
     assert s.current_search["bhk"] == 2 and s.current_search["max_price"] == 25000
     assert "couldn't find any rooms in Udupi" in r.reply and r.rooms == []  # fixture is Bangalore only
@@ -441,7 +449,9 @@ def test_amenity_is_kept_by_refinement():
     mp = _p.MonkeyPatch()
     mp.setattr(rooms_client, "search_rooms", spy)
     try:
-        run(search.handle_refinement, make("REFINEMENT", city="Pune"), s)
+        run(search.handle_refinement, make("REFINEMENT", city="Pune"), s)  # D4: asks, no search yet
+        assert not seen
+        run_answer(s, "same", make("UNCLEAR"))
     finally:
         mp.undo()
     assert seen["city"] == "Pune" and seen["bhk"] == 1 and seen["amenity"] == "hot-water"

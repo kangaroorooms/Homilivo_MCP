@@ -32,7 +32,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable
 
-from llm_approach import config, reuse
+from llm_approach import config, reuse, sorting
+from llm_approach.actions import city_change
 from llm_approach.schema import FACT_KEYS
 
 ERROR_REPLY = "Sorry, something went wrong on my side. Please try again."
@@ -76,8 +77,8 @@ TRANSCRIPT_BOT_MAX_CHARS = 800
 TRANSCRIPT_ROOM_TITLES_MAX = 10
 TRANSCRIPT_TITLE_MAX_CHARS = 80
 
-SEARCH_FIELDS = ("city", "area", "bhk", "min_price", "max_price", "room_types", "ideal_for", "amenity")
-PENDING_TYPES = ("city", "clarify", "reject")
+SEARCH_FIELDS = ("city", "area", "bhk", "min_price", "max_price", "room_types", "ideal_for", "amenity", "sort")
+PENDING_TYPES = ("city", "clarify", "reject", "city_change")
 
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -126,6 +127,13 @@ def _opt(check: Callable[[Any], bool]) -> Callable[[Any], bool]:
     return lambda v: v is None or check(v)
 
 
+def _valid_pending(v: Any) -> bool:
+    """A known type; a ``city_change`` question must also carry its context (see actions/city_change.py)."""
+    if not isinstance(v, dict) or v.get("type") not in PENDING_TYPES:
+        return False
+    return v["type"] != "city_change" or city_change.valid_context(v.get("context"))
+
+
 # One check per dataclass field (the round-trip test fails when a field is added without one).
 _FIELD_CHECKS: dict[str, Callable[[Any], bool]] = {
     "history": lambda v: _list_of_dicts(v) and all(isinstance(i.get("content"), str) for i in v),
@@ -133,7 +141,7 @@ _FIELD_CHECKS: dict[str, Callable[[Any], bool]] = {
     "current_search": lambda v: isinstance(v, dict),
     "rooms_on_screen": _list_of_dicts,
     "selected_room_index": _opt(_is_int),
-    "pending_question": _opt(lambda v: isinstance(v, dict) and v.get("type") in PENDING_TYPES),
+    "pending_question": _opt(_valid_pending),
     "rejected_room_ids": lambda v: isinstance(v, list),
     "api_room_count": _opt(_is_int),
     "rooms_truncated": lambda v: isinstance(v, bool),
@@ -359,6 +367,7 @@ class LLMConversationState:
             kwargs[f.name] = copy.deepcopy(value)
         state = cls(**kwargs)
         state.current_search = {key: state.current_search.get(key) for key in SEARCH_FIELDS}
+        state.current_search["sort"] = sorting.clean(state.current_search["sort"])  # an older blob has none
         index = state.selected_room_index
         if index is not None and not 1 <= index <= len(state.rooms_on_screen):
             raise StateDecodeError("bad_field:selected_room_index")
@@ -373,9 +382,11 @@ class LLMConversationState:
         form the few-shot examples use), otherwise ``{"type", "context"}``.
         ``current_search`` is None until a search has any value."""
         pending = self.pending_question
-        if pending is not None and pending.get("context") is None:
+        if pending is not None and pending["type"] == "city_change":
+            pending = "clarify"  # the model sees a plain question; the remembered filters stay out of the prompt
+        elif pending is not None and pending.get("context") is None:
             pending = pending["type"]
-        search = {k: v for k, v in self.current_search.items() if v is not None}
+        search = {k: v for k, v in self.current_search.items() if v is not None and k != "sort"}  # the model never sees it
         return {
             "current_search": search or None,
             "pending_question": pending,

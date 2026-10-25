@@ -150,7 +150,7 @@ def test_from_dict_rejects_non_objects(blob):
 def test_pending_types_still_match_the_check():
     st = LLMConversationState()
     for kind in PENDING_TYPES:
-        st.set_pending(kind)
+        st.set_pending(kind, {"new": {"city": "Pune"}, "asked": 1} if kind == "city_change" else None)
         LLMConversationState.from_dict(st.to_dict())
 
 

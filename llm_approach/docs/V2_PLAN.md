@@ -94,14 +94,14 @@ llm_approach/
 
 ## Design decisions
 
-Six choices shaped v2. On 25 October 2026 the team lead decided D1, D2, stage 10 and the 4/5 BHK rule (marked below); D4 is still open. Stage 10 was first decided as "keep rooms_client.py" (Phase 3B) and then changed by the team lead to "use the MCP tool" (see Stage 10 status).
+Six choices shaped v2. On 25 October 2026 the team lead decided D1, D2, stage 10 and the 4/5 BHK rule (marked below). D4 was then decided by the developer as an ask-first rule and is implemented (see D4 below). Stage 10 was first decided as "keep rooms_client.py" (Phase 3B) and then changed by the team lead to "use the MCP tool" (see Stage 10 status).
 
 | # | Decision | Options | Recommendation and why |
 | --- | --- | --- | --- |
 | D1 | Orchestration shell | LangGraph StateGraph, or the plain dispatcher in pipeline.py | **DECIDED: keep the plain dispatcher, no LangGraph.** (Original recommendation: LangGraph, matching the agreed diagram and production. Each node wraps an existing tested pipeline function, so behaviour does not change; the parity test must stay identical. Cost: a refactor of pipeline.py and a LangGraph dependency.) |
 | D2 | Semantic input gate | Block before the LLM, or advise only | **DECIDED: copy it and run it in shadow mode, only when no rooms are on screen and no question is pending** (built in Phase 3B; `enforce` exists but is not the default). Original text: **Shadow mode first**: run it before the LLM with the conversation state passed in, log its verdict but do not block, for one full evaluation. Switch to blocking only if it raises 0 false positives on the 144 general messages and the 166 eval items. Reason: a follow-up such as "does it have wifi" looks off-topic without context. The LLM's OUT_OF_SCOPE intent stays as the second line. |
 | D3 | Slot checks | Keep validators.validate_slots, or use the app/ parameter guardrail | **One source of truth: the app/ parameter guardrail.** Run both side by side in Phase 3; any rule that exists only in validators.py moves into the copy as a marked v2 change. |
-| D4 | Different city with rooms on screen | Carry over old filters, or start fresh | **Start fresh**: a new city clears the old budget, BHK and area; short refinements ("under 15k") keep them. Today handle_refinement merges old filters, so "bhopal me 1bhk" can inherit a Bangalore budget. |
+| D4 | Different city while other filters are remembered | Carry over old filters, start fresh, or ask | **DECIDED and IMPLEMENTED (25 Oct 2026): ask first.** Original recommendation (start fresh) was replaced by the developer's behaviour, below. |
 | D5 | LLM calls per message | As today, or more | **Unchanged**: one decision call; a second call only for questions about the chat; the RAG answer path counts inside the same per-turn budget. |
 | D6 | Copy or import app/ code | Import through reuse.py, or copy | **Copy**, as the team lead's clean start asks, with the drift test so the copies cannot silently diverge. |
 
@@ -220,7 +220,7 @@ Open after Phase 3B:
 - **Shadow week**: set `LLM_APPROACH_SEMANTIC_GATE=enforce` only after a week of shadow logs show no legitimate message that would be blocked. Known risk seen with the real model: with no rooms on screen, short messages such as "2bhk in pune" or "my name is Rahul" are labelled ACKNOWLEDGMENT (allowed), but "what did I say my budget was" is labelled OUT_OF_SCOPE, so enforce mode would refuse memory questions that come before any search.
 - **No /metrics route** (**closed in Phase 4B**): the route now exists, with a token.
 - Original tests that stay in app/ only: `test_guardrail_wiring` (needs agent_modes and the LangGraph router) and sections 1 to 3 of `test_security_hardblock` (need app.api); not copied.
-- D4 (different city with rooms on screen), the quality gates, the held-out set and every item of the Phase 3A and 4A "open" lists are unchanged.
+- The quality gates, the held-out set and every item of the Phase 3A and 4A "open" lists are unchanged.
 
 ## Phase 4B status (readiness and metrics)
 
@@ -307,9 +307,30 @@ Decided on 25 October 2026: production uses a paid Gemini key later. The free-ti
 - [x] Branch: experiment/llm-approach_v2, cut from experiment/llm-approach so the llm_approach/ work carries over (name left to us)
 - [x] D1: keep the plain dispatcher, no LangGraph (decided 25 Oct 2026)
 - [x] D2: semantic gate copied, shadow mode, applied only with no rooms on screen and no pending question (decided 25 Oct 2026); blocking only after a week of shadow logs show 0 false positives
-- [ ] D4: a different city with rooms on screen starts a fresh search, without the old filters
+- [x] D4: a different city while other filters are remembered asks "same filters or a new search?" (implemented 25 Oct 2026, see D4 status)
 - [ ] The quality gates above, especially the 2-point tolerance on accuracy
 - [ ] Approval to build the held-out context set
 - [x] Stage 10: ~~keep rooms_client.py, add only the timeout and token handling~~ (Phase 3B) **changed by the team lead: v2 uses the MCP tool for room search; done, see Stage 10 status**
 - [x] 4BHK and 5BHK are valid searches in the parameter guardrail (decided 25 Oct 2026)
 - [x] LLM provider for production: a paid Gemini key later (decided 25 Oct 2026); see the handover checklist
+
+## D4 status (different city while filters are remembered)
+
+Implemented in `actions/city_change.py` (pure helpers), `actions/search.py` (the check and the answer handler), `pipeline._decide_action` (intercepts the reply), `state.py` (new pending type) and `observability.py` (counters). No prompt change (fingerprint 20f328e351bb unchanged), no new LLM call.
+
+**Behaviour.** When the validated decision is a REFINEMENT whose city differs from the current search (aliases are canonical, so Bengaluru = Bangalore) and the current search has at least one filter to carry (BHK, min/max budget, ideal_for, amenity), the bot does not search. It asks, for example: "You were looking at 2 BHK rooms in Bangalore under ₹20,000 with wifi. Do you want to search in Jaipur with the same filters, or start a new search for Jaipur? You can also tell me your new requirements." Rupees are formatted like the room lines (₹20,000).
+- No question when the search has only a city (an area alone is not a filter), when the city is the same, when only the area changes, or for NEW_SEARCH (which already starts fresh).
+- The reply is read from the message text plus the slots of the one decision call already made. "same / keep / yes / ok / haan / wahi / thik hai" searches the new city with the old filters, with whatever the original message said (and anything said in the reply) on top. "new / fresh / start over / no / nahi / naya" searches the new city with only the original message (and the reply's slots). A reply with new requirements ("2bhk under 15k") is a fresh search for the new city. A reply that is unclear asks the question once more, then searches fresh. A reply with a different intent drops the question and is handled normally.
+- State: one pending type `city_change` with context `{"new": <slots of the original message>, "asked": 1 or 2}`; the old filters stay in `current_search`. Cleared by any answer, a different intent, a reset, or the rule-based fallback (no model to read the reply: it searches fresh). `STATE_SCHEMA_VERSION` stays 1: the change is additive, old stored sessions load, and a `city_change` blob without a valid context is refused like any bad field. The model sees this state as a plain `clarify`, never the stored filters.
+- Observability: `/metrics` has a `city_change` object with `city_change_question_asked` and outcomes `kept`, `fresh`, `unclear` (counted per unclear reply) and `abandoned`. Fixed words only, no user text.
+
+**Intentional test changes.** Stub scenario S22 turn 4 ("in pune" after Bangalore, Koramangala, max 15000): was REFINEMENT / refinement with a rooms call, now REFINEMENT / ask_city_change with no rooms call (scenario file and baseline entry S22[3] updated; the other 299 entries are unchanged, still 300 turns). Unit tests updated to ask and then answer "same": `test_actions::test_refinement_keeps_bhk_and_price_when_only_city_changes`, `test_actions::test_amenity_is_kept_by_refinement`, `test_area::test_budget_refinement_keeps_area_and_city_then_new_city_clears_area`; `test_session_redis::test_pending_types_still_match_the_check` now gives `city_change` its context. New: `tests/test_city_change.py` (54 tests). Suite: 1800 before, 1854 after.
+
+**Sort follow-up (25 Oct 2026).** `config.ROOMS_SORT` was a read-only constant (`"latest"`) that nothing ever wrote, so it could not leak between sessions; and there was no sort preference at all (the model has no sort slot, the guardrail accepts only `latest`). Now the preference is `current_search["sort"]` (`price_asc` "cheapest first", `price_desc` "most expensive first", `rating_desc` "highest rated first", or None), in `sorting.py`:
+- Read from the user's words, not the model (no prompt change): cues such as "cheaper", "cheapest", "sabse sasta", "most expensive", "highest rated"; "newest first" clears it. A refinement that says one updates the session's sort and runs the search; later refinements keep it; a NEW_SEARCH resets it (its own words may set a new one).
+- The rooms API still receives `latest` (`sorting.api_sort`, one place to change when the API gains price sorts). The order is applied to the rooms the search returned, so "cheapest first" orders that page of results; it does not re-rank the whole city.
+- D4: the summary says "cheapest first"; a sort alone counts as a filter to ask about; "same filters" carries it, "new search" drops it (a sort in the original message is kept).
+- State: additive, `STATE_SCHEMA_VERSION` stays 1; an old blob loads with sort None; an unknown stored value is dropped. The model never sees it in the state summary.
+- Tests: `tests/test_sort_state.py` (26 new). The stub baseline is unchanged from the D4 state (only S22[3]). Suite: 1854 before this follow-up, 1880 after.
+
+**Open.** With the model unavailable the fallback always searches fresh. Whether the real model returns usable slots for replies like "2bhk under 15k" while the pending state reads `clarify` is checked only with fakes; confirm in the next live scenario run. Sort cues are English and Hinglish keywords only.

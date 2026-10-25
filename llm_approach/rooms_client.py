@@ -34,7 +34,7 @@ from typing import Any, Callable
 
 import httpx
 
-from llm_approach import config, observability, switches, turn_context
+from llm_approach import config, observability, sorting, switches, turn_context
 from llm_approach.actions import TurnBudget
 from llm_approach.guardrails.api_data_guardrail import validate_room_data
 from llm_approach.state import clean_room
@@ -122,7 +122,7 @@ def build_params(
         "maxPrice": search.get("max_price"),
         "roomTypes": _room_types_param(search),
         "idealFor": search.get("ideal_for"),
-        "sort": config.ROOMS_SORT,
+        "sort": sorting.api_sort(search),
         "limit": limit or config.ROOMS_LIMIT,
         "page": page if page > 1 else None,
     }
@@ -513,7 +513,7 @@ def _mcp_request(
         "max_price": search.get("max_price"),
         "room_types": types.split(",") if types else None,
         "ideal_for": [ideal] if ideal else None,
-        "sort": config.ROOMS_SORT,
+        "sort": sorting.api_sort(search),
         "limit": limit,
         "page": page,
     }

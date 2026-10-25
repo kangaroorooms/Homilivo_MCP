@@ -268,6 +268,17 @@ async def _decide_action(
     m.slots_valid = [n for n in _SLOT_NAMES if validated.get(n) is not None]
     m.slots_rejected = list(rejected)
 
+    if (state.pending_question or {}).get("type") == search.city_change.PENDING_TYPE:
+        # D4: the reply to "same filters or a new search?". Read from the message and the slots of the
+        # one decision call already made; no prompt change and no second call.
+        started = time.perf_counter()
+        answered = await asyncio.to_thread(
+            search.handle_city_change_answer, message, decision, validated, state, budget
+        )
+        if answered is not None:
+            m.api_ms = _ms(started) if budget.tool_calls else 0.0
+            return answered, validated, rejected
+
     forced = _clarify_rejected(decision, rejected, state) or _reference_problem(decision, rejected, state)
     if forced is not None:
         return forced, validated, rejected
@@ -319,7 +330,8 @@ async def _decide_action(
         return recall.acknowledge(stored_facts, state), validated, rejected  # fixed wording, not the model's
 
     handler = _HANDLERS[decision.intent]
-    kwargs = {"user_message": message} if decision.intent is Intent.PLATFORM_INFO else {}
+    wants_message = (Intent.PLATFORM_INFO, Intent.NEW_SEARCH, Intent.REFINEMENT)  # the sort cue is read from the text
+    kwargs = {"user_message": message} if decision.intent in wants_message else {}
     if decision.intent in _THREADED:
         started = time.perf_counter()
         action = await asyncio.to_thread(handler, decision, validated, state, budget, **kwargs)

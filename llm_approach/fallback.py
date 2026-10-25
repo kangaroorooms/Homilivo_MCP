@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from llm_approach import reuse, validators
+from llm_approach import observability, reuse, validators
 from llm_approach.actions import ActionResult, TurnBudget
 from llm_approach.actions.clarify import ASK_AFTER_RESULTS
 from llm_approach.actions.search import handle_new_search
@@ -64,6 +64,9 @@ def run_fallback(message: str, state: LLMConversationState, budget: TurnBudget) 
 
     Blocking (the search calls the rooms API): run through ``asyncio.to_thread``.
     """
+    if (state.pending_question or {}).get("type") == "city_change":
+        state.clear_pending()  # no model to read the reply: the rule-based path always searches fresh
+        observability.record_city_change("abandoned")
     clean = fallback_slots(message, state)
     if clean is None and state.rooms_on_screen:
         # Rooms are on screen: asking for a city again would ignore them.

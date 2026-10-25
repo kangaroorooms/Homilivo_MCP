@@ -67,6 +67,7 @@ class _MetricsRegistry:
         self.llm_events: dict[str, int] = {}  # v2: fallback_switch, breaker_open, breaker_skip, breaker_close
         self.session_store_events: dict[str, int] = {}  # v2: redis_unavailable, state_corrupt, lock_timeout, ...
         self.city_change_events: dict[str, int] = {}  # v2: D4 question asked / outcome (fixed words only)
+        self.pricing_events: dict[str, int] = {}  # v2: owner-contact plans (pricing_requested, _ok, _empty, _failed, _no_city)
         self.gate_counts: dict[str, int] = {"gate_checked": 0, "gate_would_block": 0, "gate_blocked": 0, "gate_error": 0}  # v2: semantic gate
         self.gate_labels: dict[str, int] = {}  # v2: classifier label -> count (fixed words only)
         self.gate_latencies_ms: deque[float] = deque(maxlen=500)  # v2: per check
@@ -125,6 +126,10 @@ class _MetricsRegistry:
         with self._lock:  # v2: added
             self.city_change_events[event] = self.city_change_events.get(event, 0) + 1  # v2: added
 
+    def record_pricing(self, event: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.pricing_events[event] = self.pricing_events.get(event, 0) + 1  # v2: added
+
     def record_semantic_gate(self, label: str, would_block: bool, blocked: bool, latency_ms: float) -> None:  # v2: new
         with self._lock:  # v2: added
             self.gate_counts["gate_checked"] += 1  # v2: added
@@ -169,6 +174,7 @@ class _MetricsRegistry:
                 "llm_events": dict(self.llm_events),  # v2: added
                 "session_store_events": dict(self.session_store_events),  # v2: added
                 "city_change": dict(self.city_change_events),  # v2: added
+                "pricing": dict(self.pricing_events),  # v2: added
                 "semantic_gate": {**self.gate_counts, "labels": dict(self.gate_labels), "latency": _latency_stats(self.gate_latencies_ms)},  # v2: added
                 "status_counts": dict(self.status_counts),
                 "api_latency": _latency_stats(self.api_latencies_ms),
@@ -304,6 +310,11 @@ def record_session_store_event(event: str) -> None:  # v2: new
 def record_city_change(event: str) -> None:  # v2: new
     """D4: ``city_change_question_asked`` or an outcome (``kept``, ``fresh``, ``unclear``, ``abandoned``); never text."""  # v2: added
     _metrics.record_city_change(event)  # v2: added
+
+
+def record_pricing(event: str) -> None:  # v2: new
+    """One call per pricing event; ``event`` is a fixed word (pricing_requested, pricing_ok, pricing_empty, pricing_failed, pricing_no_city), never text."""  # v2: added
+    _metrics.record_pricing(event)  # v2: added
 
 
 def record_semantic_gate(label: str, would_block: bool, blocked: bool, latency_ms: float) -> None:  # v2: new

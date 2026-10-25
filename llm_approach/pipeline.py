@@ -33,7 +33,7 @@ from llm_approach import (
     turn_context,
     validators,
 )
-from llm_approach.actions import ActionResult, TurnBudget, clarify, conversation, followup, platform, recall, search
+from llm_approach.actions import ActionResult, TurnBudget, clarify, conversation, followup, owner_contact, platform, recall, search
 from llm_approach.schema import Decision, Intent
 from llm_approach.session_store import SessionStoreBackend, make_store
 from llm_approach.state import ERROR_REPLY, LLMConversationState, SessionBusyError
@@ -246,6 +246,7 @@ _HANDLERS = {
     Intent.UNCLEAR: clarify.handle_unclear,
     Intent.CONVERSATION_RECALL: recall.handle_recall,
 }  # CONVERSATION_QUESTION is async and is handled in _decide_action
+_OWNER_CONTACT_INTENTS = {Intent.UNSUPPORTED_ACTION, Intent.PLATFORM_INFO}
 _THREADED = {Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.SHOW_MORE, Intent.PLATFORM_INFO}  # blocking I/O
 
 
@@ -328,6 +329,14 @@ async def _decide_action(
 
     if stored_facts and decision.intent is Intent.GENERAL_CHAT:
         return recall.acknowledge(stored_facts, state), validated, rejected  # fixed wording, not the model's
+
+    if decision.intent in _OWNER_CONTACT_INTENTS and owner_contact.wants_owner_contact(message, decision):
+        # v2: a contact-the-owner request shows the subscription plans of the city; checked after the LLM call, on the
+        # validated intent only (the message is never matched before the model has decided)
+        started = time.perf_counter()
+        action = await asyncio.to_thread(owner_contact.handle_owner_contact, decision, validated, state, budget)
+        m.api_ms = _ms(started)
+        return action, validated, rejected
 
     handler = _HANDLERS[decision.intent]
     wants_message = (Intent.PLATFORM_INFO, Intent.NEW_SEARCH, Intent.REFINEMENT)  # the sort cue is read from the text

@@ -14,10 +14,8 @@ from llm_approach.state import LLMConversationState
 SAFE_CHAT = "Happy to chat!"
 STEER_NO_ROOMS = "Tell me a city and I'll help you find a room."
 STEER_WITH_ROOMS = "Would you like to ask about these rooms or search again?"
-OWNER_CONTACT = "To connect with the owner, you'll need a Homilivo subscription."
 OUT_OF_SCOPE = "I can only help with finding rooms and answering questions about them."
 
-_OWNER_RE = re.compile(r"\b(?:owner|landlord|contact|call|phone|number|whatsapp)\b", re.IGNORECASE)
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -48,9 +46,8 @@ def handle_unsupported(
     state: LLMConversationState,
     budget: TurnBudget,
 ) -> ActionResult:
-    """Fixed wording only: nothing from ``decision.reply``."""
-    if _OWNER_RE.search(decision.standalone_query or ""):
-        return ActionResult(OWNER_CONTACT, None, "unsupported_owner_contact")
+    """Fixed wording only: nothing from ``decision.reply``. Owner-contact requests never get here: the pipeline sends them
+    to ``owner_contact`` first."""
     return ActionResult(reuse.get_unsupported_action_response(), None, "unsupported_action")
 
 

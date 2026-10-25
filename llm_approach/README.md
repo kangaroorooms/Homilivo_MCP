@@ -51,7 +51,8 @@ Secrets (names only): `GEMINI_API_KEY` or `GROQ_API_KEY` (the active provider's)
 | `LLM_APPROACH_SEARCH_TRANSPORT` | `mcp` | `mcp` (copied in-process MCP tool) or `direct` (`rooms_client`'s own httpx). Anything else means `mcp`. |
 | `LLM_APPROACH_SEARCH_TIMEOUT_SECONDS` | 15 | Whole rooms search, retry included. |
 | `LLM_APPROACH_ROOMS_API_URL` | `https://homilivo.onrender.com/api/rooms` | Rooms API. |
-| `LLM_APPROACH_OFFLINE_ROOMS` | unset | `1` uses `fixtures/rooms_bangalore.json`, or a path. |
+| `LLM_APPROACH_OFFLINE_ROOMS` | unset | `1` uses `fixtures/rooms_bangalore.json`, or a path. Also switches the pricing call to `fixtures/pricing_plans.json`. |
+| `PRICING_API_URL` | `https://kangaroo-rooms-backend.onrender.com/api/tenant-subscriptions/pricing` | Subscription pricing API (same name and default as `app/`). No token. |
 | `HOMILIVO_API_TIMEOUT_SECONDS`, `_MAX_ATTEMPTS`, `_RETRY_BACKOFF_SECONDS` | 10, 3, 0.3 | Per-attempt limits inside the MCP tool (copied from `app/server.py`). |
 | `LLM_APPROACH_CHROMA_PERSIST_DIR` | `data/chroma_v2` | Knowledge-base index. The app's `CHROMA_PERSIST_DIR` is never read; a path equal to `data/chroma` is refused. |
 | `LLM_APPROACH_CORS_ORIGINS` | off | Comma-separated origins. |
@@ -95,6 +96,28 @@ Searches go through `tools/mcp_search.py`, a copy of the app's MCP room-search t
 retry included, is bounded by **15 s** (`LLM_APPROACH_SEARCH_TIMEOUT_SECONDS`), as in `app/`. On failure the
 user gets a polite message and no rooms are invented. `direct` uses `rooms_client`'s own client instead.
 The API has no area filter, so an area search fetches up to 30 rooms and filters them locally.
+
+## Owner contact and subscription plans
+
+"How to contact the owner" (English and Hinglish: "owner ka number", "owner se baat karni hai", ...) shows the
+Homilivo subscription plans for the city, as `app/` did. It is decided **after** the LLM call: only when the
+validated intent is `UNSUPPORTED_ACTION` or `PLATFORM_INFO` and a narrow pattern matches the user's own message or the
+model's `standalone_query` (`actions/owner_contact.py`). Nothing is matched before the model, `prompts.py` is
+unchanged and there is no extra LLM call. "Call the owner" alone, "contact support" and general subscription questions
+keep their old replies.
+
+The city comes from validated room or search data, never from the user's text, in this order: the room the user pointed at
+or has selected; the one city of the rooms on screen; several cities on screen with none selected: each city (at most
+3) under its own header; no rooms on screen but a city in the current search (new compared with `app/`); otherwise "Please
+search for a room first ..."; rooms without a usable city give the old subscription sentence plus the support line.
+
+The pricing call (`pricing_client.py`, copied from `app/` and extended) is a **direct httpx GET**, not an MCP tool:
+`PRICING_API_URL?city=<city>` (encoded), no auth header, 10 s per attempt, 15 s for the whole call, two attempts with a
+1 s backoff for timeouts, connection errors and 5xx only (the host cold-starts). A bad field rejects the whole response
+(only the field name is logged); plan names and features are stripped of tags, links and markdown and capped. Plans are
+never cached. A failure gives "I wasn't able to retrieve subscription plans right now ..."; if one of several cities fails the
+others are still shown. Plans are sent as Markdown text in `message`; the frontend needs no change. Counters:
+`pricing_requested`, `pricing_ok`, `pricing_empty`, `pricing_failed`, `pricing_no_city` (under `pricing` in the metrics).
 
 ## Sessions
 

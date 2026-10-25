@@ -6,7 +6,7 @@ import pytest
 
 from llm_approach import reuse, rooms_client, validators
 from llm_approach.actions import ActionResult, TurnBudget
-from llm_approach.actions import clarify, conversation, followup, platform, search
+from llm_approach.actions import clarify, conversation, followup, owner_contact, platform, search
 from llm_approach.schema import Decision, Intent, Operation, Slots
 from llm_approach.state import LLMConversationState
 
@@ -329,9 +329,14 @@ def test_unsupported_booking_uses_existing_wording(state):
 
 
 def test_unsupported_owner_contact(state):
+    # Changed with the pricing action: a contact-the-owner request is no longer answered by handle_unsupported (the
+    # pipeline sends it to owner_contact, which shows the plans). "call the owner" has no contact intent and keeps the fixed reply.
     d = make("UNSUPPORTED_ACTION", reply="Here is the number 99999", query="call the owner")
     r = run(conversation.handle_unsupported, d, state)
-    assert r.reply == "To connect with the owner, you'll need a Homilivo subscription."
+    assert r.reply == reuse.get_unsupported_action_response() and r.action == "unsupported_action"
+    contact = make("UNSUPPORTED_ACTION", reply="Here is the number 99999", query="how to contact the owner")
+    r = run(owner_contact.handle_owner_contact, contact, state)  # offline fixture: the Bangalore plans
+    assert "99999" not in r.reply and "**Bangalore**" in r.reply and "GOLD" in r.reply
 
 
 def test_out_of_scope_redirects(state):

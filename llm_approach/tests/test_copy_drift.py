@@ -176,6 +176,12 @@ MCP_WHOLE_FILE_COPIES = [
 # (source, copy, sha in the header, names)
 MCP_PARTIAL_COPIES = [
     ("app/experiments/agent_modes.py", "llm_approach/tools/mcp_timeout.py", "fca91ac", ("_call_search_rooms_with_timeout",)),
+    (
+        "app/experiments/agent_modes.py",
+        "llm_approach/pricing_client.py",
+        "fca91ac",
+        ("PRICING_API_URL", "PRICING_API_TIMEOUT_SECONDS", "format_subscription_plans"),
+    ),
 ]
 
 

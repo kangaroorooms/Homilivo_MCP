@@ -55,6 +55,18 @@ def _skip_secret_check(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_pricing_network(monkeypatch):
+    """No test reaches the real pricing API: an unfaked live call fails fast. Tests of the client install a fake."""
+    from llm_approach import pricing_client
+
+    def blocked(*args, **kwargs):
+        raise RuntimeError("the pricing API is not reachable from tests")
+
+    blocked.original = pricing_client._httpx_get  # the one test of the real wrapper reads it
+    monkeypatch.setattr(pricing_client, "_httpx_get", blocked)
+
+
+@pytest.fixture(autouse=True)
 def _knowledge_stats_healthy(monkeypatch):
     """The startup preload now reads the knowledge-base index stats: tests must not load the embedding model or
     build Chroma. Tests of the real readiness logic (test_ready_knowledge.py) override this."""

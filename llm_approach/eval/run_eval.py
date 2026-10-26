@@ -217,12 +217,53 @@ def estimate(todo: list[tuple[dict, int]], spacing: float, budget: int) -> dict[
 # ---- one item --------------------------------------------------------------------
 
 
+def answering_label(budget: Any) -> tuple[str, str]:
+    """(provider, model) that actually answered: the fallback provider when the call moved to it, else the active one.
+    A result is never labelled with the primary model when the fallback produced it."""
+    name = getattr(budget, "use_provider", None)
+    if not name:
+        return config.label()
+    try:
+        return name, config.model(name)
+    except Exception:  # noqa: BLE001 - labelling must not break a record
+        return name, ""
+
+
+def search_check(decision: Any, validated: dict, rejected: list[str], ctx: bool) -> tuple[bool, bool | None]:
+    """(would the pipeline search, did the parameter guardrail accept the search it would send).
+
+    Uses the pipeline's own code: ``pipeline._clarify_rejected`` decides whether a rejected city/BHK/price makes it ask,
+    then ``search.guardrail_arguments`` builds the arguments the rooms API would get and the copied
+    ``validate_search_arguments`` checks them. ``None`` for the second value when no search would run."""
+    from llm_approach import pipeline
+    from llm_approach.actions import search as search_mod
+    from llm_approach.guardrails.parameter_guardrail import validate_search_arguments
+    from llm_approach.schema import Intent
+    from llm_approach.state import LLMConversationState
+
+    if decision.intent not in (Intent.NEW_SEARCH, Intent.REFINEMENT):
+        return False, None
+    state = LLMConversationState()
+    if ctx:
+        state.apply_search_result({"city": "Bangalore"}, datasets.load_rooms())  # as datasets.build_state does
+    if pipeline._clarify_rejected(decision, rejected, state) is not None:
+        return False, None
+    built = {key: validated.get(key) for key in search_mod.SEARCH_KEYS}
+    if decision.intent is Intent.REFINEMENT:  # a refinement continues the current search
+        built = {key: (built[key] if built[key] is not None else state.current_search.get(key)) for key in built}
+    if not built.get("city"):
+        return False, None  # the handler asks for the city
+    valid, _reason = validate_search_arguments(search_mod.guardrail_arguments(built))
+    return True, bool(valid)
+
+
 def build_record(item: dict, run: int, decision: Any, budget: Any, status: str, rooms_count: int) -> dict[str, Any]:
     from llm_approach import validators
 
-    provider, model = config.label()
+    provider, model = answering_label(budget)
     rec: dict[str, Any] = {
-        "provider": provider, "model": model, "prompt_fp": prompt_fingerprint.current(),
+        "provider": provider, "model": model, "answered_by_fallback": bool(getattr(budget, "use_provider", None)),
+        "prompt_fp": prompt_fingerprint.current(),
         "dataset": item["dataset"], "item": item["item"], "run": run, "status": status,
         "category": item["category"], "gold_label": item["gold_label"], "gold_intent": item["gold_intent"],
         "gold_operation": item["gold_operation"], "gold_slots": item["gold_slots"],
@@ -230,7 +271,7 @@ def build_record(item: dict, run: int, decision: Any, budget: Any, status: str, 
         "ctx": item["ctx"], "caveat": item["caveat"],
         "intent": None, "operation": None, "slots": None, "validated_slots": None, "rejected": [],
         "room_reference": None, "confidence": None, "needs_clarification": None, "slots_valid": None,
-        "would_search": False, "error_class": getattr(budget, "error_class", None),
+        "would_search": False, "search_args_valid": None, "error_class": getattr(budget, "error_class", None),
         "error_code": getattr(budget, "error_code", None), "error_status": getattr(budget, "error_status", None),
         "latency_ms": round(getattr(budget, "latency_ms", 0.0), 1), "tokens_in": getattr(budget, "tokens_in", 0),
         "tokens_out": getattr(budget, "tokens_out", 0), "cached_tokens": getattr(budget, "cached_tokens", None),
@@ -241,14 +282,14 @@ def build_record(item: dict, run: int, decision: Any, budget: Any, status: str, 
             decision.slots, rooms_count=rooms_count, has_selected=False,
             room_reference=decision.room_reference, compare_references=decision.compare_references,
         )
-        search_rejected = bool(set(rejected) & set(metrics.SEARCH_SLOT_FIELDS))
+        would_search, args_valid = search_check(decision, clean, rejected, item["ctx"])
         rec.update(
             intent=decision.intent.value, operation=decision.operation.value if decision.operation else None,
             slots=decision.slots.model_dump(), validated_slots={k: v for k, v in clean.items() if v not in (None, [])},
             rejected=rejected, room_reference=decision.room_reference, confidence=decision.confidence,
             needs_clarification=decision.needs_clarification, slots_valid=not rejected,
-            # the pipeline's rule: a rejected city/BHK/price on a search intent asks instead of searching
-            would_search=decision.intent.value in metrics.SEARCH_INTENTS and not search_rejected,
+            # from the pipeline's own code (search_check): the real clarify rule, then the real parameter guardrail
+            would_search=would_search, search_args_valid=args_valid,
         )
     return rec
 

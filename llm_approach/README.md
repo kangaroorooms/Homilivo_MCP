@@ -33,6 +33,7 @@ Secrets (names only): `GEMINI_API_KEY` or `GROQ_API_KEY` (the active provider's)
 | `LLM_APPROACH_GEMINI_THINKING` | `level:LOW` | `level:LOW/MINIMAL/MEDIUM/HIGH`, `budget:<int>` or `none`. |
 | `LLM_APPROACH_GEMINI_MAX_OUTPUT_TOKENS` | 1024 | Thinking tokens count toward it. |
 | `LLM_APPROACH_GEMINI_TIMEOUT_S` | 20 | Per call; minimum 10. |
+| `LLM_APPROACH_GEMINI_WINDOW_SECONDS` / `_WINDOW_MAX_REQUESTS` / `_WINDOW_MAX_TOKENS` | 60 / 12 / 200000 | The limiter's sliding window (free-tier values with a 20% margin). A non-numeric or non-positive value stops start-up (the variable name is reported, never the value). |
 | `LLM_APPROACH_GEMINI_TURN_DEADLINE_S` | 20 | Time a turn may spend in the LLM step. The Gemini limiter never sleeps past it (window wait or 429 retry delay): it gives up at once and the rule-based fallback answers. |
 | `LLM_APPROACH_FALLBACK_PROVIDER` | off | Second provider used when the first fails. Unset means no fallback (its quality is not evaluated). |
 | `LLM_APPROACH_BREAKER_FAILURES` / `_BREAKER_COOLDOWN_SECONDS` | 5 / 60 | Circuit breaker per provider. |
@@ -44,7 +45,7 @@ Secrets (names only): `GEMINI_API_KEY` or `GROQ_API_KEY` (the active provider's)
 | `STATE_BACKEND` | `memory` | `memory` or `redis`; an unknown value stops start-up. |
 | `REDIS_URL` | `redis://localhost:6379/0` | May hold a password; never logged. |
 | `LLM_APPROACH_REDIS_TIMEOUT_S` | 1.0 | Connect/read timeout; a down Redis must not stall a turn. |
-| `LLM_APPROACH_SESSION_LOCK_TTL_MS` / `_WAIT_S` / `_MAX_HOLD_S` | 30000 / 30 / 120 | Per-session Redis lock. |
+| `LLM_APPROACH_SESSION_LOCK_TTL_MS` / `_WAIT_S` / `_MAX_HOLD_S` | 30000 / 10 / 120 | Per-session lock (Redis and in-memory): TTL of the Redis key, longest wait for the session (seconds), longest refresh of the lock. |
 | `SESSION_TTL_SECONDS`, `SESSION_MAX_COUNT`, `SESSION_MAX_HISTORY_MESSAGES` | 3600, 1000, 40 | Same names and defaults as `app/`. |
 | `LLM_APPROACH_METRICS_TOKEN` | unset | Bearer token for `GET /metrics`. Unset means `/metrics` answers 404. |
 | `LLM_APPROACH_SEMANTIC_GATE` | `shadow` (server) | `off`, `shadow` (record only) or `enforce` (block off-topic first messages). Bare `handle_turn` and tests run `off`. A typo stops start-up. |
@@ -57,6 +58,7 @@ Secrets (names only): `GEMINI_API_KEY` or `GROQ_API_KEY` (the active provider's)
 | `LLM_APPROACH_CHROMA_PERSIST_DIR` | `data/chroma_v2` | Knowledge-base index. The app's `CHROMA_PERSIST_DIR` is never read; a path equal to `data/chroma` is refused. |
 | `LLM_APPROACH_CORS_ORIGINS` | off | Comma-separated origins. |
 | `RATE_LIMIT_MAX_REQUESTS` / `_WINDOW_SECONDS` | 30 / 60 | Per client; `SESSION_RATE_LIMIT_*` (20 / 60) per session; `RATE_LIMIT_ENABLED=true`. |
+| `LLM_APPROACH_NEW_SESSION_RATE_LIMIT` / `LLM_APPROACH_RESET_RATE_LIMIT` | 10 / 10 | Per IP per minute: sessions the store does not know yet (so a new `session_id` on every request cannot get round the per-session limit), and `POST /chat/reset`. Fail open; off with `RATE_LIMIT_ENABLED=false`. |
 | `LLM_APPROACH_METRICS` | off | `1` appends per-turn metric lines (fixed fields, no text) to `eval/results/metrics.jsonl`. |
 | `LLM_APPROACH_SKIP_PRELOAD` | off | Skip the start-up model load. |
 | `LLM_APPROACH_SKIP_SECRET_CHECK` | ignored | Honoured only by the test suite; the server always runs the check. |
@@ -69,10 +71,14 @@ Secrets (names only): `GEMINI_API_KEY` or `GROQ_API_KEY` (the active provider's)
 - **Start-up is non-blocking.** The server listens at once and loads the guardrails, the semantic-gate
   examples and the knowledge base in the background.
 - `GET /health`: always `200` once the process is up.
-- `GET /ready`: `200 ready` when the provider key, the guardrails and the knowledge base are loaded, else
-  `503 not_ready` with a `loading` list while the background load runs. Values are booleans only. With
-  Redis sessions it also reports `session_store.redis_reachable`; a down Redis does not make the server
-  not ready.
+- `GET /ready`: `200` when the provider key, the guardrails and the knowledge base are loaded, else `503`. The body has
+  these fields: `status` (`ready` or `not_ready`), `checks` (booleans `llm_key_present`, `kangaroo_token_present`,
+  `knowledge_base`, `guardrails`; the rooms token is reported but not required), `provider` and `model` (names, strings),
+  `knowledge` (`embedding_model` boolean, `chunks_indexed` number, `placeholder` boolean: true while a knowledge document
+  still carries the "PLACEHOLDER DOCUMENT" banner, which does not change the status code), `loading` and `message` (only
+  while the background load runs), and, with Redis sessions, `redis` (`up` or `down`) and `session_store`
+  (`backend`, `redis_reachable`, `sessions_survive_restart`). No keys, tokens or message text. A down Redis does not
+  make the server not ready.
 - `POST /chat` and the WebSocket answer **503 `starting`** (with `Retry-After`) until the load ends. If the
   load fails, chat is served anyway and the models load on first use.
 - `POST /chat/reset?session_id=...`, `GET /chat-ui/demo-token`, `WS /ws/chat?token=...` follow the current
@@ -119,6 +125,20 @@ never cached. A failure gives "I wasn't able to retrieve subscription plans righ
 others are still shown. Plans are sent as Markdown text in `message`; the frontend needs no change. Counters:
 `pricing_requested`, `pricing_ok`, `pricing_empty`, `pricing_failed`, `pricing_no_city` (under `pricing` in the metrics).
 
+## What the bot remembers
+
+Per session, in `state.py`: a transcript of both sides (user and bot messages, with the titles of rooms shown), the facts the user
+gave (name, age and similar, only when grounded in their own words), the current search and the rooms on screen.
+
+- The transcript keeps the **last 200 entries** (about 100 exchanges, both roles counted); older entries are dropped. A user
+  message is cut to 1000 characters and a bot reply to 800 in the transcript; the query log keeps 200 messages of 500 characters.
+- A session is dropped after **1 hour without a message** (`SESSION_TTL_SECONDS`, 3600), and the oldest session goes first
+  when more than `SESSION_MAX_COUNT` (1000) exist.
+- A blocked or too-long message is stored as a placeholder, never its text.
+- With `STATE_BACKEND=redis` and Redis down, a turn answers from a fresh state and saves nothing. The reply then ends with
+  "(I'm having trouble remembering our conversation right now, so you may need to repeat details.)", once per down period
+  per session (counter `degraded_notice` under `session_store_events` in `/metrics`).
+
 ## Sessions
 
 Conversation state (`state.py`) is kept in memory by default. With `STATE_BACKEND=redis`
@@ -138,6 +158,22 @@ servers; a per-session lock serialises turns. With Redis down, turns still answe
   set one. **One-page limitation:** the rooms API only knows `latest`, so the preference orders the rooms
   that one search returned (one page); it does not re-rank the whole city. Showing more pages orders each
   page separately.
+
+## When the Gemini key is paid
+
+The limiter defaults are the free-tier values. With a paid key, check Google's published limits for the plan and set these
+(names only; this file does not guess numbers):
+
+| Setting | What it limits |
+| --- | --- |
+| `LLM_APPROACH_GEMINI_WINDOW_MAX_REQUESTS` | Requests in one window. |
+| `LLM_APPROACH_GEMINI_WINDOW_MAX_TOKENS` | Tokens in one window. |
+| `LLM_APPROACH_GEMINI_WINDOW_SECONDS` | Length of the window. |
+| `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET` | Requests per 24 hours (per instance when there are several). |
+| `LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET` | Our own token cap per day for the evaluation runners (unset: they refuse to run). |
+| `LLM_APPROACH_GEMINI_SPACING_S` | Pause between the evaluation runners' live calls (never below 4). |
+| `LLM_APPROACH_GEMINI_DAY_RESET` | Fixed daily boundary, if the provider resets at a known time. |
+| `LLM_APPROACH_GEMINI_TIMEOUT_S`, `LLM_APPROACH_GEMINI_TURN_DEADLINE_S` | Per-call timeout and the LLM-step deadline. |
 
 ## Production deployment
 
@@ -228,6 +264,17 @@ load it). `tests/copied/` holds tests copied from `app/`.
 ## Evaluation tooling
 
 All are `python -m llm_approach.eval.<name>`; live runs call the provider and respect the daily budget.
+
+**What the numbers are.** Stub-mode numbers (`run_scenarios --stub`, the 300-turn stub baseline, the test suite) are **circular**:
+the scenario scripts the decision it then expects and the security and output guardrails are allow-all stubs, so they show the code
+paths still behave as before and are **not accuracy evidence**. Only live results are: `run_eval` measures the model's label and slots
+from one LLM call per item (not the pipeline: guardrails, gate, recall net, D4, sort, owner-contact and fallback are not run), and
+`run_scenarios --live` runs the pipeline with the offline rooms fixture and the production switches off. The report shows intent accuracy
+with and without the evaluation items that are word for word few-shot examples in the prompt, the "no usable decision" rate (invalid
+JSON, timeouts and API errors) next to the earlier invalid-JSON-only line, an invalid-search rate computed with the pipeline's own
+clarify rule and parameter guardrail, slot accuracy that counts invalid-JSON records as wrong, and the number of scenario turns that
+assert nothing (`python -m llm_approach.eval.scenario_audit` lists them with proposed expectations from the stub baseline). Every result
+record names the provider and model that answered it, and whether a fallback provider did (`answered_by_fallback`).
 
 | Module | Flags |
 | --- | --- |

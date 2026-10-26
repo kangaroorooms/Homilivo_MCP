@@ -60,7 +60,7 @@ def load_env(path: Path | str | None = None) -> bool:
 # when they are imported, so a value that lives only in .env would otherwise be ignored.
 load_env()
 
-from llm_approach import config, observability, pipeline, responder, reuse, rooms_client, switches, turn_context, turn_deadline  # noqa: E402
+from llm_approach import config, knowledge_status, observability, pipeline, responder, reuse, rooms_client, switches, turn_context, turn_deadline  # noqa: E402
 from llm_approach import gemini_limits  # noqa: E402
 from llm_approach.security.secrets_check import validate_secrets  # noqa: E402
 
@@ -225,6 +225,8 @@ def production_problems() -> list[str]:
             problems.append(f"The {name} provider is configured but its package ({package}) is not installed.")
     if config.search_transport() == "mcp" and not _package_available("mcp"):
         problems.append("The rooms search uses the MCP transport but the mcp package is not installed.")
+    if not _rl.RATE_LIMIT_ENABLED:  # v2
+        problems.append("RATE_LIMIT_ENABLED is off: the per-IP and per-session limits must be on in production.")
     fallback = config.fallback_provider() if providers_used else None
     if fallback and not config.key_present(fallback):
         problems.append(f"The fallback provider is configured but {config.key_env(fallback)} is not set.")
@@ -306,6 +308,7 @@ async def _lifespan(app: FastAPI):
     configure_logging()  # v2
     production = config.production_mode()  # v2: an unknown LLM_APPROACH_ENV value stops the start here
     config.trusted_proxy_hops()  # v2: a bad value stops the start
+    gemini_limits.validate_env()  # v2: a non-numeric or non-positive limit setting stops the start (the name, never the value)
     if production:  # v2
         problems = production_problems()
         if problems:
@@ -504,7 +507,7 @@ def create_app() -> FastAPI:
         # The rooms token is reported but not required: offline-fixture runs work without it.
         is_ready = all(v for k, v in checks.items() if k != "kangaroo_token_present")
         content = {"status": "ready" if is_ready else "not_ready", "checks": checks, **_llm_label(),
-                   "knowledge": dict(_knowledge)}
+                   "knowledge": {**_knowledge, "placeholder": knowledge_status.placeholder()}}
         loading = _still_loading()
         if loading:
             content["loading"] = loading  # which components the background load has not finished
@@ -531,7 +534,8 @@ def create_app() -> FastAPI:
             active = await asyncio.to_thread(pipeline.get_store().count)
         except Exception:  # noqa: BLE001
             active = None
-        return {"active_sessions": active, **observability.get_metrics_snapshot()}
+        return {"active_sessions": active, "knowledge_placeholder": knowledge_status.placeholder(),
+                **observability.get_metrics_snapshot()}
 
     @app.get("/chat-ui/demo-token")
     def demo_token(request: Request):
@@ -551,6 +555,34 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="No server-side demo credential is configured.")
         return {"token": token}
 
+    def _hit(key: str, limit: int) -> bool:
+        """One per-IP budget (60 s) on the shared limiter. True when allowed. Fail open: an error never blocks a user."""
+        if not _rl.RATE_LIMIT_ENABLED:
+            return True
+        try:
+            return _rl.get_rate_limiter().hit(key, limit, 60.0).allowed
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("limiter error, request allowed: %s", type(exc).__name__)
+            return True
+
+    async def _new_session_allowed(ip_key: str, session_id: str) -> bool:
+        """A session the store does not know yet counts against the IP's new-session budget, so a client that sends a
+        new session_id every request cannot get round the per-session limit. A session the degraded store cannot
+        remember is not counted again and again."""
+        store = pipeline.get_store()
+        try:
+            if store.is_degraded(session_id) if hasattr(store, "is_degraded") else False:
+                return True
+            known = await asyncio.to_thread(store.peek, session_id) is not None
+        except Exception:  # noqa: BLE001 - fail open
+            return True
+        if known:
+            return True
+        allowed = await asyncio.to_thread(_hit, f"newsession:{ip_key}", config.new_session_limit())
+        if not allowed:
+            observability.record_rate_limit_event()
+        return allowed
+
     async def _session_limit(session_id: str) -> None:
         result = await asyncio.to_thread(_rl.check_session_rate_limit, session_id)  # v2: may be Redis
         if not result.allowed:
@@ -561,7 +593,7 @@ def create_app() -> FastAPI:
             )
 
     @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_enforce_ip_limit)])
-    async def chat(request: ChatRequest, credentials: HTTPAuthorizationCredentials = Depends(_bearer)):
+    async def chat(request: ChatRequest, http_request: Request, credentials: HTTPAuthorizationCredentials = Depends(_bearer)):
         starting = _starting_response()
         if starting is not None:
             return starting
@@ -571,6 +603,11 @@ def create_app() -> FastAPI:
         handle = rooms_client.set_rooms_token(redeemed or credentials.credentials)
         try:
             session_id = normalize_session_id(request.session_id)
+            if not await _new_session_allowed(client_key(http_request), session_id):  # v2
+                raise HTTPException(
+                    status_code=429, detail="Too many requests. Please slow down and try again shortly.",
+                    headers={"Retry-After": "60"},
+                )
             if request.session_id:
                 await _session_limit(session_id)
             turn = await run_turn(session_id, request.message, request.mode)
@@ -579,7 +616,13 @@ def create_app() -> FastAPI:
             rooms_client.reset_rooms_token(handle)
 
     @app.post("/chat/reset")
-    def reset(session_id: str):
+    def reset(session_id: str, request: Request):
+        if not _hit(f"reset:{client_key(request)}", config.reset_limit()):  # v2: this endpoint had no limit
+            observability.record_rate_limit_event()
+            raise HTTPException(
+                status_code=429, detail="Too many requests. Please slow down and try again shortly.",
+                headers={"Retry-After": "60"},
+            )
         existed = pipeline.reset_session(session_id) if _SESSION_ID_RE.match(session_id) else False
         return {"status": "success", "session_id": session_id, "existed": existed}
 
@@ -635,6 +678,9 @@ def create_app() -> FastAPI:
                     continue
                 if (not (await asyncio.to_thread(_rl.check_rate_limit, ip_key)).allowed
                         or not (await asyncio.to_thread(_rl.check_session_rate_limit, session_id)).allowed):  # v2: may be Redis
+                    await send_error("Too many requests. Please slow down.")
+                    continue
+                if not await _new_session_allowed(ip_key, session_id):  # v2
                     await send_error("Too many requests. Please slow down.")
                     continue
 

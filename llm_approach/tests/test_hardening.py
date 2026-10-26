@@ -226,20 +226,20 @@ def _ready(monkeypatch, stats):
 
 def test_ready_when_model_and_collection_are_there(monkeypatch):
     r = _ready(monkeypatch, {"documents_loaded": 2, "chunks_indexed": 7, "embedding_model_available": True})
-    assert r.status_code == 200 and r.json()["knowledge"] == {"embedding_model": True, "chunks_indexed": 7}
+    assert r.status_code == 200 and {k: v for k, v in r.json()["knowledge"].items() if k != "placeholder"} == {"embedding_model": True, "chunks_indexed": 7}  # v2: placeholder has its own test
     assert r.json()["checks"]["knowledge_base"] is True
 
 
 def test_not_ready_when_the_embedding_model_did_not_load(monkeypatch):
     r = _ready(monkeypatch, {"documents_loaded": 2, "chunks_indexed": 0, "embedding_model_available": False})
     assert r.status_code == 503 and r.json()["checks"]["knowledge_base"] is False
-    assert r.json()["knowledge"] == {"embedding_model": False, "chunks_indexed": 0}
+    assert {k: v for k, v in r.json()["knowledge"].items() if k != "placeholder"} == {"embedding_model": False, "chunks_indexed": 0}  # v2: placeholder has its own test
 
 
 def test_not_ready_when_the_collection_is_empty(monkeypatch):
     r = _ready(monkeypatch, {"documents_loaded": 0, "chunks_indexed": 0, "embedding_model_available": True})
     assert r.status_code == 503 and r.json()["checks"]["knowledge_base"] is False
-    assert r.json()["knowledge"] == {"embedding_model": True, "chunks_indexed": 0}
+    assert {k: v for k, v in r.json()["knowledge"].items() if k != "placeholder"} == {"embedding_model": True, "chunks_indexed": 0}  # v2: placeholder has its own test
     assert "gsk_value_must_not_appear" not in r.text
 
 

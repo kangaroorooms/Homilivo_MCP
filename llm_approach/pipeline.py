@@ -10,6 +10,7 @@ cost up front.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import copy
 import logging
 import time
@@ -28,9 +29,11 @@ from llm_approach import (
     observability,
     prompts,
     responder,
+    reply_safety,
     reuse,
     semantic_gate,
     switches,
+    textclean,
     turn_context,
     turn_deadline,
     validators,
@@ -49,6 +52,7 @@ EMPTY_REPLY = "Please type a message and I'll help you find a room."
 OUTPUT_BLOCKED_REPLY = "Sorry, I can't share that. I can help you find a room, though. Which city are you looking in?"
 DEADLINE_REPLY = "That took too long, please try again"  # the server's turn deadline fired (turn_deadline.py)
 RATE_LIMIT_REPLY = "I'm getting a lot of requests right now, please try again in a minute."
+DEGRADED_NOTICE = "(I'm having trouble remembering our conversation right now, so you may need to repeat details.)"
 BLOCKED_PLACEHOLDER = "[message blocked]"  # stored in history instead of the blocked text
 
 _SEARCH_SLOTS = ("city", "bhk", "min_price", "max_price")
@@ -147,10 +151,48 @@ def _input_blocked(message: str) -> bool:
     return False
 
 
+def _room_texts(state: LLMConversationState) -> list[str]:
+    """Strings that came from room data and appear in replies: the rooms on screen and the titles shown earlier."""
+    texts: list[str] = []
+    for room in state.rooms_on_screen:
+        for key in ("title", "location", "landmark", "city", "roomType", "type", "description"):
+            if isinstance(room.get(key), str):
+                texts.append(room[key])
+        for key in ("amenities", "amenity", "facilities", "facility", "features", "idealFor"):
+            value = room.get(key)
+            texts += [v for v in (value if isinstance(value, list) else [value]) if isinstance(v, str)]
+    for entry in state.transcript:
+        texts += [t for t in entry.get("rooms") or [] if isinstance(t, str)]
+    return sorted({t for t in texts if len(t) >= 3}, key=len, reverse=True)
+
+
+def _mask(reply: str, texts: list[str]) -> str:
+    for text in texts:
+        reply = reply.replace(text, "·")
+    return reply
+
+
+def _guard(reply: str) -> bool:
+    # v2: the copied guardrail skips its word checks for a reply that starts with "| " (a table). This pipeline builds no
+    # tables, so a reply that starts that way is model text: a leading character removes the exemption.
+    return bool(reuse.get_output_guardrail()("." + reply if reply.lstrip().startswith("|") else reply)[0])
+
+
+_room_text_var: contextvars.ContextVar[list[str]] = contextvars.ContextVar("llm_approach_room_texts", default=[])  # per turn
+
+
 def _output_ok(reply: str) -> bool:
+    """Links, markdown and HTML are refused in any reply (only homilivo.com may appear). The copied output guardrail then runs
+    on the reply; if it refuses, it is asked again with the room-derived strings masked, so a listing named "Secret Garden"
+    cannot blank a result page: only the bot's own words count (v2)."""
+    if reply_safety.find_unsafe(reply):
+        return False
     if not _full_guardrails:
         return True
-    return bool(reuse.get_output_guardrail()(reply)[0])
+    if _guard(reply):
+        return True
+    masked = _mask(reply, _room_text_var.get())
+    return masked != reply and _guard(masked)
 
 
 # ---- helpers -------------------------------------------------------------
@@ -203,14 +245,10 @@ def _record_observability(
 async def _log_withheld(store: SessionStoreBackend, session_id: str, reply: str) -> None:
     """A too-long message still counts as a message the user sent: log a placeholder (and our reply)."""
     try:
-        if store.is_shared:  # a shared store needs the session lock for a read-modify-write
-            async with store.turn(session_id) as state:
-                state.record_query(None)
-                state.record_bot_reply(reply)
-            return
-        state = store.get_or_create(session_id)
-        state.record_query(None)
-        state.record_bot_reply(reply)
+        # v2: the session lock for every store: a turn that is running on this session must not see its state change under it
+        async with store.turn(session_id) as state:
+            state.record_query(None)
+            state.record_bot_reply(reply)
     except (ValueError, SessionBusyError):  # not a session id, or the session is busy: nothing to log against
         pass
 
@@ -367,7 +405,7 @@ async def _decide_action(
         return action, validated, rejected
 
     handler = _HANDLERS[decision.intent]
-    wants_message = (Intent.PLATFORM_INFO, Intent.NEW_SEARCH, Intent.REFINEMENT)  # the sort cue is read from the text
+    wants_message = (Intent.PLATFORM_INFO, Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.ROOM_FOLLOWUP)  # the sort cue is read from the text
     kwargs = {"user_message": message} if decision.intent in wants_message else {}
     if decision.intent in _THREADED:
         started = time.perf_counter()
@@ -450,7 +488,9 @@ async def handle_turn(
     started = time.perf_counter()
     m = metrics_mod.TurnMetrics()
     store = store or get_store()
-    text = message if isinstance(message, str) else ""
+    # v2: one normalisation at entry (NFKC, no invisible/format/tag characters); the length check, both security filters,
+    # the state and the model all get this same text, so the model never sees a phrase the filters did not.
+    text = textclean.normalize_input(message) if isinstance(message, str) else ""
     request_id = turn_context.requested_request_id() or str(uuid.uuid4())
     mode = turn_context.requested_mode() or "fast"
     ctx = turn_context.begin(request_id, session_id)
@@ -482,6 +522,7 @@ async def handle_turn(
                 m.action, m.tool_called = action.action, action.tool_called
                 m.error_class = action.error_class
 
+                _room_text_var.set(_room_texts(state))  # read by _output_ok in the worker thread (the context is copied)
                 if not await asyncio.to_thread(_output_ok, reply):
                     reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, [], "output_blocked"  # [] = no cards (None = unchanged)
                     state.rooms_on_screen, state.selected_room_index = [], None  # the user never saw these rooms: they must not be referable next turn
@@ -506,6 +547,9 @@ async def handle_turn(
                 state.record_turn(text, reply)
                 return _result(reply, rooms, m, success=False, started=started, state=state)
 
+            if getattr(state, "degraded_notice", False):  # the store could not load or save this session (Redis down)
+                reply = f"{reply}\n\n{DEGRADED_NOTICE}"  # fixed sentence, added after the output guard
+                observability.record_session_store_event("degraded_notice")
             state.record_bot_reply(reply, rooms)  # after the output guard
             state.record_turn(text, reply)
             return _result(reply, rooms, m, debug=debug, started=started, state=state)

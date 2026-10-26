@@ -146,6 +146,22 @@ def demo_token_limit() -> int:
     return _int_env(DEMO_TOKEN_LIMIT_ENV, DEFAULT_DEMO_TOKEN_LIMIT)
 
 
+# v2: per IP per minute. New sessions: a client that sends a new session_id every request would otherwise never meet the
+# per-session limit. Reset: /chat/reset has no other limit.
+NEW_SESSION_LIMIT_ENV = "LLM_APPROACH_NEW_SESSION_RATE_LIMIT"
+DEFAULT_NEW_SESSION_LIMIT = 10
+RESET_LIMIT_ENV = "LLM_APPROACH_RESET_RATE_LIMIT"
+DEFAULT_RESET_LIMIT = 10
+
+
+def new_session_limit() -> int:
+    return _int_env(NEW_SESSION_LIMIT_ENV, DEFAULT_NEW_SESSION_LIMIT)
+
+
+def reset_limit() -> int:
+    return _int_env(RESET_LIMIT_ENV, DEFAULT_RESET_LIMIT)
+
+
 def trusted_proxy_hops() -> int:
     """How many reverse proxies in front of the server append to X-Forwarded-For (default 0: use the TCP peer).
     A value that is not a non-negative integer is an error (not echoed): a typo must not silently trust nothing."""

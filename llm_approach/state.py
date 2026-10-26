@@ -32,7 +32,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable
 
-from llm_approach import config, observability, reuse, sorting
+from llm_approach import config, observability, reuse, sorting, textclean
 from llm_approach.actions import city_change
 from llm_approach.schema import FACT_KEYS
 
@@ -92,10 +92,33 @@ def normalize_session_id(session_id: Any) -> str:
     return session_id.strip().lower()
 
 
+# Length caps of the free-text fields of a stored room (characters); any other string gets ROOM_TEXT_DEFAULT_CAP.
+ROOM_TEXT_CAPS = {"title": 200, "description": 500, "location": 200, "landmark": 200, "city": 100, "roomType": 50,
+                  "type": 50, "availabilityStatus": 40, "id": 100}
+ROOM_TEXT_DEFAULT_CAP = 100  # an item of a list field (amenities, idealFor, ...)
+
+
+def _clean_room_text(key: str, value: Any) -> Any:
+    """Third-party text through the shared plain-text cleaner (tags, links, domains, markdown, control and invisible
+    characters out, length capped). A string that is empty after cleaning is dropped; non-text values pass through."""
+    cap = ROOM_TEXT_CAPS.get(key, ROOM_TEXT_DEFAULT_CAP)
+    if isinstance(value, str):
+        cleaned = textclean.clean_text(value, cap)
+        if key == "city" and cleaned != " ".join(value.split()):
+            return None  # an odd-looking city (markup, a fragment, ...) is dropped, not tidied into a plausible one
+        return cleaned
+    if isinstance(value, list):
+        return [c for c in (textclean.clean_text(i, cap) if isinstance(i, str) else i for i in value) if c is not None]
+    return value
+
+
 def clean_room(room: dict[str, Any]) -> dict[str, Any]:
-    """Allowlist the fields, then run the reused prompt sanitiser."""
+    """Allowlist the fields, run the reused prompt sanitiser, then the shared plain-text cleaner on every string.
+    Nothing a listing owner typed reaches state, cards or replies as markup (v2)."""
     kept = {k: v for k, v in room.items() if k in ROOM_ALLOWED_FIELDS}
-    return reuse.get_sanitize_room()(kept)
+    sanitized = reuse.get_sanitize_room()(kept)
+    cleaned = {k: _clean_room_text(k, v) for k, v in sanitized.items()}
+    return {k: v for k, v in cleaned.items() if v is not None}
 
 
 def _empty_search() -> dict[str, Any]:

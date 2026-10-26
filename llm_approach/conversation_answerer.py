@@ -217,6 +217,8 @@ async def answer_question(
         facts=pack["user_facts"],
         room_titles=[r["title"] for r in pack["rooms_on_screen"] if r.get("title")]
         + [t for v in shown for t in v.get("rooms", [])],
+        known_text=_dump(pack) + " " + question,  # v2: everything the model was shown, and the question
+        known_numbers=set(range(1, len(pack["rooms_on_screen"]) + 1)),  # room positions and how many rooms are on screen
     )
     action = "conversation_not_found" if reply == NOT_IN_CHAT else "conversation_answer"
     return AnswerOutcome(reply, action)

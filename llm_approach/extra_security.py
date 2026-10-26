@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from llm_approach import textclean
+
 # Same wording the app's hard block returns (app/guardrails/input_guardrail.py).
 REFUSAL = "I can only help with accommodation and room searches."
 
@@ -77,7 +79,7 @@ _COMPILED = [re.compile(p, re.IGNORECASE) for p in _PATTERNS]
 
 def normalize(message: str) -> str:
     """NFKC, strip zero-width characters, collapse whitespace."""
-    text = unicodedata.normalize("NFKC", message).translate(_ZERO_WIDTH)
+    text = textclean.strip_invisible(unicodedata.normalize("NFKC", message)).translate(_ZERO_WIDTH)  # v2: every invisible character, not seven
     return re.sub(r"[ \t\f\v]+", " ", text).strip()
 
 

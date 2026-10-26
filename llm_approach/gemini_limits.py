@@ -54,6 +54,50 @@ MAX_RETRY_WAIT_S = 60.0
 DEFAULT_RETRY_WAIT_S = 60.0  # a 429 that names no delay
 EST_COMPLETION_TOKENS = 250
 USAGE_WINDOW_S = 24 * 3600.0  # the rolling window for requests and tokens
+
+# v2: the three window numbers above are the defaults; a paid key sets its own through these variables.
+WINDOW_SECONDS_ENV = "LLM_APPROACH_GEMINI_WINDOW_SECONDS"
+WINDOW_MAX_REQUESTS_ENV = "LLM_APPROACH_GEMINI_WINDOW_MAX_REQUESTS"
+WINDOW_MAX_TOKENS_ENV = "LLM_APPROACH_GEMINI_WINDOW_MAX_TOKENS"
+# Every limit variable validate_env() checks: (name, whole number only).
+LIMIT_ENVS = (
+    (WINDOW_SECONDS_ENV, False), (WINDOW_MAX_REQUESTS_ENV, True), (WINDOW_MAX_TOKENS_ENV, True),
+    (config.GEMINI_SPACING_ENV, False), (config.GEMINI_REQUEST_BUDGET_ENV, True), (config.GEMINI_DAILY_BUDGET_ENV, True),
+)
+
+
+def _limit_env(name: str, whole: bool) -> float | None:
+    """The positive number in ``name``, None when it is unset. Raises ValueError (the name, never the value) otherwise."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        value = float("nan")
+    if not (value > 0 and value != float("inf")) or (whole and value != int(value)):
+        raise ValueError(f"{name} must be a positive {'whole ' if whole else ''}number")
+    return value
+
+
+def validate_env() -> None:
+    """Startup check of every Gemini limit variable: unset is fine, anything non-numeric or not positive raises ValueError."""
+    for name, whole in LIMIT_ENVS:
+        _limit_env(name, whole)
+
+
+def window_seconds() -> float:
+    return _limit_env(WINDOW_SECONDS_ENV, False) or WINDOW_S
+
+
+def window_max_requests() -> int:
+    value = _limit_env(WINDOW_MAX_REQUESTS_ENV, True)
+    return int(value) if value else WINDOW_MAX_REQUESTS
+
+
+def window_max_tokens() -> int:
+    value = _limit_env(WINDOW_MAX_TOKENS_ENV, True)
+    return int(value) if value else WINDOW_MAX_TOKENS
 MAX_SEED_REQUESTS = RPD_LIMIT
 
 DEFAULT_TURN_DEADLINE_S = 20.0  # v2: how long a turn may spend in the LLM step, waits included
@@ -299,6 +343,18 @@ class UsageCounter:
             self._write(entries)
             return sum(e["n"] for e in self._in_window(entries))
 
+    def add_if_room(self, budget: int, n: int = 1, tokens: int = 0, eid: str | None = None) -> bool:
+        """``add`` only while fewer than ``budget`` requests are counted; the check and the write are one step under
+        the lock (the caller runs this in a thread, so two tasks cannot both take the last request)."""
+        with self._lock:
+            entries = self._load()
+            if sum(e["n"] for e in self._in_window(entries)) >= budget:
+                return False
+            entries.append({"id": eid or uuid.uuid4().hex[:8], "t": self.wall().timestamp(), "n": n,
+                            "tokens": max(0, int(tokens))})
+            self._write(entries)
+            return True
+
     def set_tokens(self, eid: str, tokens: int) -> None:
         """Replace the estimated tokens of entry ``eid`` with the real count."""
         with self._lock:
@@ -384,7 +440,8 @@ class GeminiLimiter:
 
     def _trim(self) -> None:
         now = self.clock()
-        while self._window and now - self._window[0][0] >= WINDOW_S:
+        window = window_seconds()  # v2: was WINDOW_S
+        while self._window and now - self._window[0][0] >= window:
             self._window.popleft()
 
     def _wait_needed(self, estimate: int) -> float:
@@ -395,13 +452,14 @@ class GeminiLimiter:
         entries = list(self._window)
         requests, tokens = len(entries), sum(t for _, t in entries)
         wait, i = 0.0, 0
-        while requests + 1 > WINDOW_MAX_REQUESTS or tokens + estimate > WINDOW_MAX_TOKENS:
+        window, max_requests, max_tokens = window_seconds(), window_max_requests(), window_max_tokens()  # v2: were constants
+        while requests + 1 > max_requests or tokens + estimate > max_tokens:
             if i >= len(entries):  # the estimate alone is over the margin: nothing left to wait for
                 break
             started, spent = entries[i]
             i += 1
             requests, tokens = requests - 1, tokens - spent
-            wait = started + WINDOW_S - now
+            wait = started + window - now
         return max(0.0, wait)
 
     async def _sleep_within_deadline(self, wait: float) -> None:
@@ -421,17 +479,18 @@ class GeminiLimiter:
     async def _begin(self, budget: int, prompt_estimate: int) -> tuple[list[float], str]:
         """Cap check, window wait, then count the request. Returns the window entry and the counter entry id,
         to fix up afterwards."""
-        if self.counter.used_requests() >= budget:
+        # v2: the counter file is read and written (with fsync) in a worker thread, never on the event loop
+        if await asyncio.to_thread(self.counter.used_requests) >= budget:
             raise RequestCapReached()
         estimate = self._last_tokens if self._last_tokens is not None else prompt_estimate
         wait = self._wait_needed(estimate)
         while wait > 0:
             await self._sleep_within_deadline(wait)
             wait = self._wait_needed(estimate)
-        if self.counter.used_requests() >= budget:  # another task may have used the last request while we waited
-            raise RequestCapReached()
         eid = uuid.uuid4().hex[:8]
-        self.counter.add(1, tokens=estimate, eid=eid)  # counted before it is sent: failed calls and retries count too
+        # counted before it is sent: failed calls and retries count too; the cap is re-checked in the same step
+        if not await asyncio.to_thread(self.counter.add_if_room, budget, 1, estimate, eid):
+            raise RequestCapReached()  # another task used the last request while we waited
         entry = [self.clock(), float(estimate)]
         self._window.append(entry)
         return entry, eid
@@ -458,7 +517,7 @@ class GeminiLimiter:
             if used:
                 entry[1] = float(used)
                 self._last_tokens = int(used)
-                self.counter.set_tokens(eid, int(used))
+                await asyncio.to_thread(self.counter.set_tokens, eid, int(used))
             return result
         raise RateLimitRetried()  # not reached
 

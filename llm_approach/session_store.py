@@ -58,6 +58,7 @@ except ImportError:  # pragma: no cover - redis is in requirements.txt
 logger = logging.getLogger(__name__)
 
 _LOCK_POLL_S = 0.05
+_MAX_DEGRADED_TRACKED = 10_000
 
 
 class SessionStoreBackend(Protocol):
@@ -133,6 +134,7 @@ class RedisSessionStore:
         self._sleep = sleep
         self._mono = monotonic
         self._locals: dict[str, _Local] = {}
+        self._degraded: set[str] = set()  # v2: sessions whose last turn ran without Redis (one notice per such period)
 
     # ---- copied from app/session_store.py -----------------------------------
 
@@ -366,6 +368,13 @@ class RedisSessionStore:
                     degraded = state is None
                     if degraded:
                         state = self._fresh()  # Redis unreachable: this turn answers from a fresh state and saves nothing
+                        if len(self._degraded) > _MAX_DEGRADED_TRACKED:
+                            self._degraded.clear()  # bounded: a repeat notice after a huge outage is harmless
+                        # v2: not a state field (never saved): tells the pipeline to add the fixed notice, once per degraded period
+                        state.degraded_notice = sid not in self._degraded
+                        self._degraded.add(sid)
+                    else:
+                        self._degraded.discard(sid)
                     turns_before = state.turn_count
                     try:
                         yield state
@@ -388,6 +397,10 @@ class RedisSessionStore:
             local.active -= 1
             if local.active == 0 and self._locals.get(sid) is local:
                 del self._locals[sid]
+
+    def is_degraded(self, session_id: str) -> bool:
+        """Whether this session's last turn ran without Redis (v2)."""
+        return session_id in self._degraded
 
     def get_or_create(self, session_id: str) -> LLMConversationState:
         """The stored state or a fresh one. Not locked and **not saved**: changes to the returned state are

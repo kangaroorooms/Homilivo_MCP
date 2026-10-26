@@ -26,7 +26,7 @@ from typing import Any, Callable  # v2: the original imports Any at the top of a
 
 import httpx  # v2: the original imports it inside fetch_subscription_plans
 
-from llm_approach import config  # v2: offline switch name
+from llm_approach import config, textclean  # v2: offline switch name; the shared text cleaner
 
 logger = logging.getLogger(__name__)  # v2: module logger, as in agent_modes.py
 
@@ -123,19 +123,11 @@ def clean_city(value: Any) -> str | None:  # v2: new
 
 # ---- v2: validating the response ---------------------------------------------
 
-_URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)  # v2: added
-_TAG_RE = re.compile(r"<[^>]*>")  # v2: added
-_STRIP_RE = re.compile(r"[\x00-\x1f\x7f<>\[\]()*_`#|~\\{}]")  # v2: markdown and HTML characters, control characters
-
-
 def clean_text(value: Any, limit: int) -> str | None:  # v2: new
-    """Plain text from an API string: tags, links, markdown characters and control characters removed, whitespace
-    collapsed, cut at ``limit``. None when nothing is left or the value is not a string."""
-    if not isinstance(value, str):
-        return None
-    text = _STRIP_RE.sub(" ", _URL_RE.sub(" ", _TAG_RE.sub(" ", value)))
-    text = re.sub(r"\s+", " ", text).strip()[:limit].strip()
-    return text or None
+    """Plain text from an API string: tags, links, domains, markdown characters, control and invisible characters removed,
+    whitespace collapsed, cut at ``limit``. None when nothing is left or the value is not a string. The shared cleaner
+    (``textclean.clean_text``) is also used for room text."""
+    return textclean.clean_text(value, limit)
 
 
 class BadPlanData(ValueError):  # v2: new

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from llm_approach import reply_safety
 from llm_approach.actions import ActionResult, TurnBudget
 from llm_approach.schema import Decision
 from llm_approach.state import LLMConversationState
@@ -41,12 +42,15 @@ _UNSAFE_WORDS = re.compile(
     r"discount\w*|offers?|deposit)\b",
     re.IGNORECASE,
 )
+_MARKUP_CHARS = re.compile(r"[\[\]<>`]|//|\]\(")  # v2: bracket, angle, backtick and slash-slash characters
 _UNSAFE_CHARS = re.compile(r"[\d₹$€£]|https?:|www\.")
 
 
 def is_safe_text(text: Any) -> bool:
     """True if free text has no digits, currency, price/room/platform words."""
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_SAFE_CHARS:
+        return False
+    if reply_safety.find_unsafe(text) or _MARKUP_CHARS.search(text):  # v2: no links, markdown or HTML in model text
         return False
     return not (_UNSAFE_CHARS.search(text) or _UNSAFE_WORDS.search(text))
 

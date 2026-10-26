@@ -55,6 +55,7 @@ class RoomsResult:
     api_count: int | None = None  # rooms returned by the API, before the area and amenity filters
     fetch_limit: int | None = None  # the limit the fetch asked for
     truncated: bool = False  # more matching rooms than the display limit
+    dropped: int = 0  # rooms the API returned that contradicted the search (v2)
     area_matches: int | None = None  # rooms that matched the area (None: no area asked)
     areas: list[str] = field(default_factory=list)  # real locations of the fetched rooms (area searches)
     total: int | None = None  # meta.total: matching rooms before paging (None: meta missing or malformed)
@@ -191,6 +192,49 @@ def distinct_locations(rooms: list[dict[str, Any]]) -> list[str]:
     return list(seen.values())
 
 
+def _canon_city(value: Any) -> str:
+    """Lowercase, spaces collapsed, aliases mapped to the canonical name ("Bengaluru" -> "bangalore")."""
+    from llm_approach import validators  # lazy: validators does not import this module, but keep the import graph flat
+
+    text = re.sub(r"\s+", " ", str(value or "")).strip().lower()
+    return validators._city_candidates().get(text, text)
+
+
+def _type_key(value: Any) -> str:
+    return re.sub(r"[\s_-]+", "", str(value or "")).upper()
+
+
+def contradicts(room: dict[str, Any], search: dict[str, Any]) -> bool:
+    """A room that clearly contradicts the search: another city, a price above the maximum or below the minimum, a room type
+    that is not one asked for. A field the room or the search does not have never counts against the room."""
+    want_city, room_city = search.get("city"), room.get("city")
+    if want_city and room_city and _canon_city(want_city) != _canon_city(room_city):
+        return True
+    price = _room_price(room)
+    if price is not None:
+        if search.get("max_price") is not None and price > search["max_price"]:
+            return True
+        if search.get("min_price") is not None and price < search["min_price"]:
+            return True
+    wanted_types = _room_types_param(search)
+    room_type = room.get("roomType") or room.get("type")
+    if wanted_types and room_type:
+        if _type_key(room_type) not in {_type_key(t) for t in wanted_types.split(",")}:
+            return True
+    return False
+
+
+def drop_off_criteria(rooms: list[dict[str, Any]], search: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+    """``(rooms that fit, how many were dropped)``; every dropped room is counted (fixed word) in the metrics."""
+    kept = [r for r in rooms if not contradicts(r, search)]
+    for _ in range(len(rooms) - len(kept)):
+        try:
+            observability.record_turn_event("rooms_off_criteria")
+        except Exception:  # noqa: BLE001 - metrics never break a search
+            pass
+    return kept, len(rooms) - len(kept)
+
+
 def _finish(
     fetched: list[dict[str, Any]],
     search: dict[str, Any],
@@ -205,6 +249,8 @@ def _finish(
     """The one place where area and amenity filters and the display cut happen,
     for the live API and the offline fixture alike."""
     area = search.get("area")
+    fetched_all = fetched
+    fetched, dropped = drop_off_criteria(fetched, search)  # v2: rooms that contradict the search are not shown
     matched = filter_by_area(fetched, area)
     found = filter_by_amenity(matched, search.get("amenity"))
     shown = found[:display_limit]
@@ -212,7 +258,8 @@ def _finish(
         ok=True,
         rooms=[clean_room(r) for r in shown],
         status=status,
-        api_count=len(fetched),
+        api_count=len(fetched_all),
+        dropped=dropped,
         fetch_limit=fetch_limit,
         truncated=len(found) > len(shown),
         area_matches=len(matched) if area else None,

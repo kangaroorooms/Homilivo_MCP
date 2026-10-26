@@ -11,6 +11,7 @@ Targeting rules:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from llm_approach import reuse
@@ -56,10 +57,19 @@ def _explicit_target(validated, state) -> tuple[int, dict] | None:
     return None
 
 
-def _target(validated, state) -> tuple[int, dict] | None:
-    """Explicit reference, else the selected room."""
+# A pronoun refers to the room in focus ("how much is it"); anything else without a reference is not a pointer to it.
+_PRONOUN = re.compile(r"\b(?:it|its|this|that|ye|yeh|woh|wo|iska|uska|isme|usme|is\s+wala|us\s+wala)\b", re.IGNORECASE)
+
+
+def _target(validated, state, user_message: str | None = None) -> tuple[int, dict] | None:
+    """The explicit reference ("selected" included). With no reference: the only room on screen; the selected room only when
+    the message points at it with a pronoun ("how much is it"); otherwise None and the caller asks which room. The model's
+    missing reference is never read as "the room selected earlier" when the message names another ("the third one") (v2).
+    ``user_message`` None (no message known): the selected room, as before."""
     found = _explicit_target(validated, state)
-    if found is None and state.selected_room_index is not None:
+    if found is None and len(state.rooms_on_screen) == 1:
+        found = 1, state.rooms_on_screen[0]
+    if found is None and state.selected_room_index is not None and (user_message is None or _PRONOUN.search(user_message)):
         found = state.selected_room_index, state.selected_room()
     return found
 
@@ -168,6 +178,7 @@ def handle_followup(
     validated: dict[str, Any],
     state: LLMConversationState,
     budget: TurnBudget,
+    user_message: str | None = None,
 ) -> ActionResult:
     if not state.rooms_on_screen:
         return _result(SEARCH_FIRST, "followup_no_rooms")
@@ -195,7 +206,7 @@ def handle_followup(
             "followup_compare",
         )
 
-    target = _target(validated, state)
+    target = _target(validated, state, user_message)
     if target is None:
         return _ask_which(state)
     index, room = target

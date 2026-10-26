@@ -398,7 +398,7 @@ def test_the_chat_and_websocket_limits_use_the_forwarded_address_only_when_asked
             client.post("/chat", json={"message": "hi"}, headers={**AUTH, **forged})
             with client.websocket_connect("/ws/chat?token=abc", headers=forged) as ws:
                 ws_turn(ws, message="hi")
-        return {k for k in recorder.keys if not k.startswith("session:")}
+        return {k.removeprefix("newsession:") for k in recorder.keys if not k.startswith("session:")}  # v2: the new-session budget is keyed by the same address
 
     assert run() == {"testclient"}  # default: the TCP peer, the header is ignored
     monkeypatch.setenv("LLM_APPROACH_TRUSTED_PROXY_HOPS", "1")

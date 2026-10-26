@@ -164,7 +164,7 @@ Still open after Phase 3A:
 | RedisSessionStore | **done**: load before the turn, save after, idle TTL 3600 s, cap 1000 (LRU sorted set), copied from app/session_store.py (`_key`, `_evict_expired`, `_enforce_cap`; drift-tested); key prefix `homilivo:v2:` so v2 never touches app/ sessions | session_store.py |
 | Redis down | **done**: the turn answers from a fresh in-memory state and saves nothing (so a fresh state can never overwrite the real session when Redis returns), error logged by class name only, counted as `session_store_events.redis_unavailable` in /metrics | session_store.py, observability.py |
 | /ready | **done**: with Redis sessions, `session_store: {backend, redis_reachable}` is added. It is reported, not required: with Redis down turns still answer, so the load balancer is not told to drain the server | server_app.py |
-| Cross-server lock | **done**: per-session `SET NX PX` with a random token, release and refresh only if the token still matches (WATCH, no Lua), the in-process `asyncio.Lock` kept, one wait bound (`LLM_APPROACH_SESSION_LOCK_WAIT_S`, 30 s) for both. At the bound the pipeline answers `RATE_LIMIT_REPLY` ("...please try again in a minute"), action `session_busy`, no LLM call | session_store.py, pipeline.py |
+| Cross-server lock | **done**: per-session `SET NX PX` with a random token, release and refresh only if the token still matches (WATCH, no Lua), the in-process `asyncio.Lock` kept, one wait bound (`LLM_APPROACH_SESSION_LOCK_WAIT_S`, **10 s**; it was 30 s when this phase was built) for both. At the bound the pipeline answers `RATE_LIMIT_REPLY` ("...please try again in a minute"), action `session_busy`, no LLM call | session_store.py, pipeline.py |
 | 429 wait under the lock | **done by refreshing**: the lock lives 30 s (`LLM_APPROACH_SESSION_LOCK_TTL_MS`) and a background task renews it every TTL/3 while the turn runs, up to a hard cap of 120 s (`LLM_APPROACH_SESSION_LOCK_MAX_HOLD_S`, above the 60 s Gemini wait plus the 25 s call budget). A crashed server's lock lapses after 30 s. Lost lock and cap hits are counted (`lock_lost`, `lock_hold_cap`) | session_store.py |
 | Reset during a turn | **done**: a reset while a turn holds the lock leaves a marker, so that turn does not save the session back | session_store.py |
 | Config | `STATE_BACKEND` and `REDIS_URL` (same names and defaults as app/); new: `LLM_APPROACH_REDIS_TIMEOUT_S` (1.0), `LLM_APPROACH_SESSION_LOCK_TTL_MS`, `_WAIT_S`, `_MAX_HOLD_S`. A bad `STATE_BACKEND` stops the server at startup; Redis being down at startup does not | config.py, server_app.py |
@@ -297,7 +297,7 @@ Guardrails are not enough for production. Each item is marked with who must act.
 Decided on 25 October 2026: production uses a paid Gemini key later. The free-tier limits and the evaluation results in this plan belong to the free key, so do these in order before go-live:
 
 - [ ] **Paid key and data terms.** Get the paid key from the team lead. Read the paid tier's data terms (whether prompts are used for training or retained) and have them approved. Set `GEMINI_API_KEY` in the server environment only, never in the repo or logs.
-- [ ] **Update the free-tier limits in config.py** to the paid tier's published limits: the 5 s spacing between requests, the 450 requests per day cap, and the 12 requests and 200K tokens per 60 s window. Change them through the existing environment settings or the constants in config.py and gemini_limits.py, and update the tests that pin the old numbers.
+- [ ] **Set the paid tier's limits** (now environment settings, see README "When the Gemini key is paid"; no code change needed). Was: update the free-tier limits in config.py to the paid tier's published limits: the 5 s spacing between requests, the 450 requests per day cap, and the 12 requests and 200K tokens per 60 s window. Change them through the existing environment settings or the constants in config.py and gemini_limits.py, and update the tests that pin the old numbers.
 - [ ] **Rerun the full evaluation, the live scenarios and the consistency check** (3 runs) on the paid key. Compare with the quality gates above (pooled accuracy at least 92.0%, ctxY at least 67.7%, invalid searches 0, safety unchanged, at least 95% identical decisions across runs). Record the new prompt fingerprint.
 - [ ] **Decide the Groq fallback.** It stays off (`LLM_APPROACH_FALLBACK_PROVIDER` unset) until its answers have been evaluated with the same sets. Switch it on only after that evaluation passes and the team lead agrees.
 - [ ] **Set `LLM_APPROACH_SEMANTIC_GATE` from a week of shadow logs.** Keep `shadow` while the log shows would-blocks on legitimate messages; move to `enforce` only when a week shows none (see Phase 3B, open items). Use `scripts/gate_report.py --log <server log>`.
@@ -416,3 +416,16 @@ Done, each with tests (`test_prod_hardening.py`, `test_limiter_breaker.py`, `tes
 - **mcp_search.py.** The two malformed-response log lines now carry the length and an error word (`JSONDecodeError` or `UnexpectedShape`), never part of the body. Marked `# v2: was:`; header updated; drift test green; test in `test_mcp_log.py`.
 
 **Still open:** no real authentication on `/chat` and `/ws/chat` (any non-empty token is accepted, as in the current backend); the WebSocket token is still in the query string.
+
+## What to set when the Gemini key is paid (names only)
+
+The limiter defaults are the free-tier values; each is an environment setting now (a bad value stops start-up). Take the numbers from the plan's published limits.
+
+| Setting | Controls |
+|---|---|
+| `LLM_APPROACH_GEMINI_WINDOW_MAX_REQUESTS` / `_WINDOW_MAX_TOKENS` / `_WINDOW_SECONDS` | Requests and tokens allowed in one window, and the window length |
+| `LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET` | Requests per 24 hours, per instance |
+| `LLM_APPROACH_GEMINI_DAILY_TOKEN_BUDGET` | Token cap per day for the evaluation runners |
+| `LLM_APPROACH_GEMINI_SPACING_S` | Pause between the runners' live calls |
+| `LLM_APPROACH_GEMINI_DAY_RESET` | Fixed daily boundary |
+| `LLM_APPROACH_GEMINI_TIMEOUT_S`, `LLM_APPROACH_GEMINI_TURN_DEADLINE_S` | Call timeout and LLM-step deadline |

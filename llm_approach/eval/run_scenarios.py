@@ -3,7 +3,8 @@
 Two modes:
 
 * ``--stub``: scripted decisions, fake guardrails/knowledge base, offline rooms.
-  No network, no torch. This is what pytest uses.
+  No network, no torch. This is what pytest uses. **Its numbers are circular** (the scenario scripts the decision it then
+  expects, and the guardrails allow everything): they show the code paths work, they are not accuracy evidence.
 * ``--live``: the real LLM provider (Gemini by default; the key comes from ``.env``) with the offline rooms
   fixture and the real guardrails. Never run by pytest. ``--spacing`` waits
   between LLM calls to respect the tokens-per-minute limit.
@@ -504,6 +505,9 @@ def main(argv: list[str] | None = None) -> int:
     ran = [r for r in reports if not r.skipped]
     failed = [r for r in ran if not r.passed]
     print(f"\n{len(ran) - len(failed)}/{len(ran)} turns passed, {len(reports) - len(ran)} skipped ({run_mode} mode)")
+    if run_mode == "stub":
+        print("Stub mode is circular: the decisions are scripted by the scenarios and the guardrails are allow-all stubs. "
+              "It checks the code paths, not accuracy. Only --live results count as evidence.")
     if run_mode == "live":
         now_done = finished_scenarios({s["id"]: len(s["turns"]) for s in scenarios})
         done = sum(1 for s in scenarios if not s.get("stub_only") and s["id"] in now_done)

@@ -745,7 +745,7 @@ def test_chat_endpoint_with_the_redis_store_reads_the_state_from_the_turn(redis_
     monkeypatch.setattr(store, "peek", lambda s: reads.append(s) or real_peek(s))
     body = redis_client.post("/chat", json={"message": "rooms in bangalore", "session_id": session},
                              headers={"Authorization": "Bearer x"}).json()
-    assert body["success"] and body["room_count"] > 0 and reads == []  # no second store read for the reply
+    assert body["success"] and body["room_count"] > 0 and reads == [session]  # v2: only the new-session limit check reads; no second store read for the reply
     assert real_peek(session).rooms_on_screen
     assert redis_client.post(f"/chat/reset?session_id={session}").json()["existed"] is True
     assert real_peek(session) is None

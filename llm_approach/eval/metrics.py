@@ -166,9 +166,12 @@ def slot_accuracy(results: Iterable[dict], fields: Iterable[str] = SLOT_FIELDS) 
     """Per field, over ok records with slot gold: validated value equals gold (no gold value means None).
     ``overall`` counts every (item, field) pair; ``exact`` counts items with all fields right."""
     fields = tuple(fields)
-    rows = [r for r in results if r.get("status") == "ok" and r.get("gold_slots") is not None]
+    # an invalid-JSON record (no decision) counts as wrong, like in intent accuracy; a call that failed (rate limit, error) is not an answer
+    rows = [r for r in results if r.get("status") in ("ok", "invalid") and r.get("gold_slots") is not None]
 
     def right(r: dict, f: str) -> bool:
+        if r.get("status") != "ok":
+            return False
         return _norm(r["gold_slots"].get(f)) == _norm((r.get("validated_slots") or {}).get(f))
 
     out: dict[str, dict[str, Any]] = {f: proportion(sum(right(r, f) for r in rows), len(rows)) for f in fields}
@@ -200,18 +203,29 @@ def invalid_slot_rate(results: Iterable[dict]) -> dict[str, Any]:
 
 
 def invalid_search_rate(results: Iterable[dict]) -> dict[str, Any]:
-    """Decisions that would trigger a search while carrying a rejected city/BHK/price.
-    ``would_search`` is recorded with the pipeline's rule (a rejected search slot makes
-    it ask instead), so this is 0 unless that rule is broken."""
+    """Search-intent decisions that would reach the rooms API with something invalid: a rejected city/BHK/price, or search
+    arguments that the parameter guardrail refuses. ``would_search`` and ``search_args_valid`` are recorded by the runner from
+    the pipeline's own rule (``pipeline._clarify_rejected``) and the real parameter guardrail on the search the handler would
+    build, so the number can be above 0. Records from before ``search_args_valid`` existed only have the first test."""
     rows = [r for r in results if r.get("status") == "ok" and r.get("intent") in SEARCH_INTENTS]
-    bad = sum(bool(r.get("would_search")) and bool(set(r.get("rejected") or []) & set(SEARCH_SLOT_FIELDS)) for r in rows)
+    bad = sum(bool(r.get("would_search"))
+              and (bool(set(r.get("rejected") or []) & set(SEARCH_SLOT_FIELDS)) or r.get("search_args_valid") is False)
+              for r in rows)
     return proportion(bad, len(rows))
 
 
 def invalid_json_rate(results: Iterable[dict]) -> dict[str, Any]:
-    """Calls that produced no usable decision (invalid JSON twice, timeout, API error), rate limits excluded."""
+    """The earlier definition, kept as its own line: invalid JSON twice only, among answered calls (``ok`` and
+    ``invalid``). Timeouts and API errors (status ``error``) are NOT in it; see ``no_usable_decision_rate``."""
     rows = scored(results)
     return proportion(sum(r["status"] == "invalid" for r in rows), len(rows))
+
+
+def no_usable_decision_rate(results: Iterable[dict]) -> dict[str, Any]:
+    """Calls that produced no usable decision: invalid JSON twice, a timeout or another API error. Among ``ok``, ``invalid``
+    and ``error`` records; a rate-limit miss (we were throttled) stays out, and is reported with the failed calls."""
+    rows = [r for r in results if r.get("status") in ("ok", "invalid", "error")]
+    return proportion(sum(r["status"] in ("invalid", "error") for r in rows), len(rows))
 
 
 def decision_key(r: dict) -> tuple:

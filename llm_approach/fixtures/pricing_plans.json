@@ -1,0 +1,12 @@
+{
+  "bangalore": [
+    {"plan": "free", "price": 0, "features": ["Browse listings"]},
+    {"plan": "gold", "price": 149, "features": ["Contact 5 owners"]},
+    {"plan": "platinum", "price": 299, "features": ["Unlimited contacts"]}
+  ],
+  "pune": [
+    {"plan": "free", "price": 0, "features": ["Browse listings"]},
+    {"plan": "gold", "price": 99, "features": ["Contact 3 owners"]}
+  ],
+  "mumbai": []
+}

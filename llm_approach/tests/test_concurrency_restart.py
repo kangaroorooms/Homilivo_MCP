@@ -116,7 +116,7 @@ def test_server_keeps_working_after_a_simulated_restart(monkeypatch):
     monkeypatch.setenv("KANGAROO_TOKEN", "fake-rooms-credential")
     monkeypatch.setattr(reuse, "get_is_security_blocked", lambda: (lambda m: (False, "")))
     monkeypatch.setattr(reuse, "get_output_guardrail", lambda: (lambda t: (True, t)))
-    from app.rate_limit import InMemoryRateLimiter
+    from llm_approach.security.rate_limit import InMemoryRateLimiter  # v2: was: from app.rate_limit import InMemoryRateLimiter
 
     limiter = InMemoryRateLimiter()
     monkeypatch.setattr(server_app._rl, "get_rate_limiter", lambda: limiter)

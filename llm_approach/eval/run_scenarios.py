@@ -3,7 +3,8 @@
 Two modes:
 
 * ``--stub``: scripted decisions, fake guardrails/knowledge base, offline rooms.
-  No network, no torch. This is what pytest uses.
+  No network, no torch. This is what pytest uses. **Its numbers are circular** (the scenario scripts the decision it then
+  expects, and the guardrails allow everything): they show the code paths work, they are not accuracy evidence.
 * ``--live``: the real LLM provider (Gemini by default; the key comes from ``.env``) with the offline rooms
   fixture and the real guardrails. Never run by pytest. ``--spacing`` waits
   between LLM calls to respect the tokens-per-minute limit.
@@ -40,7 +41,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from llm_approach import config, llm_client, pipeline, reuse, rooms_client  # noqa: E402
 from llm_approach import gemini_limits, prompt_fingerprint  # noqa: E402
-from llm_approach.eval import run_eval, runs as runs_mod  # noqa: E402
+from llm_approach.eval import fake_rooms_api, run_eval, runs as runs_mod  # noqa: E402
 from llm_approach.schema import parse_decision  # noqa: E402
 from llm_approach.state import SessionStore  # noqa: E402
 
@@ -160,14 +161,6 @@ def _env(**values: str | None) -> Iterator[None]:
                 os.environ[key] = value
 
 
-class _FakeResponse:
-    def __init__(self, status: int) -> None:
-        self.status_code = status
-
-    def json(self) -> dict:
-        return {"success": False, "message": "internal error"}
-
-
 @contextlib.contextmanager
 def runtime(
     scenario: dict[str, Any], mode: str, script: list[Any], spy: _Spy, answers: list[Any] | None = None
@@ -214,7 +207,7 @@ def runtime(
             stack.enter_context(_patched(reuse, "get_answer_platform_question", lambda: (lambda q: dict(kb_answer))))
             if scenario.get("rooms_http_status"):
                 status = int(scenario["rooms_http_status"])
-                stack.enter_context(_patched(rooms_client, "_httpx_get", lambda *a, **k: _FakeResponse(status)))
+                stack.enter_context(fake_rooms_api.failing_rooms_api(status))
                 stack.enter_context(_env(**{config.OFFLINE_ROOMS_ENV: None, "KANGAROO_TOKEN": "stub-token-not-real"}))
             elif scenario.get("rooms_fixture"):  # a file under fixtures/, e.g. a larger synthetic list
                 fixture = Path(__file__).resolve().parents[1] / "fixtures" / scenario["rooms_fixture"]
@@ -512,6 +505,9 @@ def main(argv: list[str] | None = None) -> int:
     ran = [r for r in reports if not r.skipped]
     failed = [r for r in ran if not r.passed]
     print(f"\n{len(ran) - len(failed)}/{len(ran)} turns passed, {len(reports) - len(ran)} skipped ({run_mode} mode)")
+    if run_mode == "stub":
+        print("Stub mode is circular: the decisions are scripted by the scenarios and the guardrails are allow-all stubs. "
+              "It checks the code paths, not accuracy. Only --live results count as evidence.")
     if run_mode == "live":
         now_done = finished_scenarios({s["id"]: len(s["turns"]) for s in scenarios})
         done = sum(1 for s in scenarios if not s.get("stub_only") and s["id"] in now_done)

@@ -127,3 +127,20 @@ def build_state(ctx: bool) -> dict[str, Any]:
     if ctx:
         state.apply_search_result({"city": "Bangalore"}, load_rooms())
     return prompts.build_state_summary(state.to_prompt_state())
+
+
+def _norm_text(text: str) -> str:
+    import re
+
+    return re.sub(r"[^a-z0-9 ]", "", str(text).lower()).strip()
+
+
+def few_shot_item_ids(items: list[dict[str, Any]] | None = None) -> set[str]:
+    """Ids of evaluation items whose text is, after lower-casing and dropping punctuation, exactly one of the user messages in
+    the prompt's few-shot examples (``prompts.FEW_SHOT_EXAMPLES``). Nothing is edited: the items and the prompt stay as they are."""
+    from llm_approach import prompts
+
+    shots = {_norm_text(message) for _state, message, _decision in prompts.FEW_SHOT_EXAMPLES}
+    if items is None:
+        items = [item for name in DATASETS for item in load_dataset(name)]
+    return {item["item"] for item in items if _norm_text(item["text"]) in shots}

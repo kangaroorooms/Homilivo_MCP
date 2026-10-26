@@ -63,7 +63,7 @@ def limits_lines() -> list[str]:
         f"Gemini tokens used {window}: {tokens_used} of " + (f"{tokens} (our own budget)" if tokens else "no budget set"),
         free_line,
         f"Gemini spacing: {config.spacing_s('gemini'):g} s between live calls "
-        f"(window guard: {gemini_limits.WINDOW_MAX_REQUESTS} requests and {gemini_limits.WINDOW_MAX_TOKENS} tokens per 60 s)",
+        f"(window guard: {gemini_limits.window_max_requests()} requests and {gemini_limits.window_max_tokens()} tokens per {gemini_limits.window_seconds():g} s)",
     ]
 
 

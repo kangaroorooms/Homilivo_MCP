@@ -45,6 +45,74 @@ class FakeGroq:
 
 
 @pytest.fixture(autouse=True)
+def _skip_secret_check(monkeypatch):
+    """Most tests start the app without real keys. The fail-fast secret check has its own tests
+    (test_phase2_wiring.py), which remove this variable."""
+    from llm_approach import server_app
+
+    monkeypatch.setenv("LLM_APPROACH_SKIP_SECRET_CHECK", "1")
+    monkeypatch.setattr(server_app, "ALLOW_SECRET_CHECK_SKIP", True)  # the app ignores the variable without this
+
+
+@pytest.fixture(autouse=True)
+def _no_pricing_network(monkeypatch):
+    """No test reaches the real pricing API: an unfaked live call fails fast. Tests of the client install a fake."""
+    from llm_approach import pricing_client
+
+    def blocked(*args, **kwargs):
+        raise RuntimeError("the pricing API is not reachable from tests")
+
+    blocked.original = pricing_client._httpx_get  # the one test of the real wrapper reads it
+    monkeypatch.setattr(pricing_client, "_httpx_get", blocked)
+
+
+@pytest.fixture(autouse=True)
+def _knowledge_stats_healthy(monkeypatch):
+    """The startup preload now reads the knowledge-base index stats: tests must not load the embedding model or
+    build Chroma. Tests of the real readiness logic (test_ready_knowledge.py) override this."""
+    from llm_approach import reuse
+
+    monkeypatch.setattr(
+        reuse, "get_knowledge_index_stats",
+        lambda: (lambda: {"documents_loaded": 2, "chunks_indexed": 7, "embedding_model_available": True}),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _knowledge_cache_empty(monkeypatch):
+    """/ready may pick up a knowledge index that loaded after a failed start; no test inherits one from another test."""
+    from llm_approach import reuse
+
+    monkeypatch.setattr(reuse, "get_knowledge_cached_stats", lambda: (lambda: None))
+
+
+@pytest.fixture(autouse=True)
+def _semantic_gate_off(monkeypatch):
+    """The semantic gate is shadow in a production-configured app: tests must not load the embedding model
+    unless they say so (tests/test_semantic_gate.py sets the mode itself)."""
+    from llm_approach import switches
+
+    monkeypatch.setenv("LLM_APPROACH_SEMANTIC_GATE", "off")
+    before = switches.semantic_gate()
+    yield
+    switches.configure(semantic_gate=before)
+
+
+@pytest.fixture(autouse=True)
+def _llm_failure_env(monkeypatch):
+    """No test inherits the developer's fallback or breaker settings, or another test's breaker state."""
+    from llm_approach import llm_resilience
+
+    for name in ("LLM_APPROACH_FALLBACK_PROVIDER", "LLM_APPROACH_BREAKER_FAILURES",
+                 "LLM_APPROACH_BREAKER_COOLDOWN_SECONDS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LLM_APPROACH_5XX_RETRY_DELAY_SECONDS", "-1")  # 5xx retry off; its tests turn it on
+    llm_resilience.reset()
+    yield
+    llm_resilience.reset()
+
+
+@pytest.fixture(autouse=True)
 def _provider_env(monkeypatch):
     """The developer's own provider settings must not change a test: start from the defaults (Gemini)."""
     for name in ("LLM_APPROACH_PROVIDER", "LLM_APPROACH_GEMINI_MODEL", "LLM_APPROACH_GEMINI_SPACING_S",

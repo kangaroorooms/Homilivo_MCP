@@ -59,7 +59,8 @@ def test_rate_limit_misses_are_reported_not_scored(results):
     run(["golden"], results, make_decide(["rate_limit", "rate_limit", GOOD]), sample=2)
     md, data = report.build_report(results)
     assert data["coverage"]["golden"]["rate_limit_misses"] == 1 and data["coverage"]["golden"]["done"] == 1
-    assert "Rate-limit misses (1)" in md
+    assert "Failed calls (rate limit, timeout, other)" in md and "Failed calls: 1 (rate limit 1, timeout 0" in md
+    assert data["failed_calls"]["by_kind"]["rate_limit"] == 1
     assert data["intent_accuracy"]["golden"]["strict"]["n"] == 1
 
 
@@ -162,7 +163,7 @@ def test_robustness_cases_are_clean():
     rep = run_robustness.run_all()
     assert rep["n"] == 7 and rep["clean"] == 7
     kinds = {r["case"]: r["reply_kind"] for r in rep["rows"]}
-    assert kinds["groq_rate_limit"] == "rate_limit_busy"
+    assert kinds["groq_rate_limit"].startswith("fallback")
     assert kinds["rooms_api_500_prisma"] == "rooms_unavailable" == kinds["rooms_api_timeout"]
     assert kinds["output_guardrail_blocks"] == "output_blocked"
     assert kinds["groq_timeout"].startswith("fallback") and kinds["groq_invalid_json_twice"].startswith("fallback")

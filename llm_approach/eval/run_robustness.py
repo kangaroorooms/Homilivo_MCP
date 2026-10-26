@@ -22,14 +22,13 @@ from types import SimpleNamespace
 from typing import Any, Callable, Iterator
 from unittest import mock
 
-import httpx
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from llm_approach import config, pipeline, providers, reuse, rooms_client  # noqa: E402
 from llm_approach import state as state_mod  # noqa: E402
+from llm_approach.eval import fake_rooms_api  # noqa: E402
 from llm_approach.state import SessionStore  # noqa: E402
 
 OUT = Path(__file__).resolve().parent / "results" / "robustness.json"
@@ -61,14 +60,6 @@ class _FakeGroq:
                                usage=SimpleNamespace(prompt_tokens=100, completion_tokens=20))
 
 
-class _FakeResponse:
-    def __init__(self, status: int, body: dict) -> None:
-        self.status_code, self._body = status, body
-
-    def json(self) -> dict:
-        return self._body
-
-
 # case name -> (turn-2 user message, scripted Groq replies for turn 2, rooms mode, output guardrail ok)
 # rooms mode: offline (fixture), http500, timeout
 CASES: list[dict[str, Any]] = [
@@ -77,7 +68,7 @@ CASES: list[dict[str, Any]] = [
     {"name": "groq_invalid_json_twice", "message": "rooms in pune", "groq": ["not json", "{still not json"], "rooms": "offline",
      "describe": "Groq answers invalid JSON twice; fallback runs"},
     {"name": "groq_rate_limit", "message": "rooms in pune", "groq": [RateLimitError("429 too many requests")], "rooms": "offline",
-     "describe": "Groq answers 429; friendly busy reply, no fallback search"},
+     "describe": "Groq answers 429; the rule-based fallback answers"},
     {"name": "rooms_api_500_prisma", "message": "rooms in pune", "groq": [SEARCH_PUNE], "rooms": "http500",
      "describe": "rooms API returns 500 with a Prisma-style message; state must stay unchanged"},
     {"name": "rooms_api_timeout", "message": "rooms in pune", "groq": [SEARCH_PUNE], "rooms": "timeout",
@@ -103,8 +94,8 @@ def _env(**values: str | None) -> Iterator[None]:
 
 def reply_kind(result) -> str:
     m = result.metrics
-    if m.get("error_class") == "RateLimitError":
-        return "rate_limit_busy"
+    if m.get("error_class") == "RateLimitError" and not m.get("fallback_used"):
+        return "rate_limit_busy"  # the answerer's 429; a throttled decision call now runs the fallback
     if result.reply == pipeline.OUTPUT_BLOCKED_REPLY:
         return "output_blocked"
     if result.reply == rooms_client.UNAVAILABLE_MESSAGE:
@@ -127,12 +118,9 @@ async def run_case(case: dict[str, Any]) -> dict[str, Any]:
         mock.patch.object(config, "ROOMS_RETRY_JITTER_S", (0.0, 0.0)),
     ]
     if case["rooms"] == "http500":
-        patches.append(mock.patch.object(rooms_client, "_httpx_get",
-                                         lambda *a, **k: _FakeResponse(500, {"success": False, "message": PRISMA_MESSAGE})))
+        patches.append(fake_rooms_api.failing_rooms_api(500, {"success": False, "message": PRISMA_MESSAGE}))
     elif case["rooms"] == "timeout":
-        def boom(*a, **k):
-            raise httpx.ReadTimeout("read timed out")
-        patches.append(mock.patch.object(rooms_client, "_httpx_get", boom))
+        patches.append(fake_rooms_api.failing_rooms_api(None))
 
     with contextlib.ExitStack() as stack, _env(LLM_APPROACH_METRICS=None, **{config.PROVIDER_ENV: "groq"}):
         for p in patches:

@@ -151,6 +151,7 @@ def _live(monkeypatch, rooms):
         return _Resp(rooms[: params.get("limit", len(rooms))])
 
     monkeypatch.setattr(rooms_client, "_httpx_get", fake_get)
+    monkeypatch.setenv("LLM_APPROACH_SEARCH_TRANSPORT", "direct")  # v2 mcp: this fixture fakes the direct httpx client
     return calls
 
 
@@ -238,8 +239,12 @@ def test_budget_refinement_keeps_area_and_city_then_new_city_clears_area(pipe):
     assert (last["city"], last["area"], last["max_price"]) == ("Bangalore", "Koramangala", 15000)
     pipe.turn("2bhk only", dec("REFINEMENT", bhk=2))
     assert pipe.searches[-1]["area"] == "Koramangala" and pipe.searches[-1]["max_price"] == 15000
-    pipe.turn("in pune", dec("REFINEMENT", city="Pune"))
+    before = len(pipe.searches)
+    asked = pipe.turn("in pune", dec("REFINEMENT", city="Pune"))  # D4: filters are remembered, so it asks first
+    assert asked.metrics["action"] == "ask_city_change" and len(pipe.searches) == before
+    pipe.turn("same filters", dec("UNCLEAR"))
     assert pipe.searches[-1]["city"] == "Pune" and pipe.searches[-1]["area"] is None
+    assert pipe.searches[-1]["max_price"] == 15000 and pipe.searches[-1]["bhk"] == 2
     assert pipe.state.current_search["area"] is None
 
 

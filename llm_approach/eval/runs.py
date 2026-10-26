@@ -16,8 +16,8 @@ from typing import Any
 from llm_approach import config, gemini_limits, prompt_fingerprint
 
 STATE_FILE = "run_state.json"
-# Planner assumption, per prompt: up to 2 decision calls (the invalid-JSON retry) plus 1 rate-limit retry.
-# A scenario turn can also run the conversation answerer (2 more calls). One prompt can in theory use 4 requests
+# Planner assumption, per prompt: up to 2 decision calls (the invalid-JSON retry) plus 1 rate-limit retry
+# (the one retry after a 5xx is not budgeted: it is rare, and the daily counter caps it). A scenario turn can also run the conversation answerer (2 more calls). One prompt can in theory use 4 requests
 # (a rate-limit retry on both decision calls); the daily request counter enforces the cap either way.
 WORST_CASE_CALLS_PER_PROMPT = 3
 WORST_CASE_CALLS_PER_SCENARIO_TURN = 5

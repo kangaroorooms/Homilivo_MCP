@@ -10,8 +10,11 @@ cost up front.
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import copy
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,16 +23,25 @@ from llm_approach import (
     conversation_answerer,
     extra_security,
     fallback,
+    gemini_limits,
     llm_client,
     metrics as metrics_mod,
+    observability,
     prompts,
     responder,
+    reply_safety,
     reuse,
+    semantic_gate,
+    switches,
+    textclean,
+    turn_context,
+    turn_deadline,
     validators,
 )
-from llm_approach.actions import ActionResult, TurnBudget, clarify, conversation, followup, platform, recall, search
+from llm_approach.actions import ActionResult, TurnBudget, clarify, conversation, followup, owner_contact, platform, recall, search
 from llm_approach.schema import Decision, Intent
-from llm_approach.state import ERROR_REPLY, LLMConversationState, SessionStore
+from llm_approach.session_store import SessionStoreBackend, make_store
+from llm_approach.state import ERROR_REPLY, LLMConversationState, SessionBusyError
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +50,16 @@ TOO_LONG_REPLY = (
 )
 EMPTY_REPLY = "Please type a message and I'll help you find a room."
 OUTPUT_BLOCKED_REPLY = "Sorry, I can't share that. I can help you find a room, though. Which city are you looking in?"
+DEADLINE_REPLY = "That took too long, please try again"  # the server's turn deadline fired (turn_deadline.py)
 RATE_LIMIT_REPLY = "I'm getting a lot of requests right now, please try again in a minute."
+DEGRADED_NOTICE = "(I'm having trouble remembering our conversation right now, so you may need to repeat details.)"
 BLOCKED_PLACEHOLDER = "[message blocked]"  # stored in history instead of the blocked text
 
 _SEARCH_SLOTS = ("city", "bhk", "min_price", "max_price")
 _SLOT_NAMES = ("city", "area", "bhk", "min_price", "max_price", "amenity", "ideal_for")
 
 _full_guardrails = True
-_store: SessionStore | None = None
+_store: SessionStoreBackend | None = None
 
 
 @dataclass
@@ -55,6 +69,10 @@ class TurnResult:
     metrics: dict[str, Any] = field(default_factory=dict)
     success: bool = True  # False for blocked, too-long and error replies
     debug: dict[str, Any] | None = None  # decision details for the CLI; never persisted
+    # The session state as the turn left it, so the server can build its reply without a second store read
+    # (a Redis round trip). state_resolved False: not known, look it up.
+    state: LLMConversationState | None = field(default=None, repr=False, compare=False)
+    state_resolved: bool = field(default=False, repr=False, compare=False)
 
 
 # ---- configuration -------------------------------------------------------
@@ -67,14 +85,25 @@ def configure(*, full_guardrails: bool = True) -> None:
     _full_guardrails = full_guardrails
 
 
-def get_store() -> SessionStore:
+def configure_production() -> None:
+    """Everything a server must run with: the full input/output guardrails, the rooms API data check,
+    the search-argument check and the semantic gate (shadow unless ``LLM_APPROACH_SEMANTIC_GATE`` says
+    otherwise). ``server_app`` calls this at startup."""
+    configure(full_guardrails=True)
+    switches.configure(
+        room_data_check=True, search_arg_check=True, semantic_gate=config.semantic_gate_setting() or "shadow"
+    )
+
+
+def get_store() -> SessionStoreBackend:
+    """The process-wide store: in memory unless ``STATE_BACKEND=redis``."""
     global _store
     if _store is None:
-        _store = SessionStore()
+        _store = make_store()
     return _store
 
 
-def reset_session(session_id: str, store: SessionStore | None = None) -> bool:
+def reset_session(session_id: str, store: SessionStoreBackend | None = None) -> bool:
     return (store or get_store()).reset(session_id)
 
 
@@ -84,6 +113,31 @@ def preload() -> None:
         return
     reuse.get_is_security_blocked()("hello")
     reuse.get_output_guardrail()("Hello")
+    if switches.semantic_gate() != "off":
+        reuse.get_semantic_gate_warmup()()  # the shared embedding model and the gate's example embeddings
+
+
+# ---- state copies for threads and for a cancelled turn ----------------------
+
+
+def _snapshot(state: LLMConversationState) -> LLMConversationState:
+    return copy.deepcopy(state)
+
+
+def _restore(state: LLMConversationState, saved: LLMConversationState) -> None:
+    """Put ``saved`` back into the live ``state`` object (the store and the caller hold this very object)."""
+    state.__dict__.clear()
+    state.__dict__.update(saved.__dict__)
+
+
+async def _threaded_on_copy(state: LLMConversationState, call):
+    """Run ``call(state_copy)`` in a thread and, only when it returns, copy the result back into ``state``. A thread
+    cannot be cancelled: after the turn deadline it may still be running, and it must not touch the session state
+    (which is saved right after the cancel). It works on a private copy that is simply dropped."""
+    work = copy.deepcopy(state)
+    result = await asyncio.to_thread(call, work)
+    _restore(state, work)
+    return result
 
 
 # ---- guardrails ----------------------------------------------------------
@@ -97,10 +151,48 @@ def _input_blocked(message: str) -> bool:
     return False
 
 
+def _room_texts(state: LLMConversationState) -> list[str]:
+    """Strings that came from room data and appear in replies: the rooms on screen and the titles shown earlier."""
+    texts: list[str] = []
+    for room in state.rooms_on_screen:
+        for key in ("title", "location", "landmark", "city", "roomType", "type", "description"):
+            if isinstance(room.get(key), str):
+                texts.append(room[key])
+        for key in ("amenities", "amenity", "facilities", "facility", "features", "idealFor"):
+            value = room.get(key)
+            texts += [v for v in (value if isinstance(value, list) else [value]) if isinstance(v, str)]
+    for entry in state.transcript:
+        texts += [t for t in entry.get("rooms") or [] if isinstance(t, str)]
+    return sorted({t for t in texts if len(t) >= 3}, key=len, reverse=True)
+
+
+def _mask(reply: str, texts: list[str]) -> str:
+    for text in texts:
+        reply = reply.replace(text, "·")
+    return reply
+
+
+def _guard(reply: str) -> bool:
+    # v2: the copied guardrail skips its word checks for a reply that starts with "| " (a table). This pipeline builds no
+    # tables, so a reply that starts that way is model text: a leading character removes the exemption.
+    return bool(reuse.get_output_guardrail()("." + reply if reply.lstrip().startswith("|") else reply)[0])
+
+
+_room_text_var: contextvars.ContextVar[list[str]] = contextvars.ContextVar("llm_approach_room_texts", default=[])  # per turn
+
+
 def _output_ok(reply: str) -> bool:
+    """Links, markdown and HTML are refused in any reply (only homilivo.com may appear). The copied output guardrail then runs
+    on the reply; if it refuses, it is asked again with the room-derived strings masked, so a listing named "Secret Garden"
+    cannot blank a result page: only the bot's own words count (v2)."""
+    if reply_safety.find_unsafe(reply):
+        return False
     if not _full_guardrails:
         return True
-    return bool(reuse.get_output_guardrail()(reply)[0])
+    if _guard(reply):
+        return True
+    masked = _mask(reply, _room_text_var.get())
+    return masked != reply and _guard(masked)
 
 
 # ---- helpers -------------------------------------------------------------
@@ -110,21 +202,63 @@ def _ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000
 
 
-def _log_withheld(store: SessionStore, session_id: str, reply: str) -> None:
+def _status_for(m: metrics_mod.TurnMetrics) -> tuple[str, str | None]:
+    """Map a finished turn to observability's vocabulary: success | blocked | error, plus a category."""
+    blocked = {
+        "empty": "empty_message",
+        "too_long": "message_too_long",
+        "security_block": "security_hard_block",
+        "output_blocked": "output_guardrail",
+        "semantic_block": "semantic_gate",
+    }
+    if m.action in blocked:
+        return "blocked", blocked[m.action]
+    if m.action == "error":
+        return "error", "unhandled_exception"
+    if m.error_class:
+        return "error", m.error_class
+    return "success", None
+
+
+def _record_observability(
+    request_id: str, session_id: str, mode: str, m: metrics_mod.TurnMetrics, latency_ms: float
+) -> None:
+    """One observability.record_turn per turn: ids, names and numbers only. Never raises."""
+    try:
+        status, category = _status_for(m)
+        pre_llm = m.action in ("empty", "too_long", "security_block", "semantic_block")
+        observability.record_turn(
+            request_id=request_id,
+            session_id=turn_context.hash_session_id(session_id),
+            intent="OUT_OF_SCOPE" if pre_llm else m.intent,
+            operation=m.operation,
+            tool="search_rooms" if m.tool_called else None,
+            mode=mode,
+            status=status,
+            error_category=category,
+            latency_ms=latency_ms,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("observability failed: %s", type(exc).__name__)
+
+
+async def _log_withheld(store: SessionStoreBackend, session_id: str, reply: str) -> None:
     """A too-long message still counts as a message the user sent: log a placeholder (and our reply)."""
     try:
-        state = store.get_or_create(session_id)
-        state.record_query(None)
-        state.record_bot_reply(reply)
-    except ValueError:  # not a session id: nothing to log against
+        # v2: the session lock for every store: a turn that is running on this session must not see its state change under it
+        async with store.turn(session_id) as state:
+            state.record_query(None)
+            state.record_bot_reply(reply)
+    except (ValueError, SessionBusyError):  # not a session id, or the session is busy: nothing to log against
         pass
 
 
 def _result(
-    reply: str, rooms, m: metrics_mod.TurnMetrics, *, success: bool = True, debug=None, started: float
+    reply: str, rooms, m: metrics_mod.TurnMetrics, *, success: bool = True, debug=None, started: float, state=None
 ) -> TurnResult:
     m.total_ms = _ms(started)
-    return TurnResult(reply=reply, rooms=rooms, metrics=m.to_dict(), success=success, debug=debug)
+    return TurnResult(reply=reply, rooms=rooms, metrics=m.to_dict(), success=success, debug=debug,
+                      state=state, state_resolved=state is not None)
 
 
 def _clarify_rejected(
@@ -176,7 +310,8 @@ _HANDLERS = {
     Intent.UNCLEAR: clarify.handle_unclear,
     Intent.CONVERSATION_RECALL: recall.handle_recall,
 }  # CONVERSATION_QUESTION is async and is handled in _decide_action
-_THREADED = {Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.PLATFORM_INFO}  # blocking I/O
+_OWNER_CONTACT_INTENTS = {Intent.UNSUPPORTED_ACTION, Intent.PLATFORM_INFO}
+_THREADED = {Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.SHOW_MORE, Intent.PLATFORM_INFO}  # blocking I/O
 
 
 async def _decide_action(
@@ -197,6 +332,17 @@ async def _decide_action(
     )
     m.slots_valid = [n for n in _SLOT_NAMES if validated.get(n) is not None]
     m.slots_rejected = list(rejected)
+
+    if (state.pending_question or {}).get("type") == search.city_change.PENDING_TYPE:
+        # D4: the reply to "same filters or a new search?". Read from the message and the slots of the
+        # one decision call already made; no prompt change and no second call.
+        started = time.perf_counter()
+        answered = await _threaded_on_copy(
+            state, lambda work: search.handle_city_change_answer(message, decision, validated, work, budget)
+        )
+        if answered is not None:
+            m.api_ms = _ms(started) if budget.tool_calls else 0.0
+            return answered, validated, rejected
 
     forced = _clarify_rejected(decision, rejected, state) or _reference_problem(decision, rejected, state)
     if forced is not None:
@@ -248,34 +394,66 @@ async def _decide_action(
     if stored_facts and decision.intent is Intent.GENERAL_CHAT:
         return recall.acknowledge(stored_facts, state), validated, rejected  # fixed wording, not the model's
 
+    if decision.intent in _OWNER_CONTACT_INTENTS and owner_contact.wants_owner_contact(message, decision):
+        # v2: a contact-the-owner request shows the subscription plans of the city; checked after the LLM call, on the
+        # validated intent only (the message is never matched before the model has decided)
+        started = time.perf_counter()
+        action = await _threaded_on_copy(
+            state, lambda work: owner_contact.handle_owner_contact(decision, validated, work, budget)
+        )
+        m.api_ms = _ms(started)
+        return action, validated, rejected
+
     handler = _HANDLERS[decision.intent]
-    kwargs = {"user_message": message} if decision.intent is Intent.PLATFORM_INFO else {}
+    wants_message = (Intent.PLATFORM_INFO, Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.ROOM_FOLLOWUP)  # the sort cue is read from the text
+    kwargs = {"user_message": message} if decision.intent in wants_message else {}
     if decision.intent in _THREADED:
         started = time.perf_counter()
-        action = await asyncio.to_thread(handler, decision, validated, state, budget, **kwargs)
+        action = await _threaded_on_copy(state, lambda work: handler(decision, validated, work, budget, **kwargs))
         m.api_ms = _ms(started)
     else:
         action = handler(decision, validated, state, budget, **kwargs)
     return action, validated, rejected
 
 
+async def _semantic_gate(
+    message: str, state: LLMConversationState, m: metrics_mod.TurnMetrics
+) -> ActionResult | None:
+    """The semantic input gate. Runs only with the full guardrails on, when no rooms are on screen and no
+    question is pending (a follow-up such as "does it have wifi" has no meaning without them). Shadow mode
+    only records; enforce mode answers an off-topic message with the fixed out-of-scope reply, no LLM call."""
+    mode = switches.semantic_gate()
+    if mode == "off" or not _full_guardrails or state.rooms_on_screen or state.pending_question:
+        return None
+    verdict = await asyncio.to_thread(semantic_gate.evaluate, message, mode)
+    if verdict is None or not verdict.blocked:
+        return None
+    m.intent = Intent.OUT_OF_SCOPE.value
+    state.set_last_query_intent(m.intent)
+    return ActionResult(reuse.get_out_of_scope_response(), None, "semantic_block")
+
+
 async def _run_turn(
     message: str, state: LLMConversationState, m: metrics_mod.TurnMetrics
 ) -> tuple[ActionResult, dict[str, Any] | None]:
+    blocked = await _semantic_gate(message, state, m)
+    if blocked is not None:
+        return blocked, None
     budget = TurnBudget()
     llm_budget = llm_client.LLMBudget()
+    gemini_limits.start_turn_deadline()  # v2: the Gemini limiter never sleeps past this turn's deadline
     summary = prompts.build_state_summary(state.to_prompt_state())
     decision = await llm_client.decide(message, summary, llm_budget)
     m.llm_ms, m.tokens_in, m.tokens_out = llm_budget.latency_ms, llm_budget.tokens_in, llm_budget.tokens_out
     m.llm_calls, m.llm_call_ms = llm_budget.calls, list(llm_budget.call_ms)
 
-    if decision is None and llm_budget.error_class == "RateLimitError":
-        # Groq is throttling us: say so, rather than asking the user a misleading question.
-        return ActionResult(RATE_LIMIT_REPLY, None, "rate_limited", error_class="RateLimitError"), None
+    # No decision (429, daily cap, open breaker, timeout, bad JSON): the rule-based fallback answers, same wording for all.
     if decision is None:
         m.fallback_used = True
         started = time.perf_counter()
-        action = await asyncio.to_thread(fallback.run_fallback, message, state, budget)
+        action = await _threaded_on_copy(state, lambda work: fallback.run_fallback(message, work, budget))
+        if llm_budget.error_class in ("RateLimitError", "BreakerOpen"):
+            action.error_class = llm_budget.error_class  # the cause stays countable in metrics; only the reply changed
         m.api_ms = _ms(started) if budget.tool_calls else 0.0
         state.set_last_query_intent(Intent.NEW_SEARCH.value if action.tool_called else Intent.UNCLEAR.value)
         return action, None
@@ -305,12 +483,17 @@ async def _run_turn(
 
 
 async def handle_turn(
-    session_id: str, message: str, *, store: SessionStore | None = None
+    session_id: str, message: str, *, store: SessionStoreBackend | None = None
 ) -> TurnResult:
     started = time.perf_counter()
     m = metrics_mod.TurnMetrics()
     store = store or get_store()
-    text = message if isinstance(message, str) else ""
+    # v2: one normalisation at entry (NFKC, no invisible/format/tag characters); the length check, both security filters,
+    # the state and the model all get this same text, so the model never sees a phrase the filters did not.
+    text = textclean.normalize_input(message) if isinstance(message, str) else ""
+    request_id = turn_context.requested_request_id() or str(uuid.uuid4())
+    mode = turn_context.requested_mode() or "fast"
+    ctx = turn_context.begin(request_id, session_id)
 
     try:
         if not text.strip():
@@ -318,19 +501,20 @@ async def handle_turn(
             return _result(EMPTY_REPLY, None, m, success=False, started=started)
         if len(text) > config.MAX_USER_MESSAGE_CHARS:
             m.action = "too_long"
-            _log_withheld(store, session_id, TOO_LONG_REPLY)
+            await _log_withheld(store, session_id, TOO_LONG_REPLY)
             return _result(TOO_LONG_REPLY, None, m, success=False, started=started)
 
         async with store.turn(session_id, user_message=text) as state:
             logged = False
             queries_before = state.query_count
+            before_turn = _snapshot(state)  # what a cancelled turn goes back to
             try:
                 if _input_blocked(text):
                     m.action = "security_block"
                     state.record_query(None)  # placeholder, never the blocked text
                     state.record_bot_reply(extra_security.REFUSAL)
                     state.record_turn(BLOCKED_PLACEHOLDER, extra_security.REFUSAL)
-                    return _result(extra_security.REFUSAL, None, m, success=False, started=started)
+                    return _result(extra_security.REFUSAL, None, m, success=False, started=started, state=state)
 
                 state.record_query(text)
                 action, debug = await _run_turn(text, state, m)
@@ -338,9 +522,21 @@ async def handle_turn(
                 m.action, m.tool_called = action.action, action.tool_called
                 m.error_class = action.error_class
 
+                _room_text_var.set(_room_texts(state))  # read by _output_ok in the worker thread (the context is copied)
                 if not await asyncio.to_thread(_output_ok, reply):
-                    reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, None, "output_blocked"
+                    reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, [], "output_blocked"  # [] = no cards (None = unchanged)
+                    state.rooms_on_screen, state.selected_room_index = [], None  # the user never saw these rooms: they must not be referable next turn
                     m.action = "output_blocked"
+            except asyncio.CancelledError:
+                # Cancelled (the server's turn deadline, or a closed connection): drop everything this turn did so far and
+                # keep only the message and a fixed reply, never partial state. Threads still running hold copies.
+                _restore(state, before_turn)
+                deadline = turn_deadline.expired()
+                m.action, m.error_class = ("deadline_exceeded", "DeadlineExceeded") if deadline else ("cancelled", "Cancelled")
+                state.record_query(None)
+                state.record_bot_reply(DEADLINE_REPLY)
+                state.record_turn(text, DEADLINE_REPLY)
+                raise
             except Exception as exc:
                 logger.error("turn failed: %s", type(exc).__name__)
                 m.error_class, m.action = type(exc).__name__, "error"
@@ -349,11 +545,18 @@ async def handle_turn(
                     state.record_query(None)
                 state.record_bot_reply(reply)
                 state.record_turn(text, reply)
-                return _result(reply, rooms, m, success=False, started=started)
+                return _result(reply, rooms, m, success=False, started=started, state=state)
 
+            if getattr(state, "degraded_notice", False):  # the store could not load or save this session (Redis down)
+                reply = f"{reply}\n\n{DEGRADED_NOTICE}"  # fixed sentence, added after the output guard
+                observability.record_session_store_event("degraded_notice")
             state.record_bot_reply(reply, rooms)  # after the output guard
             state.record_turn(text, reply)
-            return _result(reply, rooms, m, debug=debug, started=started)
+            return _result(reply, rooms, m, debug=debug, started=started, state=state)
+    except SessionBusyError:
+        # Another turn on this session (maybe on another server) is still running: ask for a resend, no LLM call.
+        m.error_class, m.action = "SessionBusy", "session_busy"
+        return _result(RATE_LIMIT_REPLY, None, m, success=False, started=started)
     except Exception as exc:  # bad session id, cancelled store, anything left
         logger.error("turn failed outside the session: %s", type(exc).__name__)
         m.error_class, m.action = type(exc).__name__, "error"
@@ -361,3 +564,5 @@ async def handle_turn(
     finally:
         m.total_ms = m.total_ms or _ms(started)
         metrics_mod.record(m)
+        _record_observability(request_id, session_id, mode, m, m.total_ms)
+        turn_context.end(ctx)

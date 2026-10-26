@@ -6,7 +6,8 @@ keeps every day under the request budget. Makes no call.
 "Worst-case" is the planner's per-prompt assumption (``runs.WORST_CASE_CALLS_PER_PROMPT`` = 3: two decision calls
 plus one rate-limit retry; scenario turns 5, because a chat question adds the answerer's two calls). The daily
 counter (``LLM_APPROACH_GEMINI_DAILY_REQUEST_BUDGET``, default 450 of the free tier's 500) enforces the cap
-whatever the real use turns out to be. The first day is sized by what is still left in the last 24 hours.
+whatever the real use turns out to be. The one retry after a 5xx is not in the estimate; it counts against the
+daily cap like any request. The first day is sized by what is still left in the last 24 hours.
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@ import pytest
 
 from llm_approach import reuse, rooms_client, validators
 from llm_approach.actions import ActionResult, TurnBudget
-from llm_approach.actions import clarify, conversation, followup, platform, search
+from llm_approach.actions import clarify, conversation, followup, owner_contact, platform, search
 from llm_approach.schema import Decision, Intent, Operation, Slots
 from llm_approach.state import LLMConversationState
 
@@ -29,6 +29,11 @@ def make(intent, operation=None, *, ref=None, compare=(), reply=None, question=N
         reply=reply,
         confidence=0.9,
     )
+
+
+def run_answer(state, message, decision):
+    """The reply to the D4 city-change question (the pipeline calls this before the normal handlers)."""
+    return search.handle_city_change_answer(message, decision, validated(decision, state), state, TurnBudget())
 
 
 def validated(decision, state):
@@ -191,9 +196,12 @@ def test_rejected_city_is_not_searched():
 
 
 def test_refinement_keeps_bhk_and_price_when_only_city_changes(rooms):
+    # D4: a different city with filters remembered asks first; "same filters" then carries them over.
     s = LLMConversationState()
     run(search.handle_new_search, make("NEW_SEARCH", city="Bangalore", bhk=2, max_price=25000), s)
-    r = run(search.handle_refinement, make("REFINEMENT", city="Udupi"), s)
+    asked = run(search.handle_refinement, make("REFINEMENT", city="Udupi"), s)
+    assert asked.action == "ask_city_change" and not asked.tool_called and s.current_search["city"] == "Bangalore"
+    r = run_answer(s, "same filters", make("UNCLEAR"))
     assert r.tool_called and s.current_search["city"] == "Udupi"
     assert s.current_search["bhk"] == 2 and s.current_search["max_price"] == 25000
     assert "couldn't find any rooms in Udupi" in r.reply and r.rooms == []  # fixture is Bangalore only
@@ -321,9 +329,14 @@ def test_unsupported_booking_uses_existing_wording(state):
 
 
 def test_unsupported_owner_contact(state):
+    # Changed with the pricing action: a contact-the-owner request is no longer answered by handle_unsupported (the
+    # pipeline sends it to owner_contact, which shows the plans). "call the owner" has no contact intent and keeps the fixed reply.
     d = make("UNSUPPORTED_ACTION", reply="Here is the number 99999", query="call the owner")
     r = run(conversation.handle_unsupported, d, state)
-    assert r.reply == "To connect with the owner, you'll need a Homilivo subscription."
+    assert r.reply == reuse.get_unsupported_action_response() and r.action == "unsupported_action"
+    contact = make("UNSUPPORTED_ACTION", reply="Here is the number 99999", query="how to contact the owner")
+    r = run(owner_contact.handle_owner_contact, contact, state)  # offline fixture: the Bangalore plans
+    assert "99999" not in r.reply and "**Bangalore**" in r.reply and "GOLD" in r.reply
 
 
 def test_out_of_scope_redirects(state):
@@ -441,7 +454,9 @@ def test_amenity_is_kept_by_refinement():
     mp = _p.MonkeyPatch()
     mp.setattr(rooms_client, "search_rooms", spy)
     try:
-        run(search.handle_refinement, make("REFINEMENT", city="Pune"), s)
+        run(search.handle_refinement, make("REFINEMENT", city="Pune"), s)  # D4: asks, no search yet
+        assert not seen
+        run_answer(s, "same", make("UNCLEAR"))
     finally:
         mp.undo()
     assert seen["city"] == "Pune" and seen["bhk"] == 1 and seen["amenity"] == "hot-water"

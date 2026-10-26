@@ -55,7 +55,7 @@ def test_cli_without_rooms_token_warns_without_printing_the_groq_key(no_dotenv, 
 
 @pytest.fixture
 def server_without_keys(monkeypatch):
-    from app.rate_limit import InMemoryRateLimiter
+    from llm_approach.security.rate_limit import InMemoryRateLimiter  # v2: was: from app.rate_limit import InMemoryRateLimiter
 
     monkeypatch.setenv(server_app.SKIP_PRELOAD_ENV, "1")
     monkeypatch.setenv("LLM_APPROACH_OFFLINE_ROOMS", "1")

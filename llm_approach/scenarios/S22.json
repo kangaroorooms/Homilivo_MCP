@@ -1,6 +1,6 @@
 {
   "id": "S22",
-  "title": "A budget refinement keeps the area; a new city clears it",
+  "title": "A budget refinement keeps the area; a new city with filters on screen asks (D4) and does not search yet",
   "turns": [
     {
       "user": "rooms in bangalore",
@@ -76,12 +76,14 @@
       },
       "expect": {
         "intent": "REFINEMENT",
-        "action": "refinement",
-        "tool_called": true,
-        "search": {
-          "city": "Pune",
-          "area": null
-        }
+        "action": "ask_city_change",
+        "tool_called": false,
+        "pending": "city_change",
+        "reply_contains": [
+          "You were looking at rooms in Bangalore under ₹15,000",
+          "same filters",
+          "start a new search for Pune"
+        ]
       }
     }
   ]

@@ -162,3 +162,81 @@ def test_select_run_takes_first_scored_run():
     chosen = m.select_run(rows)
     assert len(chosen) == 1 and chosen[0]["run"] == 2
     assert m.select_run(rows, run=3)[0]["intent"] == "Y"
+
+
+# ---- failed calls, strict consistency and same-action consistency ----------------------------------------
+
+
+def dec_row(item, run, *, intent="NEW_SEARCH", slots=None, conf=0.95, op=None, ref=None, ctx=False, search=True, status="ok", **kw):
+    row = rec(item, "NEW_SEARCH", intent, status=status, run=run, op=op, conf=conf, validated_slots=slots or {},
+              room_reference=ref, ctx=ctx, would_search=search, needs_clarification=False)
+    row.update(kw)
+    return row
+
+
+def test_failure_kinds_from_new_and_old_records():
+    base_row = {"dataset": "matrix55", "item": "x", "run": 1}
+    assert m.failure_kind({**base_row, "status": "rate_limit_miss"}) == "rate_limit"
+    assert m.failure_kind({**base_row, "status": "error", "error_class": "TimeoutError"}) == "timeout"
+    assert m.failure_kind({**base_row, "status": "error", "error_class": "ServerError", "error_code": 503}) == "server_error"
+    assert m.failure_kind({**base_row, "status": "error", "error_code": 500}) == "server_error"
+    assert m.failure_kind({**base_row, "status": "error", "error_class": "ConnectError"}) == "other"
+    assert m.failure_kind({**base_row, "status": "error"}) == "other"  # an old file: no kind and nothing to read it from
+    assert m.failure_kind({**base_row, "status": "error", "failure_kind": "timeout"}) == "timeout"  # a stored kind wins
+
+
+def test_failed_calls_are_split_by_kind_and_not_scored():
+    rows = [dec_row("a", 1), dec_row("a", 2, status="error", error_class="TimeoutError", intent=None),
+            dec_row("b", 1, status="rate_limit_miss", intent=None), dec_row("c", 1, status="error", intent=None)]
+    failed = m.failed_calls(rows)
+    assert failed["total"] == 3 and failed["by_kind"] == {"rate_limit": 1, "timeout": 1, "server_error": 0, "other": 1}
+    assert failed["by_dataset"]["matrix55"]["timeout"] == 1
+    assert len(m.scored(rows)) == 1
+
+
+def test_runs_that_differ_only_in_confidence_are_consistent_on_both_metrics():
+    rows = [dec_row("a", r, conf=c, slots={"city": "Pune"}) for r, c in ((1, 0.8), (2, 0.9), (3, 0.95))]
+    assert m.consistency(rows)["k"] == 1 and m.same_action_consistency(rows)["k"] == 1
+
+
+def test_a_different_label_with_the_same_action_is_strict_inconsistent_but_same_action():
+    # no city: NEW_SEARCH asks for it, UNCLEAR asks a question, and a 0.5-confidence answer asks too
+    rows = [dec_row("a", 1, search=True), dec_row("a", 2, intent="UNCLEAR", search=False),
+            dec_row("a", 3, conf=0.5, search=False)]
+    assert (m.consistency(rows)["k"], m.consistency(rows)["n"]) == (0, 1)
+    assert (m.same_action_consistency(rows)["k"], m.same_action_consistency(rows)["n"]) == (1, 1)
+
+
+def test_different_filters_are_a_different_action():
+    rows = [dec_row("a", 1, slots={"city": "Pune"}), dec_row("a", 2, slots={"city": "Pune", "max_price": 15000})]
+    assert m.same_action_consistency(rows)["k"] == 0 and m.consistency(rows)["k"] == 0
+
+
+def test_a_refinement_inherits_the_city_on_screen():
+    rows = [dec_row("a", 1, intent="REFINEMENT", ctx=True, slots={"city": "Bangalore", "ideal_for": "Family"}),
+            dec_row("a", 2, intent="REFINEMENT", ctx=True, slots={"ideal_for": "Family"})]
+    assert m.consistency(rows)["k"] == 0 and m.same_action_consistency(rows)["k"] == 1
+    nothing_new = dec_row("b", 1, intent="REFINEMENT", ctx=True, slots={})
+    assert m.action_key(nothing_new) == ("clarify",)
+
+
+def test_action_classes():
+    assert m.action_key(dec_row("a", 1, intent="ROOM_FOLLOWUP", op="LOWEST_PRICE", ref=2)) == ("followup", "LOWEST_PRICE", 2)
+    assert m.action_key(dec_row("a", 1, intent="PLATFORM_INFO")) == ("platform",)
+    assert m.action_key(dec_row("a", 1, intent="OUT_OF_SCOPE")) == ("blocked",)
+    assert m.action_key(dec_row("a", 1, intent="SHOW_MORE")) == ("show_more",)
+    assert m.action_key(dec_row("a", 1, status="invalid", intent=None)) == ("none",)
+
+
+def test_an_item_with_a_failed_call_uses_its_remaining_runs_and_the_all_runs_figure_excludes_it():
+    rows = [dec_row("a", r, slots={"city": "Pune"}) for r in (1, 2, 3)]
+    rows += [dec_row("b", 1, status="error", intent=None, error_class="TimeoutError"),
+             dec_row("b", 2, slots={"city": "Pune"}), dec_row("b", 3, slots={"city": "Pune"})]
+    rows += [dec_row("c", 1, slots={"city": "Pune"}), dec_row("c", 2, slots={"city": "Goa"}),
+             dec_row("c", 3, slots={"city": "Pune"})]
+    assert m.expected_runs(rows) == 3
+    two_plus = m.consistency(rows)
+    assert (two_plus["k"], two_plus["n"]) == (2, 3)  # b counts on its two usable runs
+    all_runs = m.consistency(rows, 3)
+    assert (all_runs["k"], all_runs["n"]) == (1, 2)  # b has only 2 usable runs: left out
+    assert m.same_action_consistency(rows, 3)["n"] == 2

@@ -30,7 +30,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from llm_approach import config, prompt_fingerprint  # noqa: E402
-from llm_approach.eval import datasets, label_map, metrics, runs as runs_mod  # noqa: E402
+from llm_approach.eval import datasets, label_map, metrics, runs as runs_mod, scenario_audit  # noqa: E402
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 BASELINE = "baseline_current.json"
@@ -43,7 +43,8 @@ TARGETS = [  # PLAN.md section 8.3
     ("E1 scenario pass rate", "100% of turns, or each failure explained"),
     ("Intent accuracy, E2 pooled (133)", "clearly above the current pipeline's 53.4% (harness: 57.9%)"),
     ("Intent accuracy, E2 ctxY", "clearly above 21.2% (harness: 27.3%)"),
-    ("Consistency across 3 runs", ">= 95% identical decisions"),
+    ("Consistency across 3 runs", ">= 95% identical decisions (strict: intent, operation, room, slots)"),
+    ("Same action across 3 runs", ">= 95% of items lead to the same user-visible action and filters (proposed)"),
     ("p95 LLM latency", "<= 3 s (rooms API excluded)"),
 ]
 
@@ -158,6 +159,7 @@ def build_data(
 ) -> dict[str, Any]:
     by_ds = load_results(results_dir)
     scenario_records = read_jsonl(results_dir / "scenarios_live.jsonl")
+    fallback_total = sum(bool(r.get("answered_by_fallback")) for recs in by_ds.values() for r in recs)
     pairs = {config.record_label(r) for recs in by_ds.values() for r in recs}
     pairs |= {config.record_label(r) for r in scenario_records}
     chosen = select_pair(pairs, provider, model)  # raises MixedProvidersError rather than merge pairs
@@ -180,7 +182,12 @@ def build_data(
     def pooled(names: list[str]) -> list[dict]:
         return [r for n in names for r in by_ds[n]]
 
+    overlap = datasets.few_shot_item_ids([it for items in all_items.values() for it in items])
     data: dict[str, Any] = {"provider": chosen[0] if chosen else None, "model": chosen[1] if chosen else None,
+                            "fallback_answers": {"all_records": fallback_total,
+                                                 "in_this_report": sum(bool(r.get("answered_by_fallback")) for r in flat)},
+                            "few_shot_items": {"ids": sorted(overlap),
+                                               "by_dataset": {n: sum(it["item"] in overlap for it in all_items[n]) for n in all_items}},
                             "prompt_fp": chosen_fp,
                             "coverage": metrics.coverage(flat, totals), "baseline_loaded": bool(base_rows)}
 
@@ -188,7 +195,10 @@ def build_data(
     for label, names in [(n, [n]) for n in INTENT_SETS] + [("pooled_133", POOLED_133), ("pooled_166", POOLED_166)]:
         recs = pooled(names)
         first = metrics.select_run(recs)
+        fresh = [r for r in first if r["item"] not in overlap]  # without the verbatim few-shot examples
         acc[label] = {"strict": metrics.intent_accuracy(first), "lenient": metrics.intent_accuracy(first, True),
+                      "strict_without_few_shot": metrics.intent_accuracy(fresh),
+                      "lenient_without_few_shot": metrics.intent_accuracy(fresh, True),
                       "operation_strict": metrics.operation_accuracy(first),
                       "operation_lenient": metrics.operation_accuracy(first, True),
                       "paired_strict": metrics.paired_comparison(first, base_rows) if base_rows else None,
@@ -204,7 +214,15 @@ def build_data(
     data["invalid_search_rate"] = metrics.invalid_search_rate(first_166 + metrics.select_run(by_ds["golden_slots"]))
     every = [r for r in flat]
     data["invalid_json_rate"] = metrics.invalid_json_rate(every)
+    data["no_usable_decision_rate"] = metrics.no_usable_decision_rate(every)
     data["consistency"] = metrics.consistency(every)
+    data["same_action"] = metrics.same_action_consistency(every)
+    runs_planned = metrics.expected_runs(every)
+    data["runs_planned"] = runs_planned
+    data["consistency_all_runs"] = metrics.consistency(every, runs_planned) if runs_planned > 2 else data["consistency"]
+    data["same_action_all_runs"] = metrics.same_action_consistency(every, runs_planned) if runs_planned > 2 else data["same_action"]
+    data["consistency_items_short"] = data["consistency"]["n"] - data["consistency_all_runs"]["n"]
+    data["failed_calls"] = metrics.failed_calls(every)
     data["calibration"] = metrics.calibration(first_166)
     data["latency"] = metrics.latency_percentiles(every)
     data["tokens"] = metrics.tokens_per_call(every)
@@ -238,6 +256,7 @@ def build_data(
     }
 
     data["scenarios"] = scenario_summary(scenario_records)
+    data["scenario_assertions"] = scenario_audit.audit()
     data["safety"] = load_json(results_dir / "safety.json")
     data["robustness"] = load_json(results_dir / "robustness.json")
     return data
@@ -254,11 +273,19 @@ def banner(data: dict[str, Any]) -> list[str]:
              "different pairs are never merged or compared in one table.", ""]
     if done < total:
         lines += [f"> **PARTIAL RESULTS: {done} of {total} items evaluated.** Every number below covers only the items done so far.", ""]
-    lines += [table(["Dataset", "Items done", "Total", "Rate-limit misses"],
+    lines += [table(["Dataset", "Items done", "Total", "Failed calls (rate limit, timeout, other)"],
                     [[n, cov[n]["done"], cov[n]["total"], cov[n]["rate_limit_misses"]] for n in datasets.DATASETS]), ""]
-    if data["rate_limit_misses"]:
-        lines += [f"Rate-limit misses ({data['rate_limit_misses']}) are not counted as wrong answers anywhere. "
-                  "Re-run with `--only-missing` to retry them.", ""]
+    fb = data["fallback_answers"]
+    if fb["all_records"]:
+        lines += [f"{fb['all_records']} record(s) were answered by a fallback provider and carry that provider's name; "
+                  f"{fb['in_this_report']} of them are in this report (a report covers one provider/model pair).", ""]
+    failed = data["failed_calls"]
+    if failed["total"]:
+        k = failed["by_kind"]
+        lines += [f"Failed calls: {failed['total']} (rate limit {k['rate_limit']}, timeout {k['timeout']}, "
+                  f"server error {k['server_error']}, other {k['other']}). They are not counted as wrong answers anywhere. "
+                  "Result files from before the kind was recorded are classified from their error fields; a record with "
+                  "none shows as other. Re-run with `--only-missing` to retry them.", ""]
     return lines
 
 
@@ -281,6 +308,13 @@ def method_notes(data: dict[str, Any]) -> list[str]:
         "- **Brackets** are Wilson 95% confidence intervals. Headline numbers use the first run of every item.",
         "- **ROOM_TABLE** is not in the PLAN 6.4 mapping. It was added as ROOM_FOLLOWUP / ROOM_DETAILS (decision recorded in the README).",
         "- **Rooms.** Items with rooms on screen use the 10 fixture rooms (Bangalore, nothing selected, no history).",
+        "- **What a live item measures.** One LLM decision call per item: the model's label and slots, then the validators. The pipeline's "
+        "guardrails, semantic gate, recall net, D4, sort, owner-contact and fallback are not run, so these numbers say nothing about them.",
+        f"- **Few-shot overlap.** {len(data['few_shot_items']['ids'])} evaluation items are word for word one of the user messages in the prompt's "
+        "few-shot examples (exact match after lower-casing and dropping punctuation). Headline accuracy is shown with and without them.",
+        "- **Stub-mode numbers are circular.** `run_scenarios --stub` and the 300-turn stub baseline feed the pipeline the decisions the "
+        "scenario itself scripts, with the security and output guardrails replaced by allow-all stubs. They prove the code paths still do what "
+        "they did, **not** that the model or the pipeline is accurate. Only live results (this report's tables) are accuracy evidence.",
         "- Never stored or shown here: keys, tokens, message text, model reasoning.", "",
     ]
 
@@ -293,6 +327,11 @@ def accuracy_section(data: dict[str, Any]) -> list[str]:
         rows.append([label, pct(a["strict"]), pct(a["lenient"])])
     lines = ["## Intent accuracy (new decision layer)", "",
              table(["Set", "Strict", "Lenient"], rows), ""]
+    rows = [[label, pct(acc[label]["strict_without_few_shot"]), pct(acc[label]["lenient_without_few_shot"])]
+            for label in INTENT_SETS + ["pooled_133", "pooled_166"]]
+    lines += ["### Without the items that are word for word few-shot examples in the prompt", "",
+              table(["Set", "Strict", "Lenient"], rows), "",
+              "Items left out: " + (", ".join(data["few_shot_items"]["ids"]) or "none") + ".", ""]
     lines += ["### Paired comparison with the old router (same items, intent level, strict)", ""]
     rows = []
     for label in INTENT_SETS + ["pooled_133", "pooled_166"]:
@@ -329,13 +368,25 @@ def other_metrics_section(data: dict[str, Any]) -> list[str]:
                  ["Clarification precision (gold ask = UNCLEAR)", pct(clar["precision"])],
                  ["Clarification recall", pct(clar["recall"])],
                  ["Invalid-slot rate (search intents, validators rejected a slot)", pct(data["invalid_slot_rate"])],
-                 ["Invalid-search rate (a search would carry a rejected slot; target 0)", pct(data["invalid_search_rate"])],
-                 ["No usable decision (invalid JSON twice, timeout, API error)", pct(data["invalid_json_rate"])],
-                 ["Consistency across runs (items with 2+ runs, identical decision)", pct(data["consistency"])],
+                 ["Invalid-search rate (a search the pipeline would send with a rejected slot, or that the parameter guardrail refuses; target 0)", pct(data["invalid_search_rate"])],
+                 ["No usable decision (invalid JSON twice, timeout or API error)", pct(data["no_usable_decision_rate"])],
+                 ["Invalid JSON twice only (the earlier definition; timeouts and API errors are not in it)", pct(data["invalid_json_rate"])],
+                 ["Consistency across runs (strict: identical intent, operation, room and slots)", pct(data["consistency"])],
+                 ["Same action across runs (same user-visible action and filters)", pct(data["same_action"])],
+                 [f"Strict consistency, only items with all {data['runs_planned']} runs", pct(data["consistency_all_runs"])],
+                 [f"Same action, only items with all {data['runs_planned']} runs", pct(data["same_action_all_runs"])],
              ]), "",
+             "**Consistency.** *Strict* needs identical intent, operation, room reference and slots in every run (confidence is ignored). "
+             "*Same action* needs the runs to lead to the same user-visible action: search (with the filters sent to the rooms API), "
+             "clarifying question, follow-up (operation and room), show more, platform answer, chat or blocked. A different label or "
+             "confidence that ends in the same action does not count against it. "
+             f"Both use the items with at least 2 usable runs; an item with a failed call is judged on its remaining runs "
+             f"({data['consistency_items_short']} item(s) have fewer than {data['runs_planned']}). "
+             "The last two rows count only items with every planned run usable.", "",
              "The clarification gold is only the UNCLEAR label; the sets have no other 'should ask' labels, so read these as a proxy. "
-             "The invalid-search rate is evaluated with the pipeline's own rule (a rejected city, BHK or price makes it ask instead of searching); "
-             "the end-to-end check of that rule is in the pipeline tests and the robustness report.", "",
+             "The invalid-search rate is computed by the pipeline's own code: its clarify rule (a rejected city, BHK or price makes it ask instead of "
+             "searching) and then the copied parameter guardrail on the search arguments the handler would build. Records written before "
+             "`search_args_valid` existed only have the first test.", "",
              "### Calibration (pooled 166, strict)", "",
              table(["Confidence", "Accuracy"], [[c["bucket"], pct(c)] for c in cal]), "",
              "## Cost", "",
@@ -346,7 +397,8 @@ def other_metrics_section(data: dict[str, Any]) -> list[str]:
              ]), ""]
     sl = data["slots_golden_slots"]
     n = data["slots_golden_slots_n"]
-    lines += ["## Slot accuracy (`golden_slots`, reported separately from intent accuracy)", ""]
+    lines += ["## Slot accuracy (`golden_slots`, reported separately from intent accuracy)", "",
+              "An invalid-JSON record counts as wrong in every field, like in intent accuracy.", ""]
     if n:
         lines += [table(["Field", "Accuracy"], [[k, pct(v)] for k, v in sl.items()]), "",
                   f"Over the {n} search items that have slot gold (`tests/golden_set.jsonl`, `expected_args`). Compared on the validated slots; "
@@ -375,9 +427,20 @@ def faithfulness_section(data: dict[str, Any]) -> list[str]:
     return lines
 
 
+def assertion_lines(a: dict[str, Any]) -> list[str]:
+    lines = [f"**{a['assert_nothing']} of {a['total_turns']} scenario turns assert nothing** (empty `expect`: they pass whatever the bot does; "
+             f"{a['assert_nothing_in_live_scenarios']} of them are in scenarios that run live; {a['only_the_never_called_check']} more only check "
+             "that the LLM was not called). Proposed expectations, taken from today's stub baseline (not reviewed as correct, nothing was added to the scenarios):", ""]
+    bullets = [f"- **{sid}** {e['title'][:60]}{' (stub only)' if e['stub_only'] else ''}: turns {scenario_audit.proposal_text(e)}"
+               for sid, e in a["by_scenario"].items()]
+    return lines + (bullets or ["_none_"]) + [""]
+
+
 def scenario_section(data: dict[str, Any]) -> list[str]:
     s = data["scenarios"]
-    lines = ["## Scenario pass/fail (live, `scenarios_live.jsonl`)", ""]
+    lines = ["## Scenario pass/fail (live, `scenarios_live.jsonl`)", "",
+             "Only live runs are written here. A `--stub` run is circular (scripted decisions, allow-all guardrails) and is never evidence of accuracy.", ""]
+    lines += assertion_lines(data["scenario_assertions"])
     if not s["per_scenario"]:
         return lines + ["_no live scenario results yet_", ""]
     rows = [[sid, d["turns"], d["pass"], d["fail"], d.get("skipped", 0), "; ".join(d["failed"]) or "-"]
@@ -430,6 +493,7 @@ def targets_section(data: dict[str, Any]) -> list[str]:
         "Intent accuracy, E2 pooled (133)": pct(acc["pooled_133"]["strict"]),
         "Intent accuracy, E2 ctxY": pct(acc["ctxY"]["strict"]),
         "Consistency across 3 runs": pct(data["consistency"]),
+        "Same action across 3 runs": pct(data["same_action"]),
         "p95 LLM latency": ms(data["latency"]["p95"]),
     }
     lines = ["## Proposed targets (PLAN section 8.3)", "",

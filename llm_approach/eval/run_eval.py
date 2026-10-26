@@ -22,6 +22,13 @@ Resume with: <command>`` line.
 Every result record carries ``provider`` and ``model``; a run skips only items finished with the same
 pair, and ``--dry-run`` is provider-neutral (tokenizers differ between providers).
 
+``--fresh`` ignores earlier results and runs every item again into a NEW directory
+``eval/results/rerun_<timestamp>/`` (own result files, own run state, a copy of ``baseline_current.json``).
+Earlier files are never touched, so they stay the baseline. ``--fresh --resume`` continues the newest unfinished
+fresh run instead of starting another. Compare with ``python -m llm_approach.eval.report --results-dir <that dir>``
+next to the plain ``python -m llm_approach.eval.report`` for the earlier results. The Groq token ledger and the
+Gemini counters stay shared, so budgets and quotas count a fresh run like any other.
+
 Nothing secret is printed or stored: no key, no message text, no model reasoning.
 """
 
@@ -45,6 +52,8 @@ from llm_approach import config, prompt_fingerprint  # noqa: E402
 from llm_approach.eval import datasets, metrics, runs as runs_mod  # noqa: E402
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
+FRESH_PREFIX = "rerun_"  # a --fresh run writes into results/rerun_<timestamp>/
+BASELINE_FILE = "baseline_current.json"
 USAGE_FILE = "usage.jsonl"  # one line per day-run: {"date", "tokens"}; ignored by git
 DEFAULT_SPACING = config.GROQ_DEFAULT_SPACING_S  # Groq's values; Gemini's come from the environment
 DEFAULT_DAILY_BUDGET = config.GROQ_DEFAULT_DAILY_TOKEN_BUDGET
@@ -124,6 +133,33 @@ def add_usage(results_dir: Path, today: str, tokens: int, label: tuple[str, str]
         append_record(results_dir / USAGE_FILE, {"date": today, "tokens": int(tokens), "provider": provider, "model": model})
 
 
+def new_fresh_dir(results_dir: Path = RESULTS_DIR, now: dt.datetime | None = None) -> Path:
+    """Path of a not yet existing ``rerun_<UTC timestamp>`` directory (a suffix is added on a clash)."""
+    stamp = (now or dt.datetime.now(dt.timezone.utc)).strftime("%Y%m%d-%H%M%S")
+    path, n = results_dir / f"{FRESH_PREFIX}{stamp}", 1
+    while path.exists():
+        n += 1
+        path = results_dir / f"{FRESH_PREFIX}{stamp}-{n}"
+    return path
+
+
+def find_unfinished_fresh(results_dir: Path = RESULTS_DIR) -> Path | None:
+    """The newest fresh-run directory whose run state is not complete, else None."""
+    for d in sorted(results_dir.glob(f"{FRESH_PREFIX}*"), reverse=True) if results_dir.exists() else []:
+        entry = runs_mod.load_state(d).get("run_eval")
+        if d.is_dir() and entry and entry.get("status") != "complete":
+            return d
+    return None
+
+
+def prepare_fresh_dir(fresh_dir: Path, results_dir: Path = RESULTS_DIR) -> None:
+    """Create the fresh directory and copy (never move) the baseline so the report can pair against it."""
+    fresh_dir.mkdir(parents=True, exist_ok=True)
+    src, dst = results_dir / BASELINE_FILE, fresh_dir / BASELINE_FILE
+    if src.exists() and not dst.exists():
+        dst.write_bytes(src.read_bytes())
+
+
 # ---- planning --------------------------------------------------------------------
 
 
@@ -181,12 +217,53 @@ def estimate(todo: list[tuple[dict, int]], spacing: float, budget: int) -> dict[
 # ---- one item --------------------------------------------------------------------
 
 
+def answering_label(budget: Any) -> tuple[str, str]:
+    """(provider, model) that actually answered: the fallback provider when the call moved to it, else the active one.
+    A result is never labelled with the primary model when the fallback produced it."""
+    name = getattr(budget, "use_provider", None)
+    if not name:
+        return config.label()
+    try:
+        return name, config.model(name)
+    except Exception:  # noqa: BLE001 - labelling must not break a record
+        return name, ""
+
+
+def search_check(decision: Any, validated: dict, rejected: list[str], ctx: bool) -> tuple[bool, bool | None]:
+    """(would the pipeline search, did the parameter guardrail accept the search it would send).
+
+    Uses the pipeline's own code: ``pipeline._clarify_rejected`` decides whether a rejected city/BHK/price makes it ask,
+    then ``search.guardrail_arguments`` builds the arguments the rooms API would get and the copied
+    ``validate_search_arguments`` checks them. ``None`` for the second value when no search would run."""
+    from llm_approach import pipeline
+    from llm_approach.actions import search as search_mod
+    from llm_approach.guardrails.parameter_guardrail import validate_search_arguments
+    from llm_approach.schema import Intent
+    from llm_approach.state import LLMConversationState
+
+    if decision.intent not in (Intent.NEW_SEARCH, Intent.REFINEMENT):
+        return False, None
+    state = LLMConversationState()
+    if ctx:
+        state.apply_search_result({"city": "Bangalore"}, datasets.load_rooms())  # as datasets.build_state does
+    if pipeline._clarify_rejected(decision, rejected, state) is not None:
+        return False, None
+    built = {key: validated.get(key) for key in search_mod.SEARCH_KEYS}
+    if decision.intent is Intent.REFINEMENT:  # a refinement continues the current search
+        built = {key: (built[key] if built[key] is not None else state.current_search.get(key)) for key in built}
+    if not built.get("city"):
+        return False, None  # the handler asks for the city
+    valid, _reason = validate_search_arguments(search_mod.guardrail_arguments(built))
+    return True, bool(valid)
+
+
 def build_record(item: dict, run: int, decision: Any, budget: Any, status: str, rooms_count: int) -> dict[str, Any]:
     from llm_approach import validators
 
-    provider, model = config.label()
+    provider, model = answering_label(budget)
     rec: dict[str, Any] = {
-        "provider": provider, "model": model, "prompt_fp": prompt_fingerprint.current(),
+        "provider": provider, "model": model, "answered_by_fallback": bool(getattr(budget, "use_provider", None)),
+        "prompt_fp": prompt_fingerprint.current(),
         "dataset": item["dataset"], "item": item["item"], "run": run, "status": status,
         "category": item["category"], "gold_label": item["gold_label"], "gold_intent": item["gold_intent"],
         "gold_operation": item["gold_operation"], "gold_slots": item["gold_slots"],
@@ -194,7 +271,7 @@ def build_record(item: dict, run: int, decision: Any, budget: Any, status: str, 
         "ctx": item["ctx"], "caveat": item["caveat"],
         "intent": None, "operation": None, "slots": None, "validated_slots": None, "rejected": [],
         "room_reference": None, "confidence": None, "needs_clarification": None, "slots_valid": None,
-        "would_search": False, "error_class": getattr(budget, "error_class", None),
+        "would_search": False, "search_args_valid": None, "error_class": getattr(budget, "error_class", None),
         "error_code": getattr(budget, "error_code", None), "error_status": getattr(budget, "error_status", None),
         "latency_ms": round(getattr(budget, "latency_ms", 0.0), 1), "tokens_in": getattr(budget, "tokens_in", 0),
         "tokens_out": getattr(budget, "tokens_out", 0), "cached_tokens": getattr(budget, "cached_tokens", None),
@@ -205,14 +282,14 @@ def build_record(item: dict, run: int, decision: Any, budget: Any, status: str, 
             decision.slots, rooms_count=rooms_count, has_selected=False,
             room_reference=decision.room_reference, compare_references=decision.compare_references,
         )
-        search_rejected = bool(set(rejected) & set(metrics.SEARCH_SLOT_FIELDS))
+        would_search, args_valid = search_check(decision, clean, rejected, item["ctx"])
         rec.update(
             intent=decision.intent.value, operation=decision.operation.value if decision.operation else None,
             slots=decision.slots.model_dump(), validated_slots={k: v for k, v in clean.items() if v not in (None, [])},
             rejected=rejected, room_reference=decision.room_reference, confidence=decision.confidence,
             needs_clarification=decision.needs_clarification, slots_valid=not rejected,
-            # the pipeline's rule: a rejected city/BHK/price on a search intent asks instead of searching
-            would_search=decision.intent.value in metrics.SEARCH_INTENTS and not search_rejected,
+            # from the pipeline's own code (search_check): the real clarify rule, then the real parameter guardrail
+            would_search=would_search, search_args_valid=args_valid,
         )
     return rec
 
@@ -269,12 +346,14 @@ async def run_eval(
     decide: DecideFn | None = None, sleep: SleepFn = asyncio.sleep, today: str | None = None,
     rate_limit_wait: float = RATE_LIMIT_WAIT_S, out: Callable[[str], None] = print,
     max_failures: int = runs_mod.MAX_CONSECUTIVE_FAILURES, label: tuple[str, str] | None = None,
+    ledger_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Run the planned items one by one, writing each result before the next call (a checkpoint after every
     prompt). Stops early, cleanly, on: the daily token budget, the local daily request cap, a Gemini
     daily-quota 429, a hard error on the very first call (wrong key, model or quota), or ``max_failures``
     failures in a row. ``summary["stop_reason"]`` says which (None: finished); ``summary["done"]`` and
-    ``summary["total"]`` count item-runs over the whole run, earlier sessions included."""
+    ``summary["total"]`` count item-runs over the whole run, earlier sessions included. ``ledger_dir`` (default
+    ``results_dir``) holds the shared Groq token ledger when results go to a separate fresh-run directory."""
     from llm_approach import llm_client
 
     decide = decide or llm_client.decide
@@ -283,9 +362,10 @@ async def run_eval(
     if daily_budget is None:
         raise ValueError(budget_missing_message())
     today = today or dt.date.today().isoformat()
+    ledger_dir = ledger_dir or results_dir
     todo = plan_items(names, runs, sample, results_dir, only_missing, label)
     total = sum(len(select_items(n, sample)) for n in names) * runs
-    used = tokens_used_today(results_dir, today)
+    used = tokens_used_today(ledger_dir, today)
     summary = {"planned": len(todo), "calls": 0, "tokens": 0, "rate_limit_misses": 0, "stopped_by_budget": False,
                "completed": 0, "tokens_today": used, "stop_reason": None, "total": total, "done": total - len(todo),
                "errors": 0}
@@ -307,7 +387,7 @@ async def run_eval(
     for item, run in todo:
         need = estimate_tokens(item, system_chars)
         if gemini:  # chat or another process may have spent tokens meanwhile
-            used = max(used, tokens_used_today(results_dir, today))
+            used = max(used, tokens_used_today(ledger_dir, today))
         if used + need > daily_budget:
             summary["stopped_by_budget"] = True
             stop("daily token budget reached")
@@ -325,7 +405,7 @@ async def run_eval(
         append_record(result_path(item["dataset"], results_dir), record)
         spent = record["tokens_in"] + record["tokens_out"]
         used += spent
-        add_usage(results_dir, today, spent)
+        add_usage(ledger_dir, today, spent)
         summary["calls"] += record["llm_calls"] or 1
         summary["tokens"] += spent
         summary["completed"] += 1
@@ -358,6 +438,8 @@ def resume_command(args: argparse.Namespace) -> str:
     parts += [f"--spacing {args.spacing:g}", f"--daily-token-budget {args.daily_token_budget}"]
     if args.only_missing:
         parts.append("--only-missing")
+    if getattr(args, "fresh", False):
+        parts.append("--fresh")
     parts.append("--resume")
     return " ".join(parts)
 
@@ -389,6 +471,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--resume", action="store_true",
                    help="continue the unfinished run (same provider, model and dataset): finished prompts are "
                         "skipped, failed ones retried")
+    p.add_argument("--fresh", action="store_true",
+                   help="ignore earlier results and run every item again into a new results/rerun_<timestamp>/ "
+                        "directory; earlier files are not touched. With --resume: continue the newest unfinished fresh run")
     return p.parse_args(argv)
 
 
@@ -409,7 +494,9 @@ def main(argv: list[str] | None = None) -> int:
         # Provider-neutral: no key, no provider needed. Without flags the reference values are Groq's.
         spacing = args.spacing if args.spacing is not None else DEFAULT_SPACING
         budget = args.daily_token_budget if args.daily_token_budget is not None else DEFAULT_DAILY_BUDGET
-        todo = plan_items(names, args.runs, args.sample, RESULTS_DIR, args.only_missing)
+        # a fresh run starts from nothing, so the plan is the full call count whatever was finished before
+        done_dir = RESULTS_DIR / f"{FRESH_PREFIX}dry-run" if args.fresh else RESULTS_DIR
+        todo = plan_items(names, args.runs, args.sample, done_dir, args.only_missing)
         est = estimate(todo, spacing, budget)
         print("DRY RUN: no calls are made. Provider-neutral: token counts are estimated from prompt size "
               "(about 4 characters per token); real tokenizers differ between providers.")
@@ -435,12 +522,29 @@ def main(argv: list[str] | None = None) -> int:
         print(budget_missing_message())
         return 2
     sig = runs_mod.signature("run_eval", args.dataset, args.runs, args.sample)
-    refusal = runs_mod.begin(RESULTS_DIR, sig, args.resume)
+    rd = RESULTS_DIR  # where results and run state go; a fresh run has its own directory
+    if args.fresh:
+        if args.resume:
+            rd = find_unfinished_fresh(RESULTS_DIR)
+            if rd is None:
+                print("Nothing to resume: no unfinished fresh run is recorded.")
+                return 2
+        else:
+            rd = new_fresh_dir(RESULTS_DIR)
+            other = find_unfinished_fresh(RESULTS_DIR)
+            if other is not None:
+                print(f"Note: an unfinished fresh run exists ({other.name}); this starts a NEW one. "
+                      "Continue the old one with --fresh --resume instead.")
+    refusal = runs_mod.begin(rd, sig, args.resume)
     if refusal:
         print(refusal)
         return 2
+    if args.fresh:
+        prepare_fresh_dir(rd, RESULTS_DIR)
+        print(f"Fresh run: results go to {rd} (earlier results are untouched). "
+              f"Report: python -m llm_approach.eval.report --results-dir \"{rd}\"")
     only_missing = args.only_missing or args.resume
-    todo = plan_items(names, args.runs, args.sample, RESULTS_DIR, only_missing)
+    todo = plan_items(names, args.runs, args.sample, rd, only_missing)
     if config.provider() == "gemini":
         allowed, lines = runs_mod.preflight(len(todo), runs_mod.WORST_CASE_CALLS_PER_PROMPT, args.spacing)
         print("\n".join(lines))
@@ -448,15 +552,15 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     print("LLM: {} ({}), prompt fingerprint {}".format(*config.label(), prompt_fingerprint.current()))
     total = sum(len(select_items(n, args.sample)) for n in names) * args.runs
-    runs_mod.save_entry(RESULTS_DIR, sig, "running", total - len(todo), total)
+    runs_mod.save_entry(rd, sig, "running", total - len(todo), total)
     summary = asyncio.run(run_eval(names, runs=args.runs, sample=args.sample, spacing=args.spacing,
                                    daily_budget=args.daily_token_budget, only_missing=only_missing,
-                                   results_dir=RESULTS_DIR))
+                                   results_dir=rd, ledger_dir=RESULTS_DIR))
     print(f"\nDone: {summary['completed']} of {summary['planned']} item-runs, {summary['tokens']} tokens this run, "
           f"{summary['rate_limit_misses']} rate-limit misses.")
     reason = summary.get("stop_reason")
     done, total = summary.get("done", 0), summary.get("total", 0)
-    runs_mod.save_entry(RESULTS_DIR, sig, "stopped" if reason else "complete", done, total, reason)
+    runs_mod.save_entry(rd, sig, "stopped" if reason else "complete", done, total, reason)
     if reason:
         print(runs_mod.stopped_line(done, total, reason, resume_command(args)))
         return 3

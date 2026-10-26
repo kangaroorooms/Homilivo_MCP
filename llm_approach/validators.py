@@ -8,7 +8,7 @@ import re
 import unicodedata
 from typing import Any
 
-from llm_approach import extra_security, reuse
+from llm_approach import extra_security, reply_safety, reuse
 from llm_approach.sanitize import neutralize
 from llm_approach.schema import FACT_KEYS, Slots
 
@@ -358,16 +358,85 @@ _FACT_VALIDATORS = {
 assert set(_FACT_VALIDATORS) == set(FACT_KEYS)
 
 
+_WORD_VALUES = {w: i for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen "
+    "eighteen nineteen".split())}
+_TENS = {w: 10 * i for i, w in enumerate("zero ten twenty thirty forty fifty sixty seventy eighty ninety".split()) if i > 1}
+_NUMBER_WORD_RE = re.compile(
+    r"\b(?:(" + "|".join(_TENS) + r")(?:[\s-]+(" + "|".join(w for w in _WORD_VALUES if 0 < _WORD_VALUES[w] < 10) + r"))?"
+    r"|(" + "|".join(w for w in _WORD_VALUES if _WORD_VALUES[w] >= 0) + r"))\b"
+)
+_ME = r"(?:i\s*am|i'?m|im|me|main|mai|mein|myself)"
+_AGE_CUES = (
+    r"\b{me}\s+(?:about\s+|around\s+|almost\s+)?(?:a\s+)?{n}\b",
+    r"\bage\s*(?:is|:|=|of)?\s*{n}\b",
+    r"\bmy\s+age\s+(?:is\s+)?{n}\b",
+    r"\b(?:aged|age)\s+{n}\b",
+    r"\b{n}\s*(?:years?|yrs?|yo|y/o|saal|sal|varsh)\b",
+    r"\b(?:meri|meri\s+umar|meri\s+umra|umar|umra)\s*(?:age\s*)?(?:is\s+)?{n}\b",
+    r"\b{n}\s*(?:ka|ki)\s+hu+n?\b",
+    r"\b{me}\s+[^\d.;!?]{{1,40}}?(?:,|\s+and|\s+aur|\s*&)\s*{n}\b",  # "I'm Faizal, 23, need a 2 BHK", "I'm Zed and 40"
+)
+_BUDGET_CUE = re.compile(
+    r"\b(?:budget|under|below|upto|up\s+to|max(?:imum)?|within|around|about|afford|rs\.?|inr|rupees?|rent|price|tak|hazaar)\b|₹"
+)
+_NAME_CUE = re.compile(
+    r"\b(?:name|naam|i\s*am|i'?m|im|call\s+me|this\s+is|myself|my\s+self|main|mai|it'?s|its|actually|correction|sorry|rather|instead)\b"
+)
+_OCCUPATION_CUE = re.compile(
+    r"\b(?:i\s*am|i'?m|im|main|mai|work|works|working|occupation|profession|job|kaam|naukri|study|studying|student|"
+    r"employee|engineer|doctor|teacher)\b")
+_CITY_CUE = re.compile(
+    r"\b(?:prefer|live|living|stay|staying|based|from|belong|moving|shifting|relocat\w*|looking|need|want|search\w*|find|"
+    r"room|flat|pg|in|at|mein|me|ke)\b")
+_GENDER_CUE = re.compile(r"\b(?:i\s*am|i'?m|im|gender|myself|main|mai|hu|hoon|am)\b")
+
+
+def _numberize(flat: str) -> str:
+    """Spoken numbers as digits ("twenty two" -> "22") so one pattern reads both forms."""
+    def repl(m: re.Match) -> str:
+        if m.group(1):
+            return str(_TENS[m.group(1)] + (_WORD_VALUES[m.group(2)] if m.group(2) else 0))
+        return str(_WORD_VALUES[m.group(3)])
+
+    return _NUMBER_WORD_RE.sub(repl, flat)
+
+
+def _age_stated(value: int, flat: str) -> bool:
+    """The message states this age: "I am 22", "age 22", "22 years", "meri age 22 hai", "I'm twenty two"."""
+    text = _numberize(flat)
+    return any(re.search(p.format(me=_ME, n=rf"(?<![\d.]){value}(?![\d.])"), text) for p in _AGE_CUES)
+
+
+def _budget_stated(value: int, flat: str) -> bool:
+    """The message holds a price that equals this budget, with a budget cue ("budget 15k", "under 15000", "rs 15,000")."""
+    if not _BUDGET_CUE.search(flat):
+        return False
+    text = _numberize(flat).replace(",", "")
+    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(k|thousand|hazaar|lakhs?|lacs?|l)?\b", text):
+        unit = (m.group(2) or "").lower()
+        factor = 1 if not unit else 1_000 if unit in ("k", "thousand", "hazaar") else 100_000
+        if int(round(float(m.group(1)) * factor)) == value:
+            return True
+    return False
+
+
 def _grounded(key: str, raw: Any, clean: Any, message: str) -> bool:
-    """The value must come from the user's message, not from the model's imagination."""
+    """The value must come from the user's message, in a context that states it, not from the model's imagination."""
     flat = re.sub(r"\s+", " ", message.lower())
-    if key in ("age", "budget"):
-        return bool(re.search(r"\d", flat) or _NUMBER_WORDS.search(flat))
+    if key == "age":
+        return isinstance(clean, int) and _age_stated(clean, flat)
+    if key == "budget":
+        return isinstance(clean, int) and _budget_stated(clean, flat)
     if key == "gender":  # "I'm a woman" grounds "female"; one-letter synonyms never count
-        words = set(re.findall(r"[a-z]+(?:[ -][a-z]+)?", flat))
-        return any(len(word) > 1 and _GENDERS.get(word) == clean for word in words)
+        toks = re.findall(r"[a-z]+", flat)  # single words and neighbouring pairs ("non binary")
+        words = set(toks) | {f"{a} {b}" for a, b in zip(toks, toks[1:])} | {f"{a}-{b}" for a, b in zip(toks, toks[1:])}
+        return _GENDER_CUE.search(flat) is not None and any(len(word) > 1 and _GENDERS.get(word) == clean for word in words)
     candidates = {re.sub(r"\s+", " ", str(v).lower()).strip() for v in (raw, clean) if isinstance(v, str)}
-    return any(c and c in flat for c in candidates)
+    if not any(c and c in flat for c in candidates):
+        return False
+    cue = {"name": _NAME_CUE, "occupation": _OCCUPATION_CUE, "preferred_city": _CITY_CUE}.get(key)
+    return cue is None or cue.search(flat) is not None
 
 
 def validate_user_facts(raw: Any, message: str | None = None) -> tuple[dict[str, Any], list[str]]:
@@ -452,6 +521,52 @@ def _digits(text: str) -> str:
     return re.sub(r"\D", "", text)
 
 
+_MARKUP = re.compile(r"[\[\]<>`]|//")
+_NUM_TOKEN = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(k|thousand|lakhs?|lacs?)?(?![\w])", re.IGNORECASE)
+_ROOM_COUNT_WORDS = re.compile(
+    r"\b(" + "|".join(w for w in _WORD_VALUES if _WORD_VALUES[w] > 0) + r")\s+(?:more\s+|other\s+)?(?:rooms?|options?|listings?)\b",
+    re.IGNORECASE,
+)
+# Things a reply may claim about a room: the amenity vocabulary and aliases, plus common ones outside it.
+_CLAIM_WORDS = sorted(
+    {k.replace("-", " ") for k in AMENITY_VOCAB} | set(_AMENITY_ALIASES) | {
+        "pool", "swimming pool", "ac", "air conditioning", "air conditioner", "lift", "elevator", "tv", "television",
+        "washing machine", "kitchen", "laundry", "meals", "food", "tiffin", "housekeeping", "garden", "terrace", "parking",
+    },
+    key=len,
+    reverse=True,
+)
+_CLAIM_RE = re.compile(r"(?<![\w])(" + "|".join(re.escape(w) for w in _CLAIM_WORDS) + r")(?![\w])", re.IGNORECASE)
+
+
+def _numbers_in(text: str) -> set[int]:
+    """Whole numbers in a text, commas removed, "7k" read as 7000."""
+    out: set[int] = set()
+    for m in _NUM_TOKEN.finditer(text):
+        unit = (m.group(2) or "").lower()
+        factor = 1 if not unit else 1_000 if unit in ("k", "thousand") else 100_000
+        try:
+            out.add(int(round(float(m.group(1).replace(",", "")) * factor)))
+        except ValueError:
+            continue
+    return out
+
+
+def _norm_claim(text: str) -> str:
+    return re.sub(r"[\s_-]+", " ", text.lower()).strip()
+
+
+def _unsupported_claim(answer: str, known: str, known_numbers: set[int]) -> bool:
+    """True when the answer states an amount, a number of rooms or an amenity that the record it was given does not hold."""
+    allowed = _numbers_in(known) | known_numbers
+    if any(n not in allowed for n in _numbers_in(answer)):
+        return True
+    if any(_WORD_VALUES[w.lower()] not in allowed for w in _ROOM_COUNT_WORDS.findall(answer)):
+        return True
+    seen = _norm_claim(known)
+    return any(_norm_claim(c) not in seen for c in _CLAIM_RE.findall(answer))
+
+
 def _cap_answer(text: str) -> str:
     """At most 3 sentences and 400 characters, cut at a sentence or word end."""
     parts = _SENTENCE_END.split(text.strip())
@@ -475,6 +590,8 @@ def validate_conversation_answer(
     *,
     facts: dict[str, Any] | None = None,
     room_titles: list[str] | None = None,
+    known_text: str | None = None,
+    known_numbers: set[int] | None = None,
 ) -> str:
     """The reply to show: the model's answer if every check passes, else ``NOT_IN_CHAT``.
 
@@ -519,4 +636,12 @@ def validate_conversation_answer(
     for email in _EMAIL.findall(answer):
         if email.lower() not in haystack:
             return NOT_IN_CHAT
+    # v2: the answer may only state what the model was given (the whole record it saw, and the question): no link or markup,
+    # no amount, number of rooms or amenity that is not in it
+    plain = answer.replace("[blocked-tag]", "")  # the neutraliser's own marker is not markup
+    if reply_safety.find_unsafe(plain) or _MARKUP.search(plain):
+        return NOT_IN_CHAT
+    known = _flat(known_text) if known_text is not None else haystack + " " + _flat(question)
+    if _unsupported_claim(answer, known, known_numbers or set()):
+        return NOT_IN_CHAT
     return answer

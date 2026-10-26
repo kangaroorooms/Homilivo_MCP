@@ -18,7 +18,7 @@ from unittest import mock
 
 import pytest
 
-from llm_approach import config, conversation_answerer, llm_client, pipeline, prompt_fingerprint, prompts, providers
+from llm_approach import config, conversation_answerer, gemini_limits, llm_client, pipeline, prompt_fingerprint, prompts, providers
 from llm_approach.eval import run_scenarios
 from llm_approach.state import SessionStore
 
@@ -94,7 +94,10 @@ def provider_runtime(scenario, kind, script, spy, answers):
     with run_scenarios.runtime(scenario, "stub", script, spy, answers), contextlib.ExitStack() as stack:
         stack.enter_context(mock.patch.object(llm_client, "decide", REAL_DECIDE))
         stack.enter_context(mock.patch.object(llm_client, "generate_json", REAL_GENERATE))
-        stack.enter_context(mock.patch.dict("os.environ", {config.PROVIDER_ENV: kind}))
+        # v2: the fake clock does not move between turns, so window waits are far longer than in real life; the
+        # turn deadline is lifted here so this test keeps comparing the provider paths, not the deadline
+        stack.enter_context(mock.patch.dict("os.environ", {config.PROVIDER_ENV: kind,
+                                                           gemini_limits.TURN_DEADLINE_ENV: "1000000"}))
         stack.enter_context(mock.patch.object(providers, "_get_groq_client", lambda: client))
         stack.enter_context(mock.patch.object(providers, "_get_gemini_client", lambda: client))
         yield served

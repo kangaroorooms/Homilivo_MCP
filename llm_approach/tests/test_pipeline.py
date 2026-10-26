@@ -110,7 +110,8 @@ def test_output_guardrail_block_gives_safe_reply(pipe):
     pipe.output_ok = False
     r = pipe.turn("rooms in bangalore", dec("NEW_SEARCH", city="Bangalore"))
     assert r.reply == pipeline.OUTPUT_BLOCKED_REPLY
-    assert r.rooms is None and r.metrics["error_class"] == "output_blocked"
+    assert r.rooms == [] and r.metrics["error_class"] == "output_blocked"  # [] drops the cards; None would mean "unchanged"
+    assert pipe.state.rooms_on_screen == [] and pipe.state.selected_room_index is None
     assert pipe.state.last_bot_message == pipeline.OUTPUT_BLOCKED_REPLY
     assert pipe.state.history[-1] == {"role": "assistant", "content": pipeline.OUTPUT_BLOCKED_REPLY}
 

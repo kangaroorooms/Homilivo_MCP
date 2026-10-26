@@ -17,6 +17,10 @@ counter file):
    prompt-size estimate before any call.
 3. On a 429: wait the retry delay named in the error (at most 60 s) and retry the same call once. A 429 that
    says the daily quota is used up is never retried.
+4. A turn deadline (``turn_deadline``, set by the pipeline at the start of the LLM step, about 20 s): before any
+   sleep (window wait, 429 retry delay) the limiter checks that the wait still fits. If not it raises
+   ``WaitTooLong`` instead of sleeping, so the rule-based fallback answers at once. A request that was never
+   sent is not counted against the daily cap.
 
 Nothing secret is stored or logged: no key, no prompt text, no reply text.
 """
@@ -24,6 +28,7 @@ Nothing secret is stored or logged: no key, no prompt text, no reply text.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import datetime as dt
 import json
 import logging
@@ -49,9 +54,63 @@ MAX_RETRY_WAIT_S = 60.0
 DEFAULT_RETRY_WAIT_S = 60.0  # a 429 that names no delay
 EST_COMPLETION_TOKENS = 250
 USAGE_WINDOW_S = 24 * 3600.0  # the rolling window for requests and tokens
+
+# v2: the three window numbers above are the defaults; a paid key sets its own through these variables.
+WINDOW_SECONDS_ENV = "LLM_APPROACH_GEMINI_WINDOW_SECONDS"
+WINDOW_MAX_REQUESTS_ENV = "LLM_APPROACH_GEMINI_WINDOW_MAX_REQUESTS"
+WINDOW_MAX_TOKENS_ENV = "LLM_APPROACH_GEMINI_WINDOW_MAX_TOKENS"
+# Every limit variable validate_env() checks: (name, whole number only).
+LIMIT_ENVS = (
+    (WINDOW_SECONDS_ENV, False), (WINDOW_MAX_REQUESTS_ENV, True), (WINDOW_MAX_TOKENS_ENV, True),
+    (config.GEMINI_SPACING_ENV, False), (config.GEMINI_REQUEST_BUDGET_ENV, True), (config.GEMINI_DAILY_BUDGET_ENV, True),
+)
+
+
+def _limit_env(name: str, whole: bool) -> float | None:
+    """The positive number in ``name``, None when it is unset. Raises ValueError (the name, never the value) otherwise."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        value = float("nan")
+    if not (value > 0 and value != float("inf")) or (whole and value != int(value)):
+        raise ValueError(f"{name} must be a positive {'whole ' if whole else ''}number")
+    return value
+
+
+def validate_env() -> None:
+    """Startup check of every Gemini limit variable: unset is fine, anything non-numeric or not positive raises ValueError."""
+    for name, whole in LIMIT_ENVS:
+        _limit_env(name, whole)
+
+
+def window_seconds() -> float:
+    return _limit_env(WINDOW_SECONDS_ENV, False) or WINDOW_S
+
+
+def window_max_requests() -> int:
+    value = _limit_env(WINDOW_MAX_REQUESTS_ENV, True)
+    return int(value) if value else WINDOW_MAX_REQUESTS
+
+
+def window_max_tokens() -> int:
+    value = _limit_env(WINDOW_MAX_TOKENS_ENV, True)
+    return int(value) if value else WINDOW_MAX_TOKENS
 MAX_SEED_REQUESTS = RPD_LIMIT
 
-COUNTER_PATH = Path(__file__).resolve().parent / "eval" / "results" / "gemini_requests.json"  # git-ignored
+DEFAULT_TURN_DEADLINE_S = 20.0  # v2: how long a turn may spend in the LLM step, waits included
+TURN_DEADLINE_ENV = "LLM_APPROACH_GEMINI_TURN_DEADLINE_S"
+
+COUNTER_PATH = Path(__file__).resolve().parent / "eval" / "results" / "gemini_requests.json"  # git-ignored; the default
+
+
+def counter_path() -> Path:
+    """The counter file: ``LLM_APPROACH_GEMINI_COUNTER_PATH`` when set, else the default inside the package.
+    On a server point it at a writable volume (a read-only or throwaway filesystem would lose the daily count)."""
+    value = os.getenv(config.COUNTER_PATH_ENV, "").strip()
+    return Path(value) if value else COUNTER_PATH
 
 Clock = Callable[[], float]
 Sleep = Callable[[float], Awaitable[None]]
@@ -65,10 +124,12 @@ class GeminiLimitError(Exception):
     code = 429
     status = "RESOURCE_EXHAUSTED"
     kind = "rate_limit"
+    local = False  # True: raised by this limiter without any request reaching Google (not a provider failure)
 
 
 class RequestCapReached(GeminiLimitError):
     kind = "request_cap"
+    local = True
 
     def __init__(self) -> None:
         super().__init__("local daily Gemini request cap reached")
@@ -82,6 +143,16 @@ class DailyQuotaExhausted(GeminiLimitError):
                          "Gemini reports the daily request quota is exhausted")
 
 
+class WaitTooLong(GeminiLimitError):
+    """The wait the limiter needs (window or 429 retry delay) would pass the turn's deadline, so it did not sleep."""
+
+    kind = "wait_too_long"
+    local = True
+
+    def __init__(self, wait: float, remaining: float) -> None:
+        super().__init__(f"Gemini limiter would wait {wait:.1f}s but only {max(0.0, remaining):.1f}s of the turn remain")
+
+
 class RateLimitRetried(GeminiLimitError):
     """The call was already retried once after a 429 and got a second one."""
 
@@ -91,6 +162,30 @@ class RateLimitRetried(GeminiLimitError):
         super().__init__(str(original) if original else "Gemini rate limit (429) persisted after one retry")
 
 
+def turn_deadline_s() -> float:
+    """Seconds a turn may spend in the LLM step (env override; an unreadable or non-positive value uses the default)."""
+    try:
+        value = float(os.getenv(TURN_DEADLINE_ENV, "").strip())
+    except ValueError:
+        return DEFAULT_TURN_DEADLINE_S
+    return value if value > 0 else DEFAULT_TURN_DEADLINE_S
+
+
+# The time (on the limiter's clock, monotonic seconds) by which the current turn's LLM step must be done, or None.
+# A context variable, so the pipeline sets it once and the limiter sees it without any signature change.
+_turn_deadline: contextvars.ContextVar[float | None] = contextvars.ContextVar("gemini_turn_deadline", default=None)
+
+
+def start_turn_deadline(seconds: float | None = None, now: float | None = None) -> None:
+    """Start the deadline for the current turn (``seconds`` default: ``turn_deadline_s()``)."""
+    now = get_limiter().clock() if now is None else now
+    _turn_deadline.set(now + (turn_deadline_s() if seconds is None else seconds))
+
+
+def clear_turn_deadline() -> None:
+    _turn_deadline.set(None)
+
+
 def _utc_now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
@@ -98,6 +193,10 @@ def _utc_now() -> dt.datetime:
 # ---- request and token counter (rolling 24 h, or a fixed daily boundary) -------------------------------
 
 _bad_reset_warned = False
+_write_warned = False
+# Fixed wording, no path: the log must not reveal the layout of the host.
+WRITE_FAILED_WARNING = ("The Gemini request counter file cannot be written: the local daily request cap is not "
+                        "enforced across restarts. Set LLM_APPROACH_GEMINI_COUNTER_PATH to a writable file.")
 
 
 def _day_reset() -> dt.time | None:
@@ -126,7 +225,7 @@ class UsageCounter:
 
     @property
     def path(self) -> Path:
-        return self._path or COUNTER_PATH
+        return self._path or counter_path()
 
     # -- window
 
@@ -176,15 +275,39 @@ class UsageCounter:
         return out
 
     def _write(self, entries: list[dict]) -> None:
+        """Write the file atomically: a private temp file in the same folder (unique per call, so two processes never
+        share one), flushed to disk, then renamed over the real file. A failure never blocks a call."""
+        global _write_warned
         keep = self.wall().timestamp() - USAGE_WINDOW_S
         entries = [e for e in entries if e["t"] > keep]
-        tmp = self.path.with_suffix(".tmp")
+        tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp.write_text(json.dumps({"version": 2, "entries": entries}), encoding="utf-8")
+            with open(tmp, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"version": 2, "entries": entries}))
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(tmp, self.path)
         except OSError:
-            pass  # a write failure never blocks a call
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            if not _write_warned:
+                _write_warned = True
+                logger.warning(WRITE_FAILED_WARNING)
+
+    def writable(self) -> bool:
+        """Whether the counter file can be created and replaced (a probe file in its folder is written and removed).
+        For the startup check; never raises."""
+        probe = self.path.with_name(f"{self.path.name}.{os.getpid()}.probe")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+            return True
+        except OSError:
+            return False
 
     # -- reads
 
@@ -220,6 +343,18 @@ class UsageCounter:
             self._write(entries)
             return sum(e["n"] for e in self._in_window(entries))
 
+    def add_if_room(self, budget: int, n: int = 1, tokens: int = 0, eid: str | None = None) -> bool:
+        """``add`` only while fewer than ``budget`` requests are counted; the check and the write are one step under
+        the lock (the caller runs this in a thread, so two tasks cannot both take the last request)."""
+        with self._lock:
+            entries = self._load()
+            if sum(e["n"] for e in self._in_window(entries)) >= budget:
+                return False
+            entries.append({"id": eid or uuid.uuid4().hex[:8], "t": self.wall().timestamp(), "n": n,
+                            "tokens": max(0, int(tokens))})
+            self._write(entries)
+            return True
+
     def set_tokens(self, eid: str, tokens: int) -> None:
         """Replace the estimated tokens of entry ``eid`` with the real count."""
         with self._lock:
@@ -240,6 +375,12 @@ _DELAY_RES = (
     re.compile(r"retry\s+in\s+(\d+(?:\.\d+)?)\s*s", re.I),
     re.compile(r"retry_?delay['\"]?\s*[:=]\s*['\"]?(\d+(?:\.\d+)?)\s*s", re.I),
 )
+
+
+def is_local_limit(exc: BaseException) -> bool:
+    """An error this limiter raised itself (our own cap or wait bound): Google was never asked, so it says nothing
+    about the provider's health."""
+    return isinstance(exc, GeminiLimitError) and exc.local
 
 
 def is_rate_limit(exc: BaseException) -> bool:
@@ -299,7 +440,8 @@ class GeminiLimiter:
 
     def _trim(self) -> None:
         now = self.clock()
-        while self._window and now - self._window[0][0] >= WINDOW_S:
+        window = window_seconds()  # v2: was WINDOW_S
+        while self._window and now - self._window[0][0] >= window:
             self._window.popleft()
 
     def _wait_needed(self, estimate: int) -> float:
@@ -310,14 +452,24 @@ class GeminiLimiter:
         entries = list(self._window)
         requests, tokens = len(entries), sum(t for _, t in entries)
         wait, i = 0.0, 0
-        while requests + 1 > WINDOW_MAX_REQUESTS or tokens + estimate > WINDOW_MAX_TOKENS:
+        window, max_requests, max_tokens = window_seconds(), window_max_requests(), window_max_tokens()  # v2: were constants
+        while requests + 1 > max_requests or tokens + estimate > max_tokens:
             if i >= len(entries):  # the estimate alone is over the margin: nothing left to wait for
                 break
             started, spent = entries[i]
             i += 1
             requests, tokens = requests - 1, tokens - spent
-            wait = started + WINDOW_S - now
+            wait = started + window - now
         return max(0.0, wait)
+
+    async def _sleep_within_deadline(self, wait: float) -> None:
+        """Sleep ``wait`` seconds, or raise ``WaitTooLong`` (without sleeping) when that would pass the turn deadline."""
+        deadline = _turn_deadline.get()
+        if deadline is not None:
+            remaining = deadline - self.clock()
+            if wait > remaining:
+                raise WaitTooLong(wait, remaining)
+        await self.sleep(wait)
 
     def remaining_requests(self, budget: int) -> int:
         return max(0, budget - self.counter.used_requests())
@@ -327,17 +479,18 @@ class GeminiLimiter:
     async def _begin(self, budget: int, prompt_estimate: int) -> tuple[list[float], str]:
         """Cap check, window wait, then count the request. Returns the window entry and the counter entry id,
         to fix up afterwards."""
-        if self.counter.used_requests() >= budget:
+        # v2: the counter file is read and written (with fsync) in a worker thread, never on the event loop
+        if await asyncio.to_thread(self.counter.used_requests) >= budget:
             raise RequestCapReached()
         estimate = self._last_tokens if self._last_tokens is not None else prompt_estimate
         wait = self._wait_needed(estimate)
         while wait > 0:
-            await self.sleep(wait)
+            await self._sleep_within_deadline(wait)
             wait = self._wait_needed(estimate)
-        if self.counter.used_requests() >= budget:  # another task may have used the last request while we waited
-            raise RequestCapReached()
         eid = uuid.uuid4().hex[:8]
-        self.counter.add(1, tokens=estimate, eid=eid)  # counted before it is sent: failed calls and retries count too
+        # counted before it is sent: failed calls and retries count too; the cap is re-checked in the same step
+        if not await asyncio.to_thread(self.counter.add_if_room, budget, 1, estimate, eid):
+            raise RequestCapReached()  # another task used the last request while we waited
         entry = [self.clock(), float(estimate)]
         self._window.append(entry)
         return entry, eid
@@ -358,13 +511,13 @@ class GeminiLimiter:
                 if attempt == 2:
                     raise RateLimitRetried(exc) from exc
                 delay = retry_delay(exc)
-                await self.sleep(min(DEFAULT_RETRY_WAIT_S if delay is None else delay, MAX_RETRY_WAIT_S))
+                await self._sleep_within_deadline(min(DEFAULT_RETRY_WAIT_S if delay is None else delay, MAX_RETRY_WAIT_S))
                 continue
             used = tokens_of(result)
             if used:
                 entry[1] = float(used)
                 self._last_tokens = int(used)
-                self.counter.set_tokens(eid, int(used))
+                await asyncio.to_thread(self.counter.set_tokens, eid, int(used))
             return result
         raise RateLimitRetried()  # not reached
 

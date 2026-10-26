@@ -37,9 +37,12 @@ def _count(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-async def complete(messages: list[dict[str, str]], max_tokens: int | None = None) -> Completion:
+async def complete(
+    messages: list[dict[str, str]], max_tokens: int | None = None, provider: str | None = None
+) -> Completion:
+    """``provider`` names the fallback provider for one call; the default is the active provider."""
     max_tokens = config.LLM_MAX_TOKENS if max_tokens is None else max_tokens
-    if config.provider() == "gemini":
+    if (provider or config.provider()) == "gemini":
         return await _complete_gemini(messages, config.gemini_max_output_tokens())  # own cap, see config
     return await _complete_groq(messages, max_tokens)
 

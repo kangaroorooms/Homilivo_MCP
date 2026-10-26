@@ -67,6 +67,7 @@ def test_fallback_reply_is_friendly_when_rooms_api_fails(pipe, monkeypatch):
             return {"message": "pool exhausted"}
 
     monkeypatch.setattr(rooms_client, "_httpx_get", lambda *a, **k: Resp())
+    monkeypatch.setenv("LLM_APPROACH_SEARCH_TRANSPORT", "direct")  # v2 mcp: this fixture fakes the direct httpx client
     r = pipe.turn("rooms in bangalore", None)
     assert "unavailable" in r.reply and r.metrics["fallback_used"] is True
     assert "fake-token" not in json.dumps(r.metrics) + r.reply

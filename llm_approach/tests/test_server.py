@@ -30,7 +30,7 @@ CARD_KEYS = {"id", "title", "city", "location", "price_per_month", "room_type", 
 
 @pytest.fixture(autouse=True)
 def server_env(monkeypatch):
-    from app.rate_limit import InMemoryRateLimiter
+    from llm_approach.security.rate_limit import InMemoryRateLimiter  # v2: was: from app.rate_limit import InMemoryRateLimiter
 
     monkeypatch.setenv(server_app.SKIP_PRELOAD_ENV, "1")
     monkeypatch.setenv("STREAM_CHUNK_DELAY_SECONDS", "0")
@@ -138,7 +138,7 @@ def test_chat_requires_authorization_and_valid_body(client, monkeypatch):
 
 def test_chat_rate_limit_gives_429_with_retry_after(client, monkeypatch):
     stub_turn(monkeypatch)
-    from app.rate_limit import RateLimitResult
+    from llm_approach.security.rate_limit import RateLimitResult  # v2: was: from app.rate_limit import RateLimitResult
 
     monkeypatch.setattr(server_app._rl, "check_rate_limit", lambda key: RateLimitResult(False, 0, 4.0))
     r = client.post("/chat", json={"message": "hi"}, headers={"Authorization": "Bearer x"})
@@ -159,6 +159,43 @@ def test_chat_uppercase_uuid_is_lowercased(client, monkeypatch):
     r = client.post("/chat", json={"message": "hi", "session_id": sid.upper()},
                     headers={"Authorization": "Bearer x"})
     assert r.json()["session_id"] == sid
+
+
+@pytest.mark.parametrize("bad", [
+    "me@example.com", "a" * 5000, "ABCDEF12-3456-7890-ABCD-EF1234567890\n", " 3b1f0c52-8a7e-4c1d-9e2f-0a1b2c3d4e5f",
+    "not-a-uuid", 12345, ["x"],
+])
+def test_normalize_session_id_replaces_invalid_values(bad):
+    sid = server_app.normalize_session_id(bad)
+    assert sid != bad and str(uuid.UUID(sid)) == sid
+
+
+def test_normalize_session_id_lowercases_and_keeps_valid():
+    sid = str(uuid.uuid4())
+    assert server_app.normalize_session_id(sid.upper()) == sid
+    assert server_app.normalize_session_id(None) != server_app.normalize_session_id("")
+
+
+def test_raw_session_id_reaches_no_limiter_store_or_log(client, monkeypatch, caplog):
+    seen = []
+    real = server_app._rl.check_session_rate_limit
+    monkeypatch.setattr(server_app._rl, "check_session_rate_limit", lambda s: (seen.append(s), real(s))[1])
+    stub = stub_turn(monkeypatch)
+    raw = "victim@example.com"
+    with caplog.at_level(logging.DEBUG):
+        r = client.post("/chat", json={"message": "hi", "session_id": raw}, headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    assert seen and all(str(uuid.UUID(s)) == s for s in seen)
+    assert all(str(uuid.UUID(c[0])) == c[0] for c in stub)
+    assert raw not in caplog.text and "victim" not in caplog.text
+
+
+def test_chat_reset_with_uppercase_id_resets_the_lowercase_session(client):
+    sid = str(uuid.uuid4())
+    pipeline.get_store().get_or_create(sid)
+    body = client.post("/chat/reset", params={"session_id": sid.upper()}).json()
+    assert body["existed"] is True
+    assert client.post("/chat/reset", params={"session_id": "bad\n"}).json()["existed"] is False
 
 
 def test_chat_reset(client):
@@ -225,7 +262,7 @@ def test_ws_missing_token_closes_4401(client):
 
 
 def test_ws_rate_limit_closes_4429(client, monkeypatch):
-    from app.rate_limit import RateLimitResult
+    from llm_approach.security.rate_limit import RateLimitResult  # v2: was: from app.rate_limit import RateLimitResult
 
     monkeypatch.setattr(server_app._rl, "check_rate_limit", lambda key: RateLimitResult(False, 0, 4.0))
     with pytest.raises(WebSocketDisconnect) as info:
@@ -298,7 +335,7 @@ def test_ws_bad_json_and_non_object_keep_connection_open(client, monkeypatch):
 
 def test_ws_per_turn_rate_limit_is_an_error_event(client, monkeypatch):
     stub_turn(monkeypatch)
-    from app.rate_limit import RateLimitResult
+    from llm_approach.security.rate_limit import RateLimitResult  # v2: was: from app.rate_limit import RateLimitResult
 
     ok = RateLimitResult(True, 1, 0.0)
     answers = iter([ok, RateLimitResult(False, 0, 3.0)])  # connect passes, first turn is limited
@@ -423,11 +460,11 @@ def _real_client_turn(monkeypatch, fake_groq, replies, message="find me a room i
 
 
 @pytest.mark.parametrize("exc", [RateLimitError("429 too many"), Err429("throttled")])
-def test_groq_rate_limit_gets_the_busy_message(monkeypatch, fake_groq, exc):
+def test_groq_rate_limit_runs_the_rule_based_fallback(monkeypatch, fake_groq, exc):
     r = _real_client_turn(monkeypatch, fake_groq, [exc])
-    assert r.reply == "I'm getting a lot of requests right now, please try again in a minute."
-    assert r.metrics["error_class"] == "RateLimitError" and r.metrics["tool_called"] is False
-    assert r.rooms is None and r.success is True
+    assert r.reply != "I'm getting a lot of requests right now, please try again in a minute."
+    assert r.metrics["error_class"] == "RateLimitError" and r.metrics["fallback_used"] is True
+    assert r.metrics["tool_called"] is True and r.success is True
 
 
 def test_other_groq_errors_still_use_the_fallback(monkeypatch, fake_groq):

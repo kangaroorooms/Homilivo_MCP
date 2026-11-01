@@ -1,0 +1,37 @@
+{
+  "id": "S45",
+  "title": "Recall: age only",
+  "turns": [
+    {
+      "user": "I am 20",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!",
+        "user_facts": {
+          "age": 20
+        }
+      },
+      "expect": {
+        "action": "facts_saved",
+        "facts": {
+          "age": 20
+        }
+      }
+    },
+    {
+      "user": "how old am I",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "age"
+      },
+      "expect": {
+        "tool_called": false,
+        "reply_contains": [
+          "20"
+        ]
+      }
+    }
+  ]
+}

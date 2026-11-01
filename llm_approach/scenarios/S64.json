@@ -1,0 +1,94 @@
+{
+  "id": "S64",
+  "title": "Conversation question with no matching evidence: missing turn, empty evidence, wrong role -> fixed reply",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "my college is VIT",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "what's my college?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "Your college is VIT.",
+        "evidence_turns": [
+          99
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "I don't have that in this chat."
+        ],
+        "action": "conversation_not_found"
+      }
+    },
+    {
+      "user": "what's my college?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "Your college is VIT.",
+        "evidence_turns": []
+      },
+      "expect": {
+        "reply_contains": [
+          "I don't have that in this chat."
+        ],
+        "action": "conversation_not_found"
+      }
+    },
+    {
+      "user": "what did you say about my college?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "I said it was nice.",
+        "evidence_turns": [
+          1
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "I don't have that in this chat."
+        ],
+        "action": "conversation_not_found"
+      }
+    },
+    {
+      "user": "what's my college?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "You said \"I study at MIT\".",
+        "evidence_turns": [
+          1
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "I don't have that in this chat."
+        ],
+        "action": "conversation_not_found"
+      }
+    }
+  ]
+}

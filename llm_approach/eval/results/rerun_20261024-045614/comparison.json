@@ -1,0 +1,756 @@
+{
+  "provider": "gemini",
+  "model": "gemini-3.5-flash-lite",
+  "prompt_fp": "20f328e351bb",
+  "coverage": {
+    "ctxY": {
+      "done": 0,
+      "total": 33,
+      "rate_limit_misses": 0
+    },
+    "matrix55": {
+      "done": 0,
+      "total": 54,
+      "rate_limit_misses": 0
+    },
+    "fresh": {
+      "done": 0,
+      "total": 59,
+      "rate_limit_misses": 0
+    },
+    "golden": {
+      "done": 20,
+      "total": 20,
+      "rate_limit_misses": 0
+    },
+    "golden_slots": {
+      "done": 0,
+      "total": 20,
+      "rate_limit_misses": 0
+    }
+  },
+  "baseline_loaded": true,
+  "intent_accuracy": {
+    "ctxY": {
+      "strict": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "lenient": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "operation_strict": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "operation_lenient": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "paired_strict": {
+        "n": 0,
+        "both_right": 0,
+        "new_right_old_wrong": 0,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        },
+        "old": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        }
+      },
+      "paired_lenient": {
+        "n": 0,
+        "both_right": 0,
+        "new_right_old_wrong": 0,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        },
+        "old": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        }
+      }
+    },
+    "matrix55": {
+      "strict": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "lenient": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "operation_strict": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "operation_lenient": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "paired_strict": {
+        "n": 0,
+        "both_right": 0,
+        "new_right_old_wrong": 0,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        },
+        "old": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        }
+      },
+      "paired_lenient": {
+        "n": 0,
+        "both_right": 0,
+        "new_right_old_wrong": 0,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        },
+        "old": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        }
+      }
+    },
+    "fresh": {
+      "strict": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "lenient": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "operation_strict": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "operation_lenient": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "paired_strict": {
+        "n": 0,
+        "both_right": 0,
+        "new_right_old_wrong": 0,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        },
+        "old": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        }
+      },
+      "paired_lenient": {
+        "n": 0,
+        "both_right": 0,
+        "new_right_old_wrong": 0,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        },
+        "old": {
+          "k": 0,
+          "n": 0,
+          "value": null,
+          "lo": null,
+          "hi": null
+        }
+      }
+    },
+    "golden": {
+      "strict": {
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
+      },
+      "lenient": {
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
+      },
+      "operation_strict": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "operation_lenient": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "paired_strict": {
+        "n": 20,
+        "both_right": 19,
+        "new_right_old_wrong": 1,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 20,
+          "n": 20,
+          "value": 1.0,
+          "lo": 0.8388698745050667,
+          "hi": 1.0
+        },
+        "old": {
+          "k": 19,
+          "n": 20,
+          "value": 0.95,
+          "lo": 0.7638641064874331,
+          "hi": 0.9911187805671268
+        }
+      },
+      "paired_lenient": {
+        "n": 20,
+        "both_right": 19,
+        "new_right_old_wrong": 1,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 20,
+          "n": 20,
+          "value": 1.0,
+          "lo": 0.8388698745050667,
+          "hi": 1.0
+        },
+        "old": {
+          "k": 19,
+          "n": 20,
+          "value": 0.95,
+          "lo": 0.7638641064874331,
+          "hi": 0.9911187805671268
+        }
+      }
+    },
+    "pooled_133": {
+      "strict": {
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
+      },
+      "lenient": {
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
+      },
+      "operation_strict": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "operation_lenient": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "paired_strict": {
+        "n": 20,
+        "both_right": 19,
+        "new_right_old_wrong": 1,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 20,
+          "n": 20,
+          "value": 1.0,
+          "lo": 0.8388698745050667,
+          "hi": 1.0
+        },
+        "old": {
+          "k": 19,
+          "n": 20,
+          "value": 0.95,
+          "lo": 0.7638641064874331,
+          "hi": 0.9911187805671268
+        }
+      },
+      "paired_lenient": {
+        "n": 20,
+        "both_right": 19,
+        "new_right_old_wrong": 1,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 20,
+          "n": 20,
+          "value": 1.0,
+          "lo": 0.8388698745050667,
+          "hi": 1.0
+        },
+        "old": {
+          "k": 19,
+          "n": 20,
+          "value": 0.95,
+          "lo": 0.7638641064874331,
+          "hi": 0.9911187805671268
+        }
+      }
+    },
+    "pooled_166": {
+      "strict": {
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
+      },
+      "lenient": {
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
+      },
+      "operation_strict": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "operation_lenient": {
+        "k": 0,
+        "n": 0,
+        "value": null,
+        "lo": null,
+        "hi": null
+      },
+      "paired_strict": {
+        "n": 20,
+        "both_right": 19,
+        "new_right_old_wrong": 1,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 20,
+          "n": 20,
+          "value": 1.0,
+          "lo": 0.8388698745050667,
+          "hi": 1.0
+        },
+        "old": {
+          "k": 19,
+          "n": 20,
+          "value": 0.95,
+          "lo": 0.7638641064874331,
+          "hi": 0.9911187805671268
+        }
+      },
+      "paired_lenient": {
+        "n": 20,
+        "both_right": 19,
+        "new_right_old_wrong": 1,
+        "new_wrong_old_right": 0,
+        "both_wrong": 0,
+        "new": {
+          "k": 20,
+          "n": 20,
+          "value": 1.0,
+          "lo": 0.8388698745050667,
+          "hi": 1.0
+        },
+        "old": {
+          "k": 19,
+          "n": 20,
+          "value": 0.95,
+          "lo": 0.7638641064874331,
+          "hi": 0.9911187805671268
+        }
+      }
+    }
+  },
+  "by_category": {
+    "strict": {
+      "ctxN": {
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
+      }
+    },
+    "lenient": {
+      "ctxN": {
+        "k": 20,
+        "n": 20,
+        "value": 1.0,
+        "lo": 0.8388698745050667,
+        "hi": 1.0
+      }
+    }
+  },
+  "by_label": {
+    "ACKNOWLEDGMENT": {
+      "k": 1,
+      "n": 1,
+      "value": 1.0,
+      "lo": 0.20654329147389294,
+      "hi": 1.0
+    },
+    "GREETING": {
+      "k": 1,
+      "n": 1,
+      "value": 1.0,
+      "lo": 0.20654329147389294,
+      "hi": 1.0
+    },
+    "NEW_SEARCH": {
+      "k": 17,
+      "n": 17,
+      "value": 1.0,
+      "lo": 0.8156763396284354,
+      "hi": 1.0
+    },
+    "PLATFORM_INFO": {
+      "k": 1,
+      "n": 1,
+      "value": 1.0,
+      "lo": 0.20654329147389294,
+      "hi": 1.0
+    }
+  },
+  "clarification": {
+    "precision": {
+      "k": 0,
+      "n": 5,
+      "value": 0.0,
+      "lo": 0.0,
+      "hi": 0.43449149475208104
+    },
+    "recall": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    "tp": 0,
+    "predicted": 5,
+    "gold": 0
+  },
+  "invalid_slot_rate": {
+    "k": 1,
+    "n": 17,
+    "value": 0.058823529411764705,
+    "lo": 0.01046013064516424,
+    "hi": 0.269825452035628
+  },
+  "invalid_search_rate": {
+    "k": 0,
+    "n": 17,
+    "value": 0.0,
+    "lo": 0.0,
+    "hi": 0.18432366037156456
+  },
+  "invalid_json_rate": {
+    "k": 0,
+    "n": 20,
+    "value": 0.0,
+    "lo": 0.0,
+    "hi": 0.16113012549493322
+  },
+  "consistency": {
+    "k": 0,
+    "n": 0,
+    "value": null,
+    "lo": null,
+    "hi": null
+  },
+  "calibration": [
+    {
+      "bucket": "0.0-0.6",
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    {
+      "bucket": "0.6-0.8",
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    {
+      "bucket": "0.8-0.9",
+      "k": 2,
+      "n": 2,
+      "value": 1.0,
+      "lo": 0.34237195288961925,
+      "hi": 1.0
+    },
+    {
+      "bucket": "0.9-1.0",
+      "k": 18,
+      "n": 18,
+      "value": 1.0,
+      "lo": 0.8241154494176252,
+      "hi": 1.0
+    }
+  ],
+  "latency": {
+    "n": 20,
+    "p50": 3650.5,
+    "p95": 4480.4
+  },
+  "tokens": {
+    "n": 20,
+    "mean_in": 6195.35,
+    "mean_out": 209.9,
+    "mean_cached": 4028.6111111111113
+  },
+  "rate_limit_misses": 0,
+  "slots_golden_slots": {
+    "city": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    "bhk": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    "min_price": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    "max_price": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    "ideal_for": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    "overall": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    "exact": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    }
+  },
+  "slots_golden_slots_n": 0,
+  "unfaithful_items": {
+    "matrix55": {
+      "gold written against the old harness's rooms; fixture rooms used": [
+        "matrix55:11",
+        "matrix55:12",
+        "matrix55:13",
+        "matrix55:14",
+        "matrix55:15",
+        "matrix55:16",
+        "matrix55:17",
+        "matrix55:19",
+        "matrix55:20",
+        "matrix55:22",
+        "matrix55:23",
+        "matrix55:24",
+        "matrix55:25",
+        "matrix55:26",
+        "matrix55:33",
+        "matrix55:35",
+        "matrix55:50"
+      ],
+      "gold written against the old harness's rooms; fixture rooms used; short reply: gold may assume a pending bot question or selected room that the data does not record": [
+        "matrix55:18",
+        "matrix55:34",
+        "matrix55:39"
+      ],
+      "short reply: gold may assume a pending bot question or selected room that the data does not record": [
+        "matrix55:21",
+        "matrix55:28",
+        "matrix55:40"
+      ]
+    },
+    "fresh": {
+      "short reply: gold may assume a pending bot question or selected room that the data does not record": [
+        "fresh:f14",
+        "fresh:f15",
+        "fresh:f38",
+        "fresh:f41",
+        "fresh:f54",
+        "fresh:f57"
+      ],
+      "gold written against the old harness's rooms; fixture rooms used": [
+        "fresh:f17",
+        "fresh:f18",
+        "fresh:f19",
+        "fresh:f20",
+        "fresh:f21",
+        "fresh:f22",
+        "fresh:f23",
+        "fresh:f24",
+        "fresh:f25",
+        "fresh:f26",
+        "fresh:f27",
+        "fresh:f28",
+        "fresh:f29",
+        "fresh:f30",
+        "fresh:f31",
+        "fresh:f32",
+        "fresh:f33",
+        "fresh:f34",
+        "fresh:f35"
+      ]
+    }
+  },
+  "ctx_flagged_vs_clean": {
+    "flagged": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    },
+    "clean": {
+      "k": 0,
+      "n": 0,
+      "value": null,
+      "lo": null,
+      "hi": null
+    }
+  },
+  "baseline": {
+    "harness_pooled_133_strict_pct": 57.9,
+    "harness_ctxY_strict_pct": 27.3,
+    "harness_replay_misses": 12,
+    "evaluate_py_pooled_133_strict_pct": 53.4,
+    "evaluate_py_ctxY_strict_pct": 21.2
+  },
+  "scenarios": {
+    "per_scenario": {},
+    "turns_run": 0,
+    "turns_passed": 0
+  },
+  "safety": null,
+  "robustness": null
+}

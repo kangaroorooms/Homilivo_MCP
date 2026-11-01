@@ -1,0 +1,54 @@
+{
+  "id": "S50",
+  "title": "Recall question with rooms on screen",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        }
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10
+      }
+    },
+    {
+      "user": "I'm Ziyad",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!",
+        "user_facts": {
+          "name": "Ziyad"
+        }
+      },
+      "expect": {
+        "action": "facts_saved"
+      }
+    },
+    {
+      "user": "what is my name and what was my first query",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_targets": [
+          "name",
+          "first_query"
+        ]
+      },
+      "expect": {
+        "tool_called": false,
+        "rooms_on_screen": 10,
+        "reply_contains": [
+          "Your name is Ziyad.",
+          "Your first question was: \"rooms in bangalore\"."
+        ]
+      }
+    }
+  ]
+}

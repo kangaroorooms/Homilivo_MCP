@@ -1,0 +1,62 @@
+{
+  "id": "S9",
+  "title": "Selection persists: details of room 2, then 'how much is it' is room 2",
+  "turns": [
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "tell me about the second one",
+      "llm": {
+        "intent": "ROOM_FOLLOWUP",
+        "confidence": 0.95,
+        "operation": "ROOM_DETAILS",
+        "room_reference": 2
+      },
+      "expect": {
+        "operation": "ROOM_DETAILS",
+        "action": "followup_room_details",
+        "selected": 2,
+        "reply_contains": [
+          "Room 2"
+        ]
+      }
+    },
+    {
+      "user": "how much is it",
+      "llm": {
+        "intent": "ROOM_FOLLOWUP",
+        "confidence": 0.95,
+        "operation": "ROOM_PRICE",
+        "room_reference": "selected"
+      },
+      "expect": {
+        "operation": "ROOM_PRICE",
+        "action": "followup_room_price",
+        "selected": 2,
+        "reply_contains": [
+          "Room 2",
+          "₹7,500/month"
+        ]
+      }
+    }
+  ]
+}

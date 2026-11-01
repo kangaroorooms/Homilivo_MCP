@@ -1,0 +1,44 @@
+{
+  "id": "S59",
+  "title": "Conversation question: a phone number given in the chat comes back (in-session only, never stored as a fact)",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "my phone number is 98765 43210",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Thanks."
+      },
+      "expect": {
+        "no_facts": [
+          "name",
+          "age"
+        ]
+      }
+    },
+    {
+      "user": "what's my phone number?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "Your phone number is 98765 43210.",
+        "evidence_turns": [
+          1
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "98765 43210"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

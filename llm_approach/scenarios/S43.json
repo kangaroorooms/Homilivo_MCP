@@ -1,0 +1,84 @@
+{
+  "id": "S43",
+  "title": "Live transcript: facts, 'name and age' recall, then a bare 'yes' (rooms on screen)",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        }
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10
+      }
+    },
+    {
+      "user": "actually my name is ziyad and i'm 20 years old",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!",
+        "user_facts": {
+          "name": "ziyad",
+          "age": 20
+        }
+      },
+      "expect": {
+        "action": "facts_saved",
+        "facts": {
+          "name": "Ziyad",
+          "age": 20
+        },
+        "reply_contains": [
+          "Got it, Ziyad!"
+        ],
+        "reply_not_contains": [
+          "rooms",
+          "search again"
+        ]
+      }
+    },
+    {
+      "user": "what's my name and age ?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_targets": [
+          "name",
+          "age"
+        ]
+      },
+      "expect": {
+        "tool_called": false,
+        "action": "recall_several",
+        "reply_contains": [
+          "Your name is Ziyad and you're 20."
+        ],
+        "reply_not_contains": [
+          "search again"
+        ]
+      }
+    },
+    {
+      "user": "yes",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.3
+      },
+      "expect": {
+        "action": "clarify",
+        "reply_contains": [
+          "I can search rooms, answer questions about the rooms shown, and remember what you tell me in this chat."
+        ],
+        "reply_not_contains": [
+          "Would you like to search again"
+        ]
+      }
+    }
+  ]
+}

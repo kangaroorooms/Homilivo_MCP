@@ -1,0 +1,46 @@
+{
+  "id": "S58",
+  "title": "Conversation question: what did I say about my budget (a stored fact, answered from the transcript)",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "my budget is around 15k",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Noted.",
+        "user_facts": {
+          "budget": 15000
+        }
+      },
+      "expect": {
+        "facts": {
+          "budget": 15000
+        }
+      }
+    },
+    {
+      "user": "what did I say about my budget?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "You said your budget is around 15k.",
+        "evidence_turns": [
+          1
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "15k"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

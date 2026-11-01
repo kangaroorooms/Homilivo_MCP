@@ -1,0 +1,57 @@
+{
+  "id": "S69",
+  "title": "Safety net: UNCLEAR plus a chat cue reaches the answerer; an exact recall cue stays deterministic",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "I'm Ziyad",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!",
+        "user_facts": {
+          "name": "Ziyad"
+        }
+      },
+      "expect": {
+        "action": "facts_saved"
+      }
+    },
+    {
+      "user": "what's my name?",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.3
+      },
+      "expect": {
+        "reply_contains": [
+          "Your name is Ziyad."
+        ],
+        "action": "recall_name",
+        "answer_called": false
+      }
+    },
+    {
+      "user": "what did we talk about?",
+      "llm": {
+        "intent": "UNCLEAR",
+        "confidence": 0.3
+      },
+      "answer": {
+        "found": true,
+        "answer": "You told me your name is Ziyad.",
+        "evidence_turns": [
+          1
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "Ziyad"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false
+      }
+    }
+  ]
+}

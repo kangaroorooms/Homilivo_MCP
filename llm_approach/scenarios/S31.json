@@ -1,0 +1,48 @@
+{
+  "id": "S31",
+  "title": "Session memory: first query is the first user message",
+  "turns": [
+    {
+      "user": "2 BHK in Bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "action": "new_search",
+        "tool_called": true
+      }
+    },
+    {
+      "user": "thanks",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "You're welcome!"
+      },
+      "expect": {
+        "action": "general_chat"
+      }
+    },
+    {
+      "user": "what was my first query?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "first_query"
+      },
+      "expect": {
+        "intent": "CONVERSATION_RECALL",
+        "tool_called": false,
+        "action": "recall_first_query",
+        "reply_contains": [
+          "Your first question was: \"2 BHK in Bangalore\"."
+        ]
+      }
+    }
+  ]
+}

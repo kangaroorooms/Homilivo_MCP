@@ -1,0 +1,49 @@
+{
+  "id": "S62",
+  "title": "Conversation question: a correction followed by a question about it",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "my college is VIT",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "sorry, my college is actually MIT",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "what did I say about my college?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "You first said VIT, then corrected it to MIT.",
+        "evidence_turns": [
+          1,
+          3
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "MIT"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "S55",
+  "title": "Conversation question: what the bot said about the second room",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "find rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        }
+      },
+      "expect": {
+        "rooms_shown": true
+      }
+    },
+    {
+      "user": "what did you say about the second room?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "The second room I showed you is the Single Room.",
+        "evidence_turns": [
+          2
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "Single Room"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

@@ -1,0 +1,368 @@
+# Copied from app/observability.py at commit 7dbcba3 (copied, not imported).
+# Changes: added a turn-event counter (deadline_exceeded), a semantic-gate counter (checked, would block, blocked, error, labels, latency), a room_data_rejections counter, LLM failure, fallback and breaker counters and a session-store event counter, a parameter-rejection counter and a search-timeout counter (marked '# v2:')
+# Drift is checked by llm_approach/tests/test_copy_drift.py.
+# ==== end of v2 provenance header ====
+"""
+Lightweight structured logging + in-memory metrics.
+
+Not a monitoring stack. logging.getLogger("chatbot") writes one
+structured line per event (safe metadata only - fixed scalar fields),
+and a small in-memory registry backs GET /metrics. This is enough for
+a demo/small deployment; swapping the registry for
+OpenTelemetry/Prometheus/a real log shipper later would only mean
+changing this one module, since every call site funnels through
+record_turn() / record_api_latency() / record_llm_latency() /
+record_rate_limit_event() rather than logging directly.
+
+NEVER pass a token, Authorization header, password, or other secret
+into any function here. Every function takes fixed scalar fields only
+(no free-form payloads), so safety comes from what callers pass; see
+tests/test_p3_18_observability.py for the no-credentials-in-logs checks.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import threading
+from collections import deque
+from typing import Any
+
+logger = logging.getLogger("chatbot")
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+
+def _latency_stats(values: "deque[float]") -> dict[str, Any]:
+    if not values:
+        return {"count": 0, "avg_ms": None, "p95_ms": None, "max_ms": None}
+
+    ordered = sorted(values)
+    count = len(ordered)
+    p95_index = min(count - 1, int(round(0.95 * (count - 1))))
+
+    return {
+        "count": count,
+        "avg_ms": round(sum(ordered) / count, 2),
+        "p95_ms": round(ordered[p95_index], 2),
+        "max_ms": round(ordered[-1], 2),
+    }
+
+
+class _MetricsRegistry:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.request_count = 0
+        self.error_count = 0
+        self.tool_failures = 0
+        self.rate_limit_events = 0
+        self.room_data_rejections = 0  # v2: counter for the API data guardrail
+        self.parameter_rejections: dict[str, int] = {}  # v2: by field name (fixed words)
+        self.search_timeouts = 0  # v2: whole-search timeouts
+        self.llm_failures: dict[str, int] = {}  # v2: by kind (timeout, rate_limit, ...)
+        self.llm_events: dict[str, int] = {}  # v2: fallback_switch, breaker_open, breaker_skip, breaker_close
+        self.session_store_events: dict[str, int] = {}  # v2: redis_unavailable, state_corrupt, lock_timeout, ...
+        self.city_change_events: dict[str, int] = {}  # v2: D4 question asked / outcome (fixed words only)
+        self.turn_events: dict[str, int] = {}  # v2: deadline_exceeded (fixed words only)
+        self.pricing_events: dict[str, int] = {}  # v2: owner-contact plans (pricing_requested, _ok, _empty, _failed, _no_city)
+        self.gate_counts: dict[str, int] = {"gate_checked": 0, "gate_would_block": 0, "gate_blocked": 0, "gate_error": 0}  # v2: semantic gate
+        self.gate_labels: dict[str, int] = {}  # v2: classifier label -> count (fixed words only)
+        self.gate_latencies_ms: deque[float] = deque(maxlen=500)  # v2: per check
+        self.status_counts: dict[str, int] = {}
+        self.api_latencies_ms: deque[float] = deque(maxlen=500)
+        self.llm_latencies_ms: deque[float] = deque(maxlen=500)
+        self.turn_latencies_ms: deque[float] = deque(maxlen=500)
+        # Phase 8 cost/model-tier controls: which tier (free deterministic
+        # fast-path vs. a real model call) actually served each turn, plus
+        # a rough token/cost estimate per mode - see record_llm_usage().
+        self.llm_usage_by_mode: dict[str, dict[str, float]] = {}
+
+    def record_turn(self, status: str, latency_ms: float) -> None:
+        with self._lock:
+            self.request_count += 1
+            self.status_counts[status] = self.status_counts.get(status, 0) + 1
+            self.turn_latencies_ms.append(latency_ms)
+            if status == "error":
+                self.error_count += 1
+
+    def record_api_latency(self, latency_ms: float, success: bool) -> None:
+        with self._lock:
+            self.api_latencies_ms.append(latency_ms)
+            if not success:
+                self.tool_failures += 1
+
+    def record_llm_latency(self, latency_ms: float) -> None:
+        with self._lock:
+            self.llm_latencies_ms.append(latency_ms)
+
+    def record_room_data_rejection(self) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.room_data_rejections += 1  # v2: added
+
+    def record_parameter_rejection(self, field: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.parameter_rejections[field] = self.parameter_rejections.get(field, 0) + 1  # v2: added
+
+    def record_search_timeout(self) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.search_timeouts += 1  # v2: added
+
+    def record_llm_failure(self, kind: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.llm_failures[kind] = self.llm_failures.get(kind, 0) + 1  # v2: added
+
+    def record_llm_event(self, event: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.llm_events[event] = self.llm_events.get(event, 0) + 1  # v2: added
+
+    def record_session_store_event(self, event: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.session_store_events[event] = self.session_store_events.get(event, 0) + 1  # v2: added
+
+    def record_turn_event(self, event: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.turn_events[event] = self.turn_events.get(event, 0) + 1  # v2: added
+
+    def record_city_change(self, event: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.city_change_events[event] = self.city_change_events.get(event, 0) + 1  # v2: added
+
+    def record_pricing(self, event: str) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.pricing_events[event] = self.pricing_events.get(event, 0) + 1  # v2: added
+
+    def record_semantic_gate(self, label: str, would_block: bool, blocked: bool, latency_ms: float) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.gate_counts["gate_checked"] += 1  # v2: added
+            self.gate_counts["gate_would_block"] += int(would_block)  # v2: added
+            self.gate_counts["gate_blocked"] += int(blocked)  # v2: added
+            self.gate_labels[label] = self.gate_labels.get(label, 0) + 1  # v2: added
+            self.gate_latencies_ms.append(latency_ms)  # v2: added
+
+    def record_semantic_gate_error(self) -> None:  # v2: new
+        with self._lock:  # v2: added
+            self.gate_counts["gate_error"] += 1  # v2: added
+
+    def record_rate_limit_event(self) -> None:
+        with self._lock:
+            self.rate_limit_events += 1
+
+    def record_llm_usage(self, mode: str, estimated_tokens: int) -> None:
+        with self._lock:
+            bucket = self.llm_usage_by_mode.setdefault(
+                mode, {"calls": 0, "estimated_tokens": 0, "estimated_cost_usd": 0.0}
+            )
+            bucket["calls"] += 1
+            bucket["estimated_tokens"] += estimated_tokens
+            bucket["estimated_cost_usd"] += (
+                estimated_tokens / 1000.0
+            ) * _cost_per_1k_tokens(mode)
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            llm_calls = sum(
+                int(bucket["calls"]) for bucket in self.llm_usage_by_mode.values()
+            )
+            return {
+                "request_count": self.request_count,
+                "error_count": self.error_count,
+                "tool_failures": self.tool_failures,
+                "rate_limit_events": self.rate_limit_events,
+                "room_data_rejections": self.room_data_rejections,  # v2: added
+                "parameter_rejections": dict(self.parameter_rejections),  # v2: added
+                "search_timeouts": self.search_timeouts,  # v2: added
+                "llm_failures": dict(self.llm_failures),  # v2: added
+                "llm_events": dict(self.llm_events),  # v2: added
+                "session_store_events": dict(self.session_store_events),  # v2: added
+                "turn_events": dict(self.turn_events),  # v2: added
+                "city_change": dict(self.city_change_events),  # v2: added
+                "pricing": dict(self.pricing_events),  # v2: added
+                "semantic_gate": {**self.gate_counts, "labels": dict(self.gate_labels), "latency": _latency_stats(self.gate_latencies_ms)},  # v2: added
+                "status_counts": dict(self.status_counts),
+                "api_latency": _latency_stats(self.api_latencies_ms),
+                "llm_latency": _latency_stats(self.llm_latencies_ms),
+                "turn_latency": _latency_stats(self.turn_latencies_ms),
+                "llm_usage": {
+                    mode: {
+                        "calls": int(bucket["calls"]),
+                        "estimated_tokens": int(bucket["estimated_tokens"]),
+                        "estimated_cost_usd": round(bucket["estimated_cost_usd"], 6),
+                    }
+                    for mode, bucket in self.llm_usage_by_mode.items()
+                },
+                "tier_summary": {
+                    "llm_tier_calls": llm_calls,
+                    "fast_or_deterministic_tier_turns": max(
+                        0, self.request_count - llm_calls
+                    ),
+                },
+            }
+
+
+_metrics = _MetricsRegistry()
+
+# Per-mode $/1K-token rate used only to produce an ESTIMATED cost figure
+# at /metrics - never a stand-in for a provider's real invoice. Locally
+# hosted modes (qwen/gemma via Ollama) have no real per-token cost, so
+# they default to 0; a hosted mode's real price is an external contract
+# this project must not guess at (see docs/Homilivo_Project_Plan.md
+# guardrail #10), so it is only ever read from an operator-supplied env
+# var, never hardcoded.
+_LLM_COST_PER_1K_TOKENS_ENV = {
+    "qwen": "LLM_COST_PER_1K_TOKENS_QWEN",
+    "gemma": "LLM_COST_PER_1K_TOKENS_GEMMA",
+    "groq": "LLM_COST_PER_1K_TOKENS_GROQ",
+}
+
+
+def _cost_per_1k_tokens(mode: str) -> float:
+    env_name = _LLM_COST_PER_1K_TOKENS_ENV.get(mode)
+    if not env_name:
+        return 0.0
+    try:
+        return float(os.getenv(env_name, "0") or "0")
+    except ValueError:
+        return 0.0
+
+
+def _estimate_tokens(text: str) -> int:
+    """
+    ~4 characters/token is the standard rough heuristic for English
+    text. Used instead of a provider's reported usage field because
+    that field's shape differs per SDK/mode and is simply absent on the
+    mocked clients this project's tests use - an estimate computed the
+    same way for every mode is honest about being an estimate, whereas
+    reading a provider-specific field would look precise while still
+    being an external contract this project has not verified (guardrail
+    #10: don't guess external contracts).
+    """
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+def record_turn(
+    *,
+    request_id: str,
+    session_id: str,
+    intent: str | None,
+    operation: str | None,
+    tool: str | None,
+    mode: str,
+    status: str,
+    error_category: str | None,
+    latency_ms: float,
+) -> None:
+    """
+    One call per chat turn (REST or WebSocket). `status` is one of
+    "success" | "blocked" | "error". Arguments are metadata only - no
+    user message text or credentials are ever logged here.
+    """
+    _metrics.record_turn(status, latency_ms)
+
+    logger.info(
+        "turn request_id=%s session_id=%s intent=%s operation=%s tool=%s "
+        "mode=%s status=%s error_category=%s latency_ms=%.1f",
+        request_id, session_id, intent, operation, tool,
+        mode, status, error_category, latency_ms,
+    )
+
+
+def record_api_latency(latency_ms: float, success: bool) -> None:
+    """One call per outbound Homilivo API attempt sequence (app/server.py)."""
+    _metrics.record_api_latency(latency_ms, success)
+
+
+def record_llm_latency(latency_ms: float, model: str) -> None:
+    """One call per LLM generation call (qwen/gemma/groq)."""
+    _metrics.record_llm_latency(latency_ms)
+    logger.info("llm_call model=%s latency_ms=%.1f", model, latency_ms)
+
+
+def record_room_data_rejection() -> None:  # v2: new
+    """One call whenever validate_room_data rejects a rooms API response."""  # v2: added
+    _metrics.record_room_data_rejection()  # v2: added
+
+
+def record_parameter_rejection(field: str) -> None:  # v2: new
+    """One call per search the parameter guardrail refused; ``field`` is a fixed field name, never a value."""  # v2: added
+    _metrics.record_parameter_rejection(field)  # v2: added
+
+
+def record_search_timeout() -> None:  # v2: new
+    """One call when the whole rooms search hit its time bound."""  # v2: added
+    _metrics.record_search_timeout()  # v2: added
+
+
+def record_llm_failure(kind: str) -> None:  # v2: new
+    """One call per failed LLM call or unusable reply; ``kind`` is a fixed word, never text."""  # v2: added
+    _metrics.record_llm_failure(kind)  # v2: added
+
+
+def record_llm_event(event: str) -> None:  # v2: new
+    """One call per fallback switch or circuit-breaker change; ``event`` is a fixed word."""  # v2: added
+    _metrics.record_llm_event(event)  # v2: added
+
+
+def record_session_store_event(event: str) -> None:  # v2: new
+    """One call per session-store problem or lock event; ``event`` is a fixed word, never text."""  # v2: added
+    _metrics.record_session_store_event(event)  # v2: added
+
+
+def record_turn_event(event: str) -> None:  # v2: new
+    """One call when a turn ends in a way worth counting, e.g. ``deadline_exceeded``; ``event`` is a fixed word, never text."""  # v2: added
+    _metrics.record_turn_event(event)  # v2: added
+
+
+def record_city_change(event: str) -> None:  # v2: new
+    """D4: ``city_change_question_asked`` or an outcome (``kept``, ``fresh``, ``unclear``, ``abandoned``); never text."""  # v2: added
+    _metrics.record_city_change(event)  # v2: added
+
+
+def record_pricing(event: str) -> None:  # v2: new
+    """One call per pricing event; ``event`` is a fixed word (pricing_requested, pricing_ok, pricing_empty, pricing_failed, pricing_no_city), never text."""  # v2: added
+    _metrics.record_pricing(event)  # v2: added
+
+
+def record_semantic_gate(label: str, would_block: bool, blocked: bool, latency_ms: float) -> None:  # v2: new
+    """One call per semantic gate check; ``label`` is the classifier's fixed intent word, never text."""  # v2: added
+    _metrics.record_semantic_gate(label, would_block, blocked, latency_ms)  # v2: added
+
+
+def record_semantic_gate_error() -> None:  # v2: new
+    """One call when the gate's classifier failed (the turn goes on, unblocked)."""  # v2: added
+    _metrics.record_semantic_gate_error()  # v2: added
+
+
+def record_rate_limit_event() -> None:
+    """One call whenever a request or WebSocket connection is rate-limited."""
+    _metrics.record_rate_limit_event()
+    logger.info("rate_limit_exceeded")
+
+
+def record_llm_usage(mode: str, model: str, prompt_text: str, completion_text: str) -> None:
+    """
+    One call per actual qwen/gemma/groq generation (never for fast mode,
+    which makes no model call) - see generate_qwen_response() /
+    generate_gemma_response() / generate_groq_response() in
+    app/experiments/agent_modes.py. Feeds /metrics's "llm_usage" and
+    "tier_summary" - the Phase 8 cost/model-tier controls: how many
+    turns actually needed the LLM tier vs. the free deterministic/fast
+    tier, and a rough token/cost estimate per mode. See
+    _estimate_tokens()/_cost_per_1k_tokens() above for why these are
+    estimates, not billing figures.
+    """
+    estimated_tokens = _estimate_tokens(prompt_text) + _estimate_tokens(completion_text)
+    _metrics.record_llm_usage(mode, estimated_tokens)
+    logger.info(
+        "llm_usage mode=%s model=%s estimated_tokens=%d",
+        mode, model, estimated_tokens,
+    )
+
+
+def get_metrics_snapshot() -> dict[str, Any]:
+    return _metrics.snapshot()

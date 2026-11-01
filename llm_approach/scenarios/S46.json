@@ -1,0 +1,38 @@
+{
+  "id": "S46",
+  "title": "Recall: name and age together",
+  "turns": [
+    {
+      "user": "I'm Ziyad and 20",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!",
+        "user_facts": {
+          "name": "Ziyad",
+          "age": 20
+        }
+      },
+      "expect": {
+        "action": "facts_saved"
+      }
+    },
+    {
+      "user": "what's my name and age?",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_targets": [
+          "name",
+          "age"
+        ]
+      },
+      "expect": {
+        "tool_called": false,
+        "reply_contains": [
+          "Your name is Ziyad and you're 20."
+        ]
+      }
+    }
+  ]
+}

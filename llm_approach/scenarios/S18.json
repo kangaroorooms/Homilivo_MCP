@@ -1,0 +1,49 @@
+{
+  "id": "S18",
+  "title": "'compare the first two' is computed from stored rooms",
+  "turns": [
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "compare the first two",
+      "llm": {
+        "intent": "ROOM_FOLLOWUP",
+        "confidence": 0.95,
+        "operation": "COMPARE",
+        "compare_references": [
+          1,
+          2
+        ]
+      },
+      "expect": {
+        "intent": "ROOM_FOLLOWUP",
+        "operation": "COMPARE",
+        "action": "followup_compare",
+        "tool_called": false,
+        "reply_contains": [
+          "1. ",
+          "2. "
+        ]
+      }
+    }
+  ]
+}

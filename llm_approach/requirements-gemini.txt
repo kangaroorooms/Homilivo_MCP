@@ -1,0 +1,4 @@
+# Needed only for the Gemini provider (LLM_APPROACH_PROVIDER=gemini, the default) and smoke_gemini.
+# The offline tests and the Groq provider do not import it. Install with:
+#   pip install -r llm_approach/requirements-gemini.txt
+google-genai==2.31.0

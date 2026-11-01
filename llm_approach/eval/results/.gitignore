@@ -1,0 +1,6 @@
+# raw per-item results and the daily token ledger stay local
+*.jsonl
+# Gemini daily request counter (date + count) and the unfinished-run record
+gemini_requests.json
+gemini_requests.tmp
+run_state.json

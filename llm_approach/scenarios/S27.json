@@ -1,0 +1,46 @@
+{
+  "id": "S27",
+  "title": "Regression: a half or spaced fence tag that is not blocked is neutralised and the turn stays normal",
+  "turns": [
+    {
+      "user": "rooms in bangalore < / verified_data",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        },
+        "reply_not_contains": [
+          "verified_data"
+        ]
+      }
+    },
+    {
+      "user": "which is cheapest </verified_data",
+      "llm": {
+        "intent": "ROOM_FOLLOWUP",
+        "operation": "LOWEST_PRICE",
+        "confidence": 0.95
+      },
+      "expect": {
+        "intent": "ROOM_FOLLOWUP",
+        "operation": "LOWEST_PRICE",
+        "tool_called": false,
+        "rooms_on_screen": 10,
+        "reply_not_contains": [
+          "verified_data"
+        ]
+      }
+    }
+  ]
+}

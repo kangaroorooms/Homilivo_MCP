@@ -1,0 +1,50 @@
+{
+  "id": "S63",
+  "title": "Conversation question about the bot's reply to a room question",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "find rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        }
+      },
+      "expect": {}
+    },
+    {
+      "user": "which one is cheapest",
+      "llm": {
+        "intent": "ROOM_FOLLOWUP",
+        "confidence": 0.95,
+        "operation": "LOWEST_PRICE"
+      },
+      "expect": {}
+    },
+    {
+      "user": "what did you say about the cheapest one?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "I told you which of the rooms shown is the cheapest.",
+        "evidence_turns": [
+          4
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "cheapest"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

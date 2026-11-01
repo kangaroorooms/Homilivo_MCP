@@ -1,0 +1,37 @@
+{
+  "id": "S44",
+  "title": "Recall: name only",
+  "turns": [
+    {
+      "user": "my name is Ziyad",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!",
+        "user_facts": {
+          "name": "Ziyad"
+        }
+      },
+      "expect": {
+        "action": "facts_saved",
+        "facts": {
+          "name": "Ziyad"
+        }
+      }
+    },
+    {
+      "user": "what's my name",
+      "llm": {
+        "intent": "CONVERSATION_RECALL",
+        "confidence": 0.95,
+        "recall_target": "name"
+      },
+      "expect": {
+        "tool_called": false,
+        "reply_contains": [
+          "Your name is Ziyad."
+        ]
+      }
+    }
+  ]
+}

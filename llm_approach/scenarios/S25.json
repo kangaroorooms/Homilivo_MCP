@@ -1,0 +1,32 @@
+{
+  "id": "S25",
+  "title": "Regression: placeholder knowledge-base text is refused (stub only)",
+  "stub_only": true,
+  "kb_answer": {
+    "message": "Homilivo charges owners PLACEHOLDER - confirm wording with the team."
+  },
+  "turns": [
+    {
+      "user": "how does homilivo make money",
+      "llm": {
+        "intent": "PLATFORM_INFO",
+        "confidence": 0.95,
+        "standalone_query": "how does homilivo make money"
+      },
+      "expect": {
+        "intent": "PLATFORM_INFO",
+        "action": "platform_info",
+        "error_class": "placeholder_text",
+        "tool_called": false,
+        "reply_contains": [
+          "I don't have that information",
+          "contact Homilivo support"
+        ],
+        "reply_not_contains": [
+          "placeholder",
+          "confirm wording"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "id": "S13",
+  "title": "'book this room' gets the fixed unsupported-action reply",
+  "turns": [
+    {
+      "user": "find me a room in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_shown": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "book this room",
+      "llm": {
+        "intent": "UNSUPPORTED_ACTION",
+        "confidence": 0.95,
+        "reply": "I can't book rooms."
+      },
+      "expect": {
+        "intent": "UNSUPPORTED_ACTION",
+        "action": "unsupported_action",
+        "tool_called": false,
+        "rooms_on_screen": 10
+      }
+    }
+  ]
+}

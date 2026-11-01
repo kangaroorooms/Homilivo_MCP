@@ -1,0 +1,83 @@
+{
+  "id": "S23",
+  "title": "SHOW_MORE pages through a 25-room synthetic city",
+  "rooms_fixture": "rooms_synthetic_25.json",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        }
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10,
+        "reply_contains": [
+          "showing 10 of 25"
+        ],
+        "reply_not_contains": [
+          "all the matching rooms"
+        ]
+      }
+    },
+    {
+      "user": "show more",
+      "llm": {
+        "intent": "SHOW_MORE",
+        "confidence": 0.95,
+        "slots": {}
+      },
+      "expect": {
+        "intent": "SHOW_MORE",
+        "action": "show_more",
+        "tool_called": true,
+        "rooms_on_screen": 10,
+        "reply_contains": [
+          "Here are more rooms (page 2)"
+        ]
+      }
+    },
+    {
+      "user": "show more",
+      "llm": {
+        "intent": "SHOW_MORE",
+        "confidence": 0.95,
+        "slots": {}
+      },
+      "expect": {
+        "intent": "SHOW_MORE",
+        "action": "show_more",
+        "tool_called": true,
+        "rooms_on_screen": 5,
+        "reply_contains": [
+          "Here are more rooms (page 3)"
+        ],
+        "reply_not_contains": [
+          "There are more rooms"
+        ]
+      }
+    },
+    {
+      "user": "show more",
+      "llm": {
+        "intent": "SHOW_MORE",
+        "confidence": 0.95,
+        "slots": {}
+      },
+      "expect": {
+        "intent": "SHOW_MORE",
+        "action": "show_more_all",
+        "tool_called": false,
+        "rooms_on_screen": 5,
+        "reply_contains": [
+          "all the matching rooms"
+        ]
+      }
+    }
+  ]
+}

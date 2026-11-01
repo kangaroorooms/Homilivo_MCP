@@ -1,0 +1,51 @@
+{
+  "id": "S21",
+  "title": "An area with no rooms lists the real areas",
+  "turns": [
+    {
+      "user": "rooms in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore"
+        },
+        "standalone_query": "find rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "rooms_on_screen": 10,
+        "search": {
+          "city": "Bangalore"
+        }
+      }
+    },
+    {
+      "user": "whitefield",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "area": "Whitefield"
+        }
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "refinement",
+        "tool_called": true,
+        "rooms_shown": false,
+        "rooms_on_screen": 0,
+        "search": {
+          "city": "Bangalore",
+          "area": "Whitefield"
+        },
+        "reply_contains": [
+          "I couldn't find rooms in Whitefield, Bangalore.",
+          "Areas with rooms: Koramangala, Adugodi"
+        ]
+      }
+    }
+  ]
+}

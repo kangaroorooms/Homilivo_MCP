@@ -1,0 +1,228 @@
+[
+  {
+    "id": "fixture-1",
+    "title": "1 BHK Flat",
+    "pricePerMonth": 25000,
+    "roomType": "2RK",
+    "location": "Koramangala",
+    "landmark": "6 block Koramangala",
+    "city": "bangalore",
+    "amenities": [
+      "hot-water",
+      "parking",
+      "balcony",
+      "window"
+    ],
+    "idealFor": [
+      "Working Professionals",
+      "Students",
+      "Family"
+    ],
+    "rating": 0,
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "fixture-2",
+    "title": "Single Room",
+    "pricePerMonth": 7500,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "6 block Koramangala",
+    "city": "bangalore",
+    "amenities": [
+      "balcony",
+      "furnished",
+      "study-table",
+      "hot-water",
+      "bike-storage",
+      "parking"
+    ],
+    "idealFor": [
+      "Students",
+      "Working Professionals",
+      "Family"
+    ],
+    "rating": 0,
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "fixture-3",
+    "title": "Single Room with attached let bath",
+    "pricePerMonth": 8000,
+    "roomType": "Single",
+    "location": "Koramangala",
+    "landmark": "6th block Koramangala",
+    "city": "bangalore",
+    "amenities": [
+      "hot-water",
+      "bike-storage",
+      "parking"
+    ],
+    "idealFor": [
+      "Students",
+      "Working Professionals"
+    ],
+    "rating": 0,
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "fixture-4",
+    "title": "2 BHK Flat",
+    "pricePerMonth": 17500,
+    "roomType": "2BHK",
+    "location": "Koramangala",
+    "landmark": "6 block Koramangala",
+    "city": "bangalore",
+    "amenities": [
+      "fan",
+      "hot-water",
+      "bike-storage"
+    ],
+    "idealFor": [
+      "Students",
+      "Working Professionals",
+      "Family"
+    ],
+    "rating": 0,
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "fixture-5",
+    "title": "2 BHK Flat",
+    "pricePerMonth": 20000,
+    "roomType": "2BHK",
+    "location": "Koramangala",
+    "landmark": "Balaji Nagar",
+    "city": "bangalore",
+    "amenities": [
+      "power-backup",
+      "lighting",
+      "fan",
+      "hot-water",
+      "balcony",
+      "water-purifier",
+      "gas-stove",
+      "bike-storage"
+    ],
+    "idealFor": [
+      "Students",
+      "Working Professionals",
+      "Family"
+    ],
+    "rating": 0,
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "fixture-6",
+    "title": "1 BHK Flat",
+    "pricePerMonth": 7000,
+    "roomType": "1BHK",
+    "location": "Adugodi",
+    "landmark": "anepalaya adugodi Post",
+    "city": "bangalore",
+    "amenities": [
+      "bike-storage",
+      "unfurnished",
+      "fan",
+      "balcony",
+      "window"
+    ],
+    "idealFor": [
+      "Students",
+      "Working Professionals",
+      "Family"
+    ],
+    "rating": 0,
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "fixture-7",
+    "title": "3 BHK Flat",
+    "pricePerMonth": 30000,
+    "roomType": "3BHK",
+    "location": "Koramangala",
+    "landmark": "4th block Koramangala",
+    "city": "bangalore",
+    "amenities": [
+      "fan",
+      "power-backup",
+      "attached-bathroom",
+      "hot-water",
+      "semi-furnished",
+      "shared-bathroom",
+      "wardrobe",
+      "bike-storage",
+      "parking"
+    ],
+    "idealFor": [
+      "Students",
+      "Working Professionals",
+      "Family"
+    ],
+    "rating": 0,
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "fixture-8",
+    "title": "2 BHK Flat",
+    "pricePerMonth": 25000,
+    "roomType": "2BHK",
+    "location": "Koramangala",
+    "landmark": "4th block Koramangala",
+    "city": "bangalore",
+    "amenities": [
+      "fan",
+      "hot-water",
+      "parking",
+      "bike-storage"
+    ],
+    "idealFor": [
+      "Students",
+      "Working Professionals",
+      "Family"
+    ],
+    "rating": 0,
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "fixture-9",
+    "title": "1 BHK Flat - Koramangala",
+    "pricePerMonth": 16000,
+    "roomType": "1BHK",
+    "location": "Koramangala",
+    "landmark": "Koramangala",
+    "city": "bangalore",
+    "amenities": [
+      "hot-water",
+      "fridge"
+    ],
+    "idealFor": [
+      "Working Professionals",
+      "Students",
+      "Family"
+    ],
+    "rating": 0,
+    "availabilityStatus": "AVAILABLE"
+  },
+  {
+    "id": "fixture-10",
+    "title": "Cozy 1BHK in Koramangala",
+    "pricePerMonth": 22000,
+    "roomType": "1BHK",
+    "location": "Koramangala",
+    "landmark": "Near Forum Mall",
+    "city": "bangalore",
+    "amenities": [
+      "WiFi",
+      "Furnished",
+      "Gym",
+      "Security"
+    ],
+    "idealFor": [
+      "Working Professionals",
+      "Students"
+    ],
+    "rating": 4.2,
+    "availabilityStatus": "AVAILABLE"
+  }
+]

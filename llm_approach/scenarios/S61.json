@@ -1,0 +1,705 @@
+{
+  "id": "S61",
+  "title": "Conversation question in a 150-turn session (20 oldest + 100 newest are shown)",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "hello 1",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 2",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 3",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 4",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 5",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 6",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 7",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 8",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 9",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 10",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 11",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 12",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 13",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 14",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 15",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 16",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 17",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 18",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 19",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 20",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 21",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 22",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 23",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 24",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 25",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 26",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 27",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 28",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 29",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 30",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 31",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 32",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 33",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 34",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 35",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 36",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 37",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 38",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 39",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 40",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 41",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 42",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 43",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 44",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 45",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 46",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 47",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 48",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 49",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 50",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 51",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 52",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 53",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 54",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 55",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 56",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 57",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 58",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 59",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 60",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 61",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 62",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 63",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 64",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 65",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 66",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 67",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 68",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 69",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 70",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 71",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 72",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 73",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 74",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "hello 75",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Hi!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "what was the very first thing I said?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "You said \"hello 1\".",
+        "evidence_turns": [
+          1
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "hello 1"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

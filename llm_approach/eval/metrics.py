@@ -1,0 +1,372 @@
+"""Pure metric functions over evaluation result records. Offline, no I/O.
+
+A result record (one line of ``results/<dataset>.jsonl``) has at least:
+``dataset, item, run, status, intent, operation, validated_slots, rejected,
+room_reference, confidence, needs_clarification, would_search, latency_ms,
+tokens_in, tokens_out, cached_tokens`` plus the gold fields copied from the
+dataset (``gold_intent, gold_operation, gold_slots, acceptable_intents,
+acceptable_ops, category, gold_label``).
+
+``status`` is ``ok`` (decision parsed), ``invalid`` (no decision: invalid JSON
+twice, timeout or another Groq error) or ``rate_limit_miss`` (Groq throttled us
+twice). A rate-limit miss is not a model answer: it is left out of every
+denominator here and reported separately by ``coverage``.
+"""
+
+from __future__ import annotations
+
+import math
+from collections import defaultdict
+from typing import Any, Iterable
+
+from llm_approach import config
+from llm_approach.eval import label_map
+
+SEARCH_INTENTS = {"NEW_SEARCH", "REFINEMENT"}
+SEARCH_SLOT_FIELDS = ("city", "bhk", "min_price", "max_price")  # a rejected one stops the search
+SLOT_FIELDS = ("city", "bhk", "min_price", "max_price", "ideal_for")
+BUCKETS = [(0.0, 0.6), (0.6, 0.8), (0.8, 0.9), (0.9, 1.0001)]
+
+
+# ---- basics ---------------------------------------------------------------
+
+
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float | None, float | None]:
+    """Wilson score interval for k successes in n trials (fractions)."""
+    if n <= 0:
+        return (None, None)
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+def proportion(k: int, n: int) -> dict[str, Any]:
+    lo, hi = wilson(k, n)
+    return {"k": k, "n": n, "value": (k / n) if n else None, "lo": lo, "hi": hi}
+
+
+def scored(results: Iterable[dict]) -> list[dict]:
+    """Records that count toward accuracy: everything except rate-limit misses."""
+    return [r for r in results if r.get("status") in ("ok", "invalid")]
+
+
+def select_run(results: Iterable[dict], run: int | None = None) -> list[dict]:
+    """One record per item: the given run, or each item's lowest scored run number."""
+    best: dict[tuple, dict] = {}
+    for r in scored(results):
+        key = (r["dataset"], r["item"])
+        if run is not None:
+            if r.get("run") == run:
+                best[key] = r
+        elif key not in best or r.get("run", 1) < best[key].get("run", 1):
+            best[key] = r
+    return list(best.values())
+
+
+def coverage(results: Iterable[dict], totals: dict[str, int]) -> dict[str, dict[str, int]]:
+    """Per dataset: items with at least one scored run, rate-limit misses, total items."""
+    done: dict[str, set] = defaultdict(set)
+    misses: dict[str, int] = defaultdict(int)
+    for r in results:
+        if r.get("status") in ("rate_limit_miss", "error"):  # no answer was obtained: not done
+            misses[r["dataset"]] += 1
+        else:
+            done[r["dataset"]].add(r["item"])
+    return {d: {"done": len(done[d]), "total": t, "rate_limit_misses": misses[d]} for d, t in totals.items()}
+
+
+FAILED_STATUSES = ("rate_limit_miss", "error")  # no answer was obtained
+FAILURE_KINDS = ("rate_limit", "timeout", "server_error", "other")
+
+
+def failure_kind(r: dict) -> str:
+    """Why a call produced no answer: rate_limit, timeout, server_error or other.
+
+    A ``failure_kind`` field wins when a record has one. Older result files do not: the kind is then read from the
+    fields they already hold (``status``, ``error_class``, ``error_code``, ``error_status``), and a record with
+    nothing to read from is ``other``."""
+    kind = r.get("failure_kind")
+    if kind in FAILURE_KINDS:
+        return kind
+    cls = str(r.get("error_class") or "").lower()
+    code, status = r.get("error_code"), str(r.get("error_status") or "").upper()
+    if r.get("status") == "rate_limit_miss" or "ratelimit" in cls or code == 429 or status == "RESOURCE_EXHAUSTED":
+        return "rate_limit"
+    if "timeout" in cls or status == "DEADLINE_EXCEEDED":
+        return "timeout"
+    if (isinstance(code, int) and 500 <= code <= 599) or "server" in cls or status in ("UNAVAILABLE", "INTERNAL"):
+        return "server_error"
+    return "other"
+
+
+def failed_calls(results: Iterable[dict]) -> dict[str, Any]:
+    """Calls that gave no answer (rate limit, timeout, server error, other), in total and per dataset."""
+    by_kind = {k: 0 for k in FAILURE_KINDS}
+    by_dataset: dict[str, dict[str, int]] = {}
+    for r in results:
+        if r.get("status") in FAILED_STATUSES:
+            kind = failure_kind(r)
+            by_kind[kind] += 1
+            d = by_dataset.setdefault(r.get("dataset", "?"), {k: 0 for k in FAILURE_KINDS})
+            d[kind] += 1
+    return {"total": sum(by_kind.values()), "by_kind": by_kind, "by_dataset": by_dataset}
+
+
+# ---- intent / operation ---------------------------------------------------
+
+
+def intent_correct(r: dict, lenient: bool = False) -> bool:
+    if r.get("status") != "ok" or r.get("gold_intent") is None:
+        return False
+    if r.get("intent") == r["gold_intent"]:
+        return True
+    return lenient and r.get("intent") in (r.get("acceptable_intents") or [])
+
+
+def intent_accuracy(results: Iterable[dict], lenient: bool = False) -> dict[str, Any]:
+    """An invalid record (no decision) counts as wrong; a rate-limit miss is not counted."""
+    rows = [r for r in scored(results) if r.get("gold_intent") is not None]
+    return proportion(sum(intent_correct(r, lenient) for r in rows), len(rows))
+
+
+def operation_accuracy(results: Iterable[dict], lenient: bool = False) -> dict[str, Any]:
+    """Among ROOM_FOLLOWUP gold items: predicted intent ROOM_FOLLOWUP and operation equals the gold operation."""
+    rows = [r for r in scored(results) if r.get("gold_intent") == "ROOM_FOLLOWUP"]
+
+    def ok(r: dict) -> bool:
+        if r.get("status") != "ok" or r.get("intent") != "ROOM_FOLLOWUP":
+            return False
+        allowed = {r.get("gold_operation")}
+        if lenient:
+            allowed |= set(r.get("acceptable_ops") or [])
+        return r.get("operation") in allowed
+
+    return proportion(sum(ok(r) for r in rows), len(rows))
+
+
+def breakdown(results: Iterable[dict], key: str = "category", lenient: bool = False) -> dict[str, dict[str, Any]]:
+    """Intent accuracy per value of ``key`` (``category`` = ctxY/ctxN, or ``gold_label``)."""
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for r in scored(results):
+        if r.get("gold_intent") is not None:
+            groups[str(r.get(key))].append(r)
+    return {g: intent_accuracy(rows, lenient) for g, rows in sorted(groups.items())}
+
+
+# ---- slots ----------------------------------------------------------------
+
+
+def _norm(value: Any) -> Any:
+    return value.strip().lower() if isinstance(value, str) else value
+
+
+def slot_accuracy(results: Iterable[dict], fields: Iterable[str] = SLOT_FIELDS) -> dict[str, dict[str, Any]]:
+    """Per field, over ok records with slot gold: validated value equals gold (no gold value means None).
+    ``overall`` counts every (item, field) pair; ``exact`` counts items with all fields right."""
+    fields = tuple(fields)
+    # an invalid-JSON record (no decision) counts as wrong, like in intent accuracy; a call that failed (rate limit, error) is not an answer
+    rows = [r for r in results if r.get("status") in ("ok", "invalid") and r.get("gold_slots") is not None]
+
+    def right(r: dict, f: str) -> bool:
+        if r.get("status") != "ok":
+            return False
+        return _norm(r["gold_slots"].get(f)) == _norm((r.get("validated_slots") or {}).get(f))
+
+    out: dict[str, dict[str, Any]] = {f: proportion(sum(right(r, f) for r in rows), len(rows)) for f in fields}
+    out["overall"] = proportion(sum(right(r, f) for r in rows for f in fields), len(rows) * len(fields))
+    out["exact"] = proportion(sum(all(right(r, f) for f in fields) for r in rows), len(rows))
+    return out
+
+
+def asked_for_clarification(r: dict) -> bool:
+    return r.get("intent") == "UNCLEAR" or bool(r.get("needs_clarification"))
+
+
+def clarification_pr(results: Iterable[dict]) -> dict[str, Any]:
+    """Precision/recall of asking. Gold ask = gold intent UNCLEAR (the only clarification gold the sets have)."""
+    rows = [r for r in results if r.get("status") == "ok" and r.get("gold_intent") is not None]
+    tp = sum(asked_for_clarification(r) and r["gold_intent"] == "UNCLEAR" for r in rows)
+    pred = sum(asked_for_clarification(r) for r in rows)
+    gold = sum(r["gold_intent"] == "UNCLEAR" for r in rows)
+    return {"precision": proportion(tp, pred), "recall": proportion(tp, gold), "tp": tp, "predicted": pred, "gold": gold}
+
+
+# ---- validity ---------------------------------------------------------------
+
+
+def invalid_slot_rate(results: Iterable[dict]) -> dict[str, Any]:
+    """Share of search-intent decisions in which the validators rejected a slot."""
+    rows = [r for r in results if r.get("status") == "ok" and r.get("intent") in SEARCH_INTENTS]
+    return proportion(sum(bool(r.get("rejected")) for r in rows), len(rows))
+
+
+def invalid_search_rate(results: Iterable[dict]) -> dict[str, Any]:
+    """Search-intent decisions that would reach the rooms API with something invalid: a rejected city/BHK/price, or search
+    arguments that the parameter guardrail refuses. ``would_search`` and ``search_args_valid`` are recorded by the runner from
+    the pipeline's own rule (``pipeline._clarify_rejected``) and the real parameter guardrail on the search the handler would
+    build, so the number can be above 0. Records from before ``search_args_valid`` existed only have the first test."""
+    rows = [r for r in results if r.get("status") == "ok" and r.get("intent") in SEARCH_INTENTS]
+    bad = sum(bool(r.get("would_search"))
+              and (bool(set(r.get("rejected") or []) & set(SEARCH_SLOT_FIELDS)) or r.get("search_args_valid") is False)
+              for r in rows)
+    return proportion(bad, len(rows))
+
+
+def invalid_json_rate(results: Iterable[dict]) -> dict[str, Any]:
+    """The earlier definition, kept as its own line: invalid JSON twice only, among answered calls (``ok`` and
+    ``invalid``). Timeouts and API errors (status ``error``) are NOT in it; see ``no_usable_decision_rate``."""
+    rows = scored(results)
+    return proportion(sum(r["status"] == "invalid" for r in rows), len(rows))
+
+
+def no_usable_decision_rate(results: Iterable[dict]) -> dict[str, Any]:
+    """Calls that produced no usable decision: invalid JSON twice, a timeout or another API error. Among ``ok``, ``invalid``
+    and ``error`` records; a rate-limit miss (we were throttled) stays out, and is reported with the failed calls."""
+    rows = [r for r in results if r.get("status") in ("ok", "invalid", "error")]
+    return proportion(sum(r["status"] in ("invalid", "error") for r in rows), len(rows))
+
+
+def decision_key(r: dict) -> tuple:
+    slots = r.get("validated_slots") or {}
+    return (r.get("status"), r.get("intent"), r.get("operation"), r.get("room_reference"),
+            tuple(sorted((k, _norm(v)) for k, v in slots.items() if v not in (None, [], ""))))
+
+
+def _consistency_by(results: Iterable[dict], key, min_runs: int) -> dict[str, Any]:
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for r in scored(results):
+        groups[(r["dataset"], r["item"])].append(r)
+    multi = [g for g in groups.values() if len(g) >= min_runs]
+    same = sum(len({key(r) for r in g}) == 1 for g in multi)
+    return proportion(same, len(multi))
+
+
+def consistency(results: Iterable[dict], min_runs: int = 2) -> dict[str, Any]:
+    """Items with ``min_runs``+ scored runs (default 2) whose decisions are all identical (strict: ``decision_key``)."""
+    return _consistency_by(results, decision_key, min_runs)
+
+
+FIXTURE_CITY = "Bangalore"  # the city of the rooms on screen in the evaluation (datasets.build_state)
+
+
+def action_key(r: dict) -> tuple:
+    """The user-visible action a decision leads to, not the decision itself.
+
+    Class: search, clarify, followup (with its operation and room), show_more, reject, platform, chat, unsupported,
+    blocked (out of scope), recall. A search carries the filters that reach the rooms API; a refinement with rooms on
+    screen inherits their city, as the pipeline merges it. A confidence below the threshold, an UNCLEAR intent, a
+    search with no city, or a refinement that changes nothing is a clarifying question. Confidence, the label (for
+    example NEW_SEARCH versus UNCLEAR when both end in a question) and the ask flag of a search are not part of it."""
+    if r.get("status") != "ok":
+        return ("none",)
+    intent = r.get("intent")
+    conf = r.get("confidence")
+    if (conf is not None and conf < config.CONFIDENCE_THRESHOLD) or intent == "UNCLEAR":
+        return ("clarify",)
+    if intent in SEARCH_INTENTS:
+        if not r.get("would_search"):
+            return ("clarify",)
+        filters = {k: _norm(v) for k, v in (r.get("validated_slots") or {}).items()
+                   if v not in (None, [], "") and k != "room_reference"}
+        if intent == "REFINEMENT" and r.get("ctx"):
+            filters.setdefault("city", _norm(FIXTURE_CITY))
+            if filters == {"city": _norm(FIXTURE_CITY)}:
+                return ("clarify",)  # nothing new to filter by: the pipeline asks which area
+        if not filters.get("city"):
+            return ("clarify",)
+        return ("search", tuple(sorted(filters.items())))
+    if intent == "ROOM_FOLLOWUP":
+        return ("followup", r.get("operation"), r.get("room_reference"))
+    return {"OUT_OF_SCOPE": ("blocked",), "PLATFORM_INFO": ("platform",), "GENERAL_CHAT": ("chat",)}.get(
+        intent, (str(intent).lower(),))
+
+
+def same_action_consistency(results: Iterable[dict], min_runs: int = 2) -> dict[str, Any]:
+    """Items with ``min_runs``+ scored runs whose runs all lead to the same user-visible action (``action_key``)."""
+    return _consistency_by(results, action_key, min_runs)
+
+
+def expected_runs(results: Iterable[dict]) -> int:
+    """The most runs any item has (failed calls included): the number of runs that were planned."""
+    counts: dict[tuple, int] = defaultdict(int)
+    for r in results:
+        counts[(r["dataset"], r["item"])] += 1
+    return max(counts.values(), default=0)
+
+
+def calibration(results: Iterable[dict]) -> list[dict[str, Any]]:
+    """Intent accuracy per confidence bucket."""
+    rows = [r for r in results if r.get("status") == "ok" and r.get("gold_intent") is not None]
+    out = []
+    for lo, hi in BUCKETS:
+        sel = [r for r in rows if lo <= (r.get("confidence") or 0.0) < hi]
+        out.append({"bucket": f"{lo:.1f}-{min(hi, 1.0):.1f}", **intent_accuracy(sel)})
+    return out
+
+
+# ---- cost -------------------------------------------------------------------
+
+
+def percentile(values: list[float], pct: float) -> float | None:
+    """Nearest-rank percentile (pct in 0..100)."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = max(1, math.ceil(pct / 100 * len(ordered)))
+    return ordered[rank - 1]
+
+
+def latency_percentiles(results: Iterable[dict]) -> dict[str, Any]:
+    vals = [r["latency_ms"] for r in scored(results) if r.get("latency_ms") is not None]
+    return {"n": len(vals), "p50": percentile(vals, 50), "p95": percentile(vals, 95)}
+
+
+def tokens_per_call(results: Iterable[dict]) -> dict[str, Any]:
+    rows = [r for r in scored(results) if r.get("tokens_in") is not None]
+    if not rows:
+        return {"n": 0, "mean_in": None, "mean_out": None, "mean_cached": None}
+    cached = [r["cached_tokens"] for r in rows if r.get("cached_tokens") is not None]
+    return {"n": len(rows), "mean_in": sum(r["tokens_in"] for r in rows) / len(rows),
+            "mean_out": sum(r["tokens_out"] or 0 for r in rows) / len(rows),
+            "mean_cached": (sum(cached) / len(cached)) if cached else None}
+
+
+# ---- paired comparison with the old router ---------------------------------
+
+
+def old_intent(baseline_row: dict) -> str | None:
+    """Intent of the old router's prediction (its POC label mapped through the label map)."""
+    return label_map.intent_of(baseline_row.get("pred"))
+
+
+def old_correct(baseline_row: dict, lenient: bool = False) -> bool:
+    gold = label_map.intent_of(baseline_row.get("gold"))
+    pred = old_intent(baseline_row)
+    if gold is None or pred is None:
+        return False
+    if pred == gold:
+        return True
+    return lenient and pred in label_map.acceptable_intents(baseline_row.get("acceptable"))
+
+
+def paired_comparison(results: Iterable[dict], baseline_rows: Iterable[dict], lenient: bool = False) -> dict[str, Any]:
+    """New (first scored run per item) versus the old router on the items present in both.
+    Both are scored at intent level; ``old`` is the old router's accuracy on the same items."""
+    old = {row["uid"]: row for row in baseline_rows}
+    counts = {"both_right": 0, "new_right_old_wrong": 0, "new_wrong_old_right": 0, "both_wrong": 0}
+    n = 0
+    for r in select_run(results):
+        base = old.get(r["item"])
+        if base is None or r.get("gold_intent") is None:
+            continue
+        n += 1
+        new_ok, old_ok = intent_correct(r, lenient), old_correct(base, lenient)
+        if new_ok:
+            counts["both_right" if old_ok else "new_right_old_wrong"] += 1
+        else:
+            counts["new_wrong_old_right" if old_ok else "both_wrong"] += 1
+    new_k = counts["both_right"] + counts["new_right_old_wrong"]
+    old_k = counts["both_right"] + counts["new_wrong_old_right"]
+    return {"n": n, **counts, "new": proportion(new_k, n), "old": proportion(old_k, n)}

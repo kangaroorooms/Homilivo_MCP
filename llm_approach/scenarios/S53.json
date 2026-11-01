@@ -1,0 +1,39 @@
+{
+  "id": "S53",
+  "title": "Conversation question: a detail the user mentioned (college)",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "my college is VIT",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice! VIT is a good college."
+      },
+      "expect": {}
+    },
+    {
+      "user": "what's my college?",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "Your college is VIT.",
+        "evidence_turns": [
+          1
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "Your college is VIT."
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

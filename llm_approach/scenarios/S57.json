@@ -1,0 +1,50 @@
+{
+  "id": "S57",
+  "title": "Conversation question: summarise the chat",
+  "stub_only": true,
+  "turns": [
+    {
+      "user": "my college is VIT",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "my favourite colour is teal",
+      "llm": {
+        "intent": "GENERAL_CHAT",
+        "confidence": 0.95,
+        "reply": "Nice!"
+      },
+      "expect": {}
+    },
+    {
+      "user": "summarise our chat",
+      "llm": {
+        "intent": "CONVERSATION_QUESTION",
+        "confidence": 0.95
+      },
+      "answer": {
+        "found": true,
+        "answer": "You told me your college is VIT and that your favourite colour is teal.",
+        "evidence_turns": [
+          1,
+          3
+        ]
+      },
+      "expect": {
+        "reply_contains": [
+          "VIT",
+          "teal"
+        ],
+        "action": "conversation_answer",
+        "answer_called": true,
+        "tool_called": false,
+        "intent": "CONVERSATION_QUESTION"
+      }
+    }
+  ]
+}

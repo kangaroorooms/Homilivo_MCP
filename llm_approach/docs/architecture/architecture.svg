@@ -1,0 +1,302 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="4308" viewBox="0 0 2400 4308" font-family="'Segoe UI', Arial, sans-serif">
+<title>HOMILIVO Chatbot Architecture (LLM Approach v2)</title>
+<defs><marker id="head" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M1,1 L11,6 L1,11 z" fill="#4B5563"/></marker><marker id="head-start" viewBox="0 0 12 12" refX="2" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1,1 L11,6 L1,11 z" fill="#4B5563"/></marker></defs>
+<rect width="2400" height="4308" fill="#FFFFFF"/>
+<rect x="780.0" y="170.0" width="560.0" height="84.0" rx="16" fill="#DCEBFA" stroke="#3B82C4" stroke-width="2.5"/>
+<text id="t0" x="1060.0" y="207.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">User</text>
+<text id="t1" x="1060.0" y="234.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">types a message</text>
+<path d="M1060.0,254.0 L1060.0,298.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="298.0" width="560.0" height="132.0" rx="16" fill="#DCEBFA" stroke="#3B82C4" stroke-width="2.5"/>
+<text id="t2" x="1060.0" y="335.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Chat widget (React)</text>
+<text id="t3" x="1060.0" y="362.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">website widget (newkangaroorooms) or</text>
+<text id="t4" x="1060.0" y="386.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">frontend-demo (useChatSocket)</text>
+<text id="t5" x="1060.0" y="410.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">shows reply and room cards</text>
+<rect x="320" y="150.0" width="1480" height="300.0" rx="26" fill="#DCEBFA" fill-opacity="0.22" stroke="#3B82C4" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="150.0" width="270" height="300.0" rx="20" fill="#DCEBFA" stroke="#3B82C4" stroke-width="2.5"/>
+<g transform="translate(46.0,168.0)" fill="none" stroke="#3B82C4" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="30" height="20" rx="3"/><path d="M12 31h12M18 25v6"/></g>
+<text id="t6" x="94.0" y="188.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Frontend (React)</text>
+<text id="t7" x="46.0" y="235.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Chat UI in the browser</text>
+<path d="M1060.0,430.0 L1060.0,534.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="534.0" width="560.0" height="108.0" rx="16" fill="#DDF2E2" stroke="#3E9B5C" stroke-width="2.5"/>
+<text id="t8" x="1060.0" y="571.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">WebSocket</text>
+<text id="t9" x="1060.0" y="598.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">/ws/chat?token=...</text>
+<text id="t10" x="1060.0" y="622.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">(POST /chat is the same turn)</text>
+<path d="M1060.0,642.0 L1060.0,686.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="686.0" width="560.0" height="108.0" rx="16" fill="#DDF2E2" stroke="#3E9B5C" stroke-width="2.5"/>
+<text id="t11" x="1060.0" y="723.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">FastAPI route</text>
+<text id="t12" x="1060.0" y="750.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">ws_chat  -&gt;  run_turn</text>
+<text id="t13" x="1060.0" y="774.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">run_turn: the whole turn runs under a 40 s limit</text>
+<path d="M1060.0,794.0 L1060.0,838.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="838.0" width="560.0" height="156.0" rx="16" fill="#DDF2E2" stroke="#3E9B5C" stroke-width="2.5"/>
+<text id="t14" x="1060.0" y="875.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Entry checks</text>
+<text id="t15" x="1060.0" y="902.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">token present  -  IP rate limit</text>
+<text id="t16" x="1060.0" y="926.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">message 1 to 500 chars, valid mode (WebSocket)</text>
+<text id="t17" x="1060.0" y="950.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">session-id format  -  session limit</text>
+<text id="t18" x="1060.0" y="974.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">new-session limit  -  server ready (else 503)</text>
+<rect x="320" y="514.0" width="1480" height="500.0" rx="26" fill="#DDF2E2" fill-opacity="0.22" stroke="#3E9B5C" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="514.0" width="270" height="500.0" rx="20" fill="#DDF2E2" stroke="#3E9B5C" stroke-width="2.5"/>
+<g transform="translate(46.0,532.0)" fill="none" stroke="#3E9B5C" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="28" height="10" rx="3"/><rect x="4" y="19" width="28" height="10" rx="3"/><circle cx="10" cy="9" r="1.2"/><circle cx="10" cy="24" r="1.2"/></g>
+<text id="t19" x="94.0" y="552.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Backend API layer</text>
+<text id="t20" x="94.0" y="577.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">(FastAPI)</text>
+<text id="t21" x="46.0" y="624.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Routes, token, rate limits</text>
+<path d="M1060.0,994.0 L1060.0,1098.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="1098.0" width="560.0" height="108.0" rx="16" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<text id="t22" x="1060.0" y="1135.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Input normalisation</text>
+<text id="t23" x="1060.0" y="1162.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">NFKC, invisible chars removed</text>
+<text id="t24" x="1060.0" y="1186.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">empty or over 500 chars after this: fixed reply</text>
+<rect x="320" y="1078.0" width="1480" height="148.0" rx="26" fill="#FFF1BF" fill-opacity="0.22" stroke="#C79A12" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="1078.0" width="270" height="148.0" rx="20" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<g transform="translate(46.0,1096.0)" fill="none" stroke="#C79A12" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3l13 5v9c0 8-6 13-13 16C11 30 5 25 5 17V8z"/><path d="M12 17l4 4 8-8"/></g>
+<text id="t25" x="94.0" y="1116.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Guardrails and</text>
+<text id="t26" x="94.0" y="1141.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Security</text>
+<text id="t27" x="46.0" y="1188.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Input and output safety</text>
+<path d="M1060.0,1206.0 L1060.0,1310.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="1310.0" width="560.0" height="96.0" rx="16" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<text id="t28" x="1060.0" y="1353.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Session state load</text>
+<text id="t29" x="1060.0" y="1380.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">per-session lock, then read</text>
+<rect x="320" y="1290.0" width="1480" height="136.0" rx="26" fill="#F1E4F7" fill-opacity="0.22" stroke="#A45BBE" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="1290.0" width="270" height="140.0" rx="20" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<g transform="translate(46.0,1308.0)" fill="none" stroke="#A45BBE" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="11" stroke-width="5" stroke-dasharray="5 3.4"/><circle cx="18" cy="18" r="5"/></g>
+<text id="t30" x="94.0" y="1328.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Tools and</text>
+<text id="t31" x="94.0" y="1353.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Processing</text>
+<text id="t32" x="46.0" y="1400.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Session store, index, metrics</text>
+<path d="M1060.0,1406.0 L1060.0,1510.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="1510.0" width="560.0" height="84.0" rx="16" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<text id="t33" x="1060.0" y="1547.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Security filters</text>
+<text id="t34" x="1060.0" y="1574.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">extra_security + app input guardrail</text>
+<path d="M1060.0,1594.0 L1060.0,1638.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="1638.0" width="560.0" height="132.0" rx="16" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<text id="t35" x="1060.0" y="1675.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Semantic gate</text>
+<text id="t36" x="1060.0" y="1702.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">MiniLM classifier; server default: shadow (records only)</text>
+<text id="t37" x="1060.0" y="1726.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">runs only with no rooms on screen, no pending question</text>
+<text id="t38" x="1060.0" y="1750.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">enforce mode (env): off-topic -&gt; fixed reply, no LLM</text>
+<rect x="320" y="1490.0" width="1480" height="300.0" rx="26" fill="#FFF1BF" fill-opacity="0.22" stroke="#C79A12" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="1490.0" width="270" height="300.0" rx="20" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<g transform="translate(46.0,1508.0)" fill="none" stroke="#C79A12" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3l13 5v9c0 8-6 13-13 16C11 30 5 25 5 17V8z"/><path d="M12 17l4 4 8-8"/></g>
+<text id="t39" x="94.0" y="1528.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Guardrails and</text>
+<text id="t40" x="94.0" y="1553.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Security</text>
+<text id="t41" x="46.0" y="1600.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Input and output safety</text>
+<path d="M1060.0,1770.0 L1060.0,1874.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="1874.0" width="560.0" height="132.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t42" x="1060.0" y="1911.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Prompt build + LLM decision</text>
+<text id="t43" x="1060.0" y="1938.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">one JSON call: intent + slots</text>
+<text id="t44" x="1060.0" y="1962.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">Pydantic Decision model parses it</text>
+<text id="t45" x="1060.0" y="1986.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">bad JSON: retry once, then no decision -&gt; fallback</text>
+<path d="M1060.0,2006.0 L1060.0,2050.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="2050.0" width="560.0" height="108.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t46" x="1060.0" y="2087.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Validators</text>
+<text id="t47" x="1060.0" y="2114.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">first step of _decide_action: city, BHK,</text>
+<text id="t48" x="1060.0" y="2138.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">price, room ref; bad slot -&gt; ask, no search</text>
+<path d="M1060.0,2158.0 L1060.0,2202.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="2202.0" width="560.0" height="108.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t49" x="1060.0" y="2239.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Intent router</text>
+<text id="t50" x="1060.0" y="2266.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">_decide_action: 12 intents -&gt; 5 paths</text>
+<text id="t51" x="1060.0" y="2290.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">+ pending city-change reply, owner-contact check</text>
+<rect x="320" y="1854.0" width="1480" height="476.0" rx="26" fill="#DDD0F6" fill-opacity="0.22" stroke="#6B46C1" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="1854.0" width="270" height="476.0" rx="20" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<g transform="translate(46.0,1872.0)" fill="none" stroke="#6B46C1" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="4"/><circle cx="28" cy="9" r="4"/><circle cx="18" cy="28" r="4"/><path d="M12 10h12M10 13l6 12M26 13l-6 12"/></g>
+<text id="t52" x="94.0" y="1892.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">AI Orchestration</text>
+<text id="t53" x="46.0" y="1939.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">LLM decision, validators,</text>
+<text id="t54" x="46.0" y="1961.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">action modules</text>
+<path d="M466.0,2368.0 L466.0,2480.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="335.0" y="2480.0" width="262.0" height="108.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t55" x="466.0" y="2517.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Platform FAQ</text>
+<text id="t56" x="466.0" y="2544.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">PLATFORM_INFO intent</text>
+<text id="t57" x="466.0" y="2568.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">answer is not LLM-written</text>
+<path d="M466.0,2588.0 L466.0,2632.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="335.0" y="2632.0" width="262.0" height="108.0" rx="16" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<text id="t58" x="466.0" y="2669.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Chroma FAQ index</text>
+<text id="t59" x="466.0" y="2696.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">MiniLM embeddings</text>
+<text id="t60" x="466.0" y="2720.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">similarity search</text>
+<path d="M466.0,2740.0 L466.0,2784.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="335.0" y="2784.0" width="262.0" height="108.0" rx="16" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<text id="t61" x="466.0" y="2821.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Grounded answer</text>
+<text id="t62" x="466.0" y="2848.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">retrieved text only,</text>
+<text id="t63" x="466.0" y="2872.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">else fixed 'no info'</text>
+<path d="M764.0,2368.0 L764.0,2480.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="633.0" y="2480.0" width="262.0" height="132.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t64" x="764.0" y="2517.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">State-based answers</text>
+<text id="t65" x="764.0" y="2544.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">room follow-up, recall,</text>
+<text id="t66" x="764.0" y="2568.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">chat, out of scope,</text>
+<text id="t67" x="764.0" y="2592.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">unsupported (fixed text)</text>
+<path d="M764.0,2612.0 L764.0,2656.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="633.0" y="2656.0" width="262.0" height="108.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t68" x="764.0" y="2693.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Conversation answerer</text>
+<text id="t69" x="764.0" y="2720.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">chat question: 2nd LLM</text>
+<text id="t70" x="764.0" y="2744.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">call over this chat's record</text>
+<path d="M764.0,2764.0 L764.0,2808.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="633.0" y="2808.0" width="262.0" height="108.0" rx="16" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<text id="t71" x="764.0" y="2845.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Answer check</text>
+<text id="t72" x="764.0" y="2872.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">must match transcript,</text>
+<text id="t73" x="764.0" y="2896.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">else 'not in this chat'</text>
+<path d="M1062.0,2368.0 L1062.0,2480.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="931.0" y="2480.0" width="262.0" height="156.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t74" x="1062.0" y="2517.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Owner contact</text>
+<text id="t75" x="1062.0" y="2544.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">check after the LLM call:</text>
+<text id="t76" x="1062.0" y="2568.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">UNSUPPORTED_ACTION or</text>
+<text id="t77" x="1062.0" y="2592.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">PLATFORM_INFO, and owner</text>
+<text id="t78" x="1062.0" y="2616.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">wording -&gt; city's plans</text>
+<path d="M1062.0,2636.0 L1062.0,2680.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="931.0" y="2680.0" width="262.0" height="108.0" rx="16" fill="#CFEFF3" stroke="#1E9AAE" stroke-width="2.5"/>
+<text id="t79" x="1062.0" y="2717.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Pricing API</text>
+<text id="t80" x="1062.0" y="2744.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">HTTP GET per city</text>
+<text id="t81" x="1062.0" y="2768.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">2 attempts, 15 s limit</text>
+<path d="M1062.0,2788.0 L1062.0,2832.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="931.0" y="2832.0" width="262.0" height="96.0" rx="16" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<text id="t82" x="1062.0" y="2875.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Plans check</text>
+<text id="t83" x="1062.0" y="2902.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">validate, clean, format</text>
+<path d="M1360.0,2368.0 L1360.0,2480.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="1229.0" y="2480.0" width="262.0" height="156.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t84" x="1360.0" y="2517.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Clarify</text>
+<text id="t85" x="1360.0" y="2544.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">UNCLEAR, low confidence,</text>
+<text id="t86" x="1360.0" y="2568.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">bad city/BHK/budget slot,</text>
+<text id="t87" x="1360.0" y="2592.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">unclear room reference,</text>
+<text id="t88" x="1360.0" y="2616.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">reject ('not this one')</text>
+<rect x="1229.0" y="2680.0" width="262.0" height="156.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t89" x="1360.0" y="2717.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">City-change question</text>
+<text id="t90" x="1360.0" y="2744.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">asked by Room search: new</text>
+<text id="t91" x="1360.0" y="2768.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">city + saved filters; no</text>
+<text id="t92" x="1360.0" y="2792.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">search yet. Reply is read at</text>
+<text id="t93" x="1360.0" y="2816.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">the top of the router</text>
+<path d="M1658.0,2368.0 L1658.0,2480.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="1527.0" y="2480.0" width="262.0" height="108.0" rx="16" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<text id="t94" x="1658.0" y="2517.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Room search</text>
+<text id="t95" x="1658.0" y="2544.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">search, refine, sort,</text>
+<text id="t96" x="1658.0" y="2568.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">show more; asks for a city</text>
+<path d="M1658.0,2588.0 L1658.0,2632.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="1527.0" y="2632.0" width="262.0" height="96.0" rx="16" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<text id="t97" x="1658.0" y="2675.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Parameter guardrail</text>
+<text id="t98" x="1658.0" y="2702.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">city, price, type, sort</text>
+<path d="M1658.0,2728.0 L1658.0,2772.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="1527.0" y="2772.0" width="262.0" height="108.0" rx="16" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<text id="t99" x="1658.0" y="2809.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">MCP tool (in process)</text>
+<text id="t100" x="1658.0" y="2836.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">search_rooms</text>
+<text id="t101" x="1658.0" y="2860.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">15 s limit, retries</text>
+<path d="M1658.0,2880.0 L1658.0,2924.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="1527.0" y="2924.0" width="262.0" height="96.0" rx="16" fill="#CFEFF3" stroke="#1E9AAE" stroke-width="2.5"/>
+<text id="t102" x="1658.0" y="2967.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Homilivo rooms API</text>
+<text id="t103" x="1658.0" y="2994.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">HTTP GET</text>
+<path d="M1658.0,3020.0 L1658.0,3064.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="1527.0" y="3064.0" width="262.0" height="108.0" rx="16" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<text id="t104" x="1658.0" y="3101.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">API-data guardrail</text>
+<text id="t105" x="1658.0" y="3128.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">room data check, text</text>
+<text id="t106" x="1658.0" y="3152.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">clean, off-criteria drop</text>
+<path d="M1527.0,2534.0 L1509.0,2534.0 L1509.0,2758.0 L1491.0,2758.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="320" y="2460.0" width="1480" height="732.0" rx="26" fill="#DDD0F6" fill-opacity="0.22" stroke="#6B46C1" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="2460.0" width="270" height="732.0" rx="20" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.5"/>
+<g transform="translate(46.0,2478.0)" fill="none" stroke="#6B46C1" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="4"/><circle cx="28" cy="9" r="4"/><circle cx="18" cy="28" r="4"/><path d="M12 10h12M10 13l6 12M26 13l-6 12"/></g>
+<text id="t107" x="94.0" y="2498.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">AI Orchestration</text>
+<text id="t108" x="46.0" y="2545.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Action modules, colours show</text>
+<text id="t109" x="46.0" y="2567.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">the layer</text>
+<path d="M1060.0,2310.0 L1060.0,2368.0" fill="none" stroke="#4B5563" stroke-width="3"/>
+<path d="M466.0,2368.0 L1658.0,2368.0" fill="none" stroke="#4B5563" stroke-width="3"/>
+<path d="M466.0,2892.0 L466.0,3250.0" fill="none" stroke="#4B5563" stroke-width="3"/>
+<path d="M764.0,2916.0 L764.0,3250.0" fill="none" stroke="#4B5563" stroke-width="3"/>
+<path d="M1062.0,2928.0 L1062.0,3250.0" fill="none" stroke="#4B5563" stroke-width="3"/>
+<path d="M1360.0,2836.0 L1360.0,3250.0" fill="none" stroke="#4B5563" stroke-width="3"/>
+<path d="M1658.0,3172.0 L1658.0,3250.0" fill="none" stroke="#4B5563" stroke-width="3"/>
+<path d="M466.0,3250.0 L1658.0,3250.0" fill="none" stroke="#4B5563" stroke-width="3"/>
+<path d="M1229.0,2558.0 L1211.0,2558.0 L1211.0,3250.0" fill="none" stroke="#4B5563" stroke-width="3"/>
+<path d="M1060.0,3250.0 L1060.0,3362.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="3362.0" width="560.0" height="108.0" rx="16" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<text id="t110" x="1060.0" y="3399.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Response checks</text>
+<text id="t111" x="1060.0" y="3426.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">links / HTML / markdown refused; output guardrail</text>
+<text id="t112" x="1060.0" y="3450.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">every path incl. fallback; else a fixed reply</text>
+<rect x="320" y="3342.0" width="1480" height="148.0" rx="26" fill="#FFF1BF" fill-opacity="0.22" stroke="#C79A12" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="3342.0" width="270" height="148.0" rx="20" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.5"/>
+<g transform="translate(46.0,3360.0)" fill="none" stroke="#C79A12" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3l13 5v9c0 8-6 13-13 16C11 30 5 25 5 17V8z"/><path d="M12 17l4 4 8-8"/></g>
+<text id="t113" x="94.0" y="3380.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Guardrails and</text>
+<text id="t114" x="94.0" y="3405.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Security</text>
+<text id="t115" x="46.0" y="3452.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Input and output safety</text>
+<path d="M1060.0,3470.0 L1060.0,3586.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="3586.0" width="560.0" height="108.0" rx="16" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<text id="t116" x="1060.0" y="3623.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">State save</text>
+<text id="t117" x="1060.0" y="3650.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">history + rooms on screen; saved at lock release</text>
+<text id="t118" x="1060.0" y="3674.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">store down: fixed notice added to the reply</text>
+<rect x="320" y="3566.0" width="1480" height="148.0" rx="26" fill="#F1E4F7" fill-opacity="0.22" stroke="#A45BBE" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="3566.0" width="270" height="148.0" rx="20" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<g transform="translate(46.0,3584.0)" fill="none" stroke="#A45BBE" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="11" stroke-width="5" stroke-dasharray="5 3.4"/><circle cx="18" cy="18" r="5"/></g>
+<text id="t119" x="94.0" y="3604.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Tools and</text>
+<text id="t120" x="94.0" y="3629.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Processing</text>
+<text id="t121" x="46.0" y="3676.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Session store, index, metrics</text>
+<path d="M1060.0,3694.0 L1060.0,3798.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="3798.0" width="560.0" height="96.0" rx="16" fill="#DDF2E2" stroke="#3E9B5C" stroke-width="2.5"/>
+<text id="t122" x="1060.0" y="3841.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">WebSocket reply</text>
+<text id="t123" x="1060.0" y="3868.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">typing, token chunks, done</text>
+<rect x="320" y="3778.0" width="1480" height="136.0" rx="26" fill="#DDF2E2" fill-opacity="0.22" stroke="#3E9B5C" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="3778.0" width="270" height="140.0" rx="20" fill="#DDF2E2" stroke="#3E9B5C" stroke-width="2.5"/>
+<g transform="translate(46.0,3796.0)" fill="none" stroke="#3E9B5C" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="28" height="10" rx="3"/><rect x="4" y="19" width="28" height="10" rx="3"/><circle cx="10" cy="9" r="1.2"/><circle cx="10" cy="24" r="1.2"/></g>
+<text id="t124" x="94.0" y="3816.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Backend API layer</text>
+<text id="t125" x="94.0" y="3841.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">(FastAPI)</text>
+<text id="t126" x="46.0" y="3888.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Routes, token, rate limits</text>
+<path d="M1060.0,3894.0 L1060.0,3998.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="3998.0" width="560.0" height="84.0" rx="16" fill="#DCEBFA" stroke="#3B82C4" stroke-width="2.5"/>
+<text id="t127" x="1060.0" y="4035.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Chat widget (React)</text>
+<text id="t128" x="1060.0" y="4062.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">renders reply and room cards</text>
+<path d="M1060.0,4082.0 L1060.0,4126.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="780.0" y="4126.0" width="560.0" height="84.0" rx="16" fill="#DCEBFA" stroke="#3B82C4" stroke-width="2.5"/>
+<text id="t129" x="1060.0" y="4163.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">User</text>
+<text id="t130" x="1060.0" y="4190.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">reads the answer</text>
+<rect x="320" y="3978.0" width="1480" height="252.0" rx="26" fill="#DCEBFA" fill-opacity="0.22" stroke="#3B82C4" stroke-width="2.4" stroke-dasharray="14 9"/>
+<rect x="30" y="3978.0" width="270" height="252.0" rx="20" fill="#DCEBFA" stroke="#3B82C4" stroke-width="2.5"/>
+<g transform="translate(46.0,3996.0)" fill="none" stroke="#3B82C4" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="30" height="20" rx="3"/><path d="M12 31h12M18 25v6"/></g>
+<text id="t131" x="94.0" y="4016.0" font-size="21" font-weight="700" fill="#1F2937" text-anchor="start">Frontend (React)</text>
+<text id="t132" x="46.0" y="4063.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">Chat UI in the browser</text>
+<rect x="1900.0" y="1310.0" width="440.0" height="108.0" rx="16" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<text id="t133" x="2120.0" y="1347.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Session store</text>
+<text id="t134" x="2120.0" y="1374.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">memory (default) or Redis</text>
+<text id="t135" x="2120.0" y="1398.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">idle TTL 1 h, max 1000 sessions</text>
+<path d="M1340.0,1358.0 L1850.0,1358.0 L1850.0,1364.0 L1900.0,1364.0" fill="none" stroke="#4B5563" stroke-width="3" marker-start="url(#head-start)" marker-end="url(#head)"/>
+<rect x="1900.0" y="1866.0" width="440.0" height="130.0" rx="16" fill="#CFEFF3" stroke="#1E9AAE" stroke-width="2.5"/>
+<text id="t136" x="2120.0" y="1890.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Gemini API</text>
+<text id="t137" x="2120.0" y="1917.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">gemini-3.5-flash-lite (default)</text>
+<text id="t138" x="2120.0" y="1941.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">limiter, 5xx retry, circuit breaker</text>
+<text id="t139" x="2120.0" y="1965.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">optional fallback provider: Groq</text>
+<text id="t140" x="2120.0" y="1989.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">also used by the answerer</text>
+<path d="M1340.0,1914.0 L1850.0,1914.0 L1850.0,1931.0 L1900.0,1931.0" fill="none" stroke="#4B5563" stroke-width="3" marker-start="url(#head-start)" marker-end="url(#head)"/>
+<rect x="1900.0" y="2034.0" width="440.0" height="132.0" rx="16" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<text id="t141" x="2120.0" y="2071.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Rule-based fallback</text>
+<text id="t142" x="2120.0" y="2098.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">fast_parser slots -&gt; room search</text>
+<text id="t143" x="2120.0" y="2122.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">used when there is no decision</text>
+<text id="t144" x="2120.0" y="2146.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">its result goes to Response checks</text>
+<path d="M1340.0,1974.0 L1835.0,1974.0 L1835.0,2100.0 L1900.0,2100.0" fill="none" stroke="#4B5563" stroke-width="3" stroke-dasharray="9 7" marker-end="url(#head)"/>
+<path d="M2120.0,2166.0 L2120.0,3416.0 L1340.0,3416.0" fill="none" stroke="#4B5563" stroke-width="3" stroke-dasharray="9 7" marker-end="url(#head)"/>
+<text id="t145" x="1580.0" y="3406.0" font-size="17" font-weight="400" fill="#374151" text-anchor="middle">no decision: fallback result</text>
+<rect x="1900.0" y="3586.0" width="440.0" height="72.0" rx="16" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<text id="t146" x="2120.0" y="3617.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Session store</text>
+<text id="t147" x="2120.0" y="3644.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">same store, state saved</text>
+<path d="M1340.0,3616.0 L1850.0,3616.0 L1850.0,3622.0 L1900.0,3622.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="1900.0" y="3676.0" width="440.0" height="108.0" rx="16" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.5"/>
+<text id="t148" x="2120.0" y="3713.0" font-size="22" font-weight="700" fill="#1F2937" text-anchor="middle">Observability</text>
+<text id="t149" x="2120.0" y="3740.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">turn counters, latency, request</text>
+<text id="t150" x="2120.0" y="3764.0" font-size="18" font-weight="400" fill="#374151" text-anchor="middle">id; no message text; /metrics</text>
+<path d="M1340.0,3656.0 L1850.0,3656.0 L1850.0,3730.0 L1900.0,3730.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<rect x="1850" y="130" width="520" height="570" rx="18" fill="#FFFFFF" stroke="#9CA3AF" stroke-width="2.4"/>
+<text id="t151" x="1874.0" y="168.0" font-size="24" font-weight="700" fill="#1F2937" text-anchor="start">Legend</text>
+<rect x="1874" y="192" width="46" height="26" rx="7" fill="#DCEBFA" stroke="#3B82C4" stroke-width="2.4"/>
+<text id="t151" x="1936.0" y="212.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">Frontend (React)</text>
+<rect x="1874" y="230" width="46" height="26" rx="7" fill="#DDF2E2" stroke="#3E9B5C" stroke-width="2.4"/>
+<text id="t152" x="1936.0" y="250.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">Backend API layer (FastAPI)</text>
+<rect x="1874" y="268" width="46" height="26" rx="7" fill="#FFF1BF" stroke="#C79A12" stroke-width="2.4"/>
+<text id="t153" x="1936.0" y="288.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">Guardrails and Security</text>
+<rect x="1874" y="306" width="46" height="26" rx="7" fill="#DDD0F6" stroke="#6B46C1" stroke-width="2.4"/>
+<text id="t154" x="1936.0" y="326.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">AI Orchestration</text>
+<rect x="1874" y="344" width="46" height="26" rx="7" fill="#CFEFF3" stroke="#1E9AAE" stroke-width="2.4"/>
+<text id="t155" x="1936.0" y="364.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">External APIs</text>
+<rect x="1874" y="382" width="46" height="26" rx="7" fill="#F1E4F7" stroke="#A45BBE" stroke-width="2.4"/>
+<text id="t156" x="1936.0" y="402.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">Tools and Processing</text>
+<path d="M1874.0,440.0 L1920.0,440.0" fill="none" stroke="#4B5563" stroke-width="3" marker-end="url(#head)"/>
+<text id="t157" x="1936.0" y="446.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">request flow</text>
+<path d="M1874.0,478.0 L1920.0,478.0" fill="none" stroke="#4B5563" stroke-width="3" stroke-dasharray="9 7" marker-end="url(#head)"/>
+<text id="t157" x="1936.0" y="484.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">fallback path</text>
+<path d="M1874.0,516.0 L1920.0,516.0" fill="none" stroke="#4B5563" stroke-width="3" marker-start="url(#head-start)" marker-end="url(#head)"/>
+<text id="t157" x="1936.0" y="522.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">two-way call to a service or store</text>
+<rect x="1874" y="540" width="46" height="26" rx="9" fill="none" stroke="#4B5563" stroke-width="2.4" stroke-dasharray="8 5"/>
+<text id="t158" x="1936.0" y="560.0" font-size="19" font-weight="400" fill="#1F2937" text-anchor="start">dashed lane = layer group</text>
+<text id="t159" x="1874.0" y="592.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">No LangGraph router. One LLM call returns</text>
+<text id="t160" x="1874.0" y="614.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">intent + slots (Pydantic parses it);</text>
+<text id="t161" x="1874.0" y="636.0" font-size="17" font-weight="400" fill="#374151" text-anchor="start">chat questions add a 2nd call.</text>
+<text id="t162" x="1010.0" y="62.0" font-size="46" font-weight="700" fill="#111827" text-anchor="middle">HOMILIVO Chatbot Architecture (LLM Approach v2)</text>
+<text id="t162" x="1010.0" y="98.0" font-size="22" font-weight="400" fill="#374151" text-anchor="middle">One chat turn in llm_approach: from the user's message to the reply</text>
+<text id="t162" x="1200.0" y="4280.0" font-size="20" font-weight="400" fill="#6B7280" text-anchor="middle">2026-10-27   |   branch: experiment/llm-approach_v2</text>
+</svg>

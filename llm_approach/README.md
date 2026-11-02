@@ -61,10 +61,18 @@ Secrets (names only): `GEMINI_API_KEY` or `GROQ_API_KEY` (the active provider's)
 | `LLM_APPROACH_NEW_SESSION_RATE_LIMIT` / `LLM_APPROACH_RESET_RATE_LIMIT` | 10 / 10 | Per IP per minute: sessions the store does not know yet (so a new `session_id` on every request cannot get round the per-session limit), and `POST /chat/reset`. Fail open; off with `RATE_LIMIT_ENABLED=false`. |
 | `LLM_APPROACH_METRICS` | off | `1` appends per-turn metric lines (fixed fields, no text) to `eval/results/metrics.jsonl`. |
 | `LLM_APPROACH_SKIP_PRELOAD` | off | Skip the start-up model load. |
+| `LLM_APPROACH_WARMUP` | on | `0` turns the start-up warm-up off (see below). |
 | `LLM_APPROACH_SKIP_SECRET_CHECK` | ignored | Honoured only by the test suite; the server always runs the check. |
 
 **Secret check.** At start-up `validate_secrets()` refuses to start when the active provider's key or
 `KANGAROO_TOKEN` is missing. It logs the secret's name only, never a value.
+
+**Start-up warm-up.** After the models load, the server builds the cached Gemini client and sends one tiny request
+(fixed text, 8 output tokens, no tools) and one light rooms request (`limit=1`, no credentials, 5 s timeout), so the
+first user message does not pay for the connection, the imports and a cold rooms host. The Gemini call skips the
+rate-limit window and the circuit breaker, counts once in the daily counter, and is skipped when the daily cap is
+reached. `/ready` and `/chat` answer 503 until the warm-up ends. A failed step logs a warning (error class only) and
+never blocks start-up. Set `LLM_APPROACH_WARMUP=0` to turn it off.
 
 ## Server behaviour
 

@@ -203,6 +203,15 @@ def search_transport() -> str:
     return value if value in SEARCH_TRANSPORTS else "mcp"
 
 
+# Startup warm-up (server_app): one tiny Gemini call and one light rooms request, so the first user message does not
+# pay the connection, import and cold-host costs. On by default; LLM_APPROACH_WARMUP=0 turns it off.
+WARMUP_ENV = "LLM_APPROACH_WARMUP"
+
+
+def warmup_enabled() -> bool:
+    return os.getenv(WARMUP_ENV, "").strip().lower() not in ("0", "false", "no", "off")
+
+
 # Semantic input gate (copied input guardrail's intent classifier). off: not run; shadow: run and record, never block;
 # enforce: block off-topic first messages. configure_production() sets shadow; bare handle_turn and tests run off.
 SEMANTIC_GATE_ENV = "LLM_APPROACH_SEMANTIC_GATE"

@@ -99,6 +99,12 @@ def _semantic_gate_off(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _warmup_off(monkeypatch):
+    """The start-up warm-up makes real network calls: off everywhere except tests/test_startup_warmup.py (stubs)."""
+    monkeypatch.setenv("LLM_APPROACH_WARMUP", "0")
+
+
+@pytest.fixture(autouse=True)
 def _llm_failure_env(monkeypatch):
     """No test inherits the developer's fallback or breaker settings, or another test's breaker state."""
     from llm_approach import llm_resilience

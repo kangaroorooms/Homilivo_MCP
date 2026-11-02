@@ -86,7 +86,7 @@ _readiness = {"guardrails": False, "knowledge_base": False}
 _knowledge = {"embedding_model": False, "chunks_indexed": 0}  # what the knowledge-base load found; numbers and booleans only
 # True only while the background preload runs. Chat is refused (503) while it is set; once it ends, even after a
 # failed preload, chat is served as before (the models then load on first use). Never set when the preload is skipped.
-_startup = {"loading": False}
+_startup = {"loading": False, "warmup": False}  # warmup: the start-up warm-up is running (not ready yet)
 STARTING_REPLY = "I'm just starting up. Please try again in a moment."
 STARTING_RETRY_AFTER_S = 5
 
@@ -255,13 +255,78 @@ def _preload_blocking() -> None:
         logger.error("knowledge base preload failed: %s", type(exc).__name__)
 
 
+WARMUP_ROOMS_TIMEOUT_S = 5.0  # a cold host may not answer in time; the warm-up then just ends (the wake-up is started)
+WARMUP_GEMINI_MAX_TOKENS = 8
+
+
+def _warmup_gemini() -> None:
+    """Build the cached Gemini client and send one tiny request (fixed text, no tools) to open the connection.
+    It goes straight to the SDK: no limiter wait, no breaker. It is counted once in the daily counter (and skipped
+    when the cap is already reached), so the cap stays honest."""
+    import asyncio as _asyncio
+
+    from llm_approach import gemini_limits, providers
+
+    if config.provider() != "gemini":
+        return
+    client = providers._get_gemini_client()  # the cached client the real calls use
+    counter = gemini_limits.get_limiter().counter
+    if not counter.add_if_room(config.daily_request_budget(), 1, WARMUP_GEMINI_MAX_TOKENS):
+        return
+    cfg: dict[str, Any] = {"max_output_tokens": WARMUP_GEMINI_MAX_TOKENS}
+    thinking = config.gemini_thinking()
+    if thinking:
+        cfg["thinking_config"] = thinking
+    _asyncio.run(providers.send_gemini(client, [{"role": "user", "parts": [{"text": "ok"}]}], cfg))
+
+
+def _warmup_rooms() -> None:
+    """Pay the mcp imports and wake the rooms host with one light, unauthenticated request (a 401 is fine: the
+    connection and the cold host are what matter). Skipped with no rooms URL or offline rooms."""
+    from mcp import Client  # noqa: F401 - the import is the point
+
+    from llm_approach import rooms_client
+    from llm_approach.tools import mcp_search, mcp_timeout  # noqa: F401
+
+    if not config.ROOMS_API_URL or rooms_client.offline_path() is not None:
+        return
+    rooms_client.request_once({"limit": 1}, token="warmup", timeout=WARMUP_ROOMS_TIMEOUT_S)
+
+
+def _run_warmup_step(name: str, step: Any) -> None:
+    started = time.monotonic()
+    try:
+        step()
+        logger.info("startup step=%s seconds=%.1f", name, time.monotonic() - started)
+    except Exception as exc:  # noqa: BLE001 - class only: a message could carry a URL or key
+        logger.warning("startup step=%s failed: %s", name, type(exc).__name__)
+
+
+def _warmup_blocking() -> None:
+    """Both warm-up steps, in parallel (they are independent network waits). Never raises."""
+    if not config.warmup_enabled():
+        logger.info("startup warm-up skipped by %s", config.WARMUP_ENV)
+        return
+    import threading
+
+    threads = [threading.Thread(target=_run_warmup_step, args=(name, step), daemon=True)
+               for name, step in (("warmup_gemini", _warmup_gemini), ("warmup_rooms", _warmup_rooms))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+
 async def _preload_background() -> None:
     """Run the blocking preload off the event loop; always clear the loading flag. Never raises."""
     try:
         await asyncio.to_thread(_preload_blocking)
+        _startup["warmup"] = config.warmup_enabled()
+        await asyncio.to_thread(_warmup_blocking)  # /ready stays 503 until it ends or fails
     except Exception as exc:  # noqa: BLE001
         logger.error("startup preload crashed: %s", type(exc).__name__)
     finally:
+        _startup["warmup"] = False
         _startup["loading"] = False
 
 
@@ -269,7 +334,7 @@ def _still_loading() -> list[str]:
     """Names of the components not loaded yet, while the background preload runs (else empty)."""
     if not _startup["loading"]:
         return []
-    return [name for name, loaded in _readiness.items() if not loaded]
+    return [name for name, loaded in _readiness.items() if not loaded] + (["warmup"] if _startup["warmup"] else [])
 
 
 def _starting_response() -> JSONResponse | None:
@@ -505,7 +570,7 @@ def create_app() -> FastAPI:
             "guardrails": _readiness["guardrails"],
         }
         # The rooms token is reported but not required: offline-fixture runs work without it.
-        is_ready = all(v for k, v in checks.items() if k != "kangaroo_token_present")
+        is_ready = all(v for k, v in checks.items() if k != "kangaroo_token_present") and not _startup["warmup"]
         content = {"status": "ready" if is_ready else "not_ready", "checks": checks, **_llm_label(),
                    "knowledge": {**_knowledge, "placeholder": knowledge_status.placeholder()}}
         loading = _still_loading()

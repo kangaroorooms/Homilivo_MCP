@@ -600,6 +600,7 @@ def create_app() -> FastAPI:
         except Exception:  # noqa: BLE001
             active = None
         return {"active_sessions": active, "knowledge_placeholder": knowledge_status.placeholder(),
+                "knowledge_unverified": knowledge_status.unverified(),
                 **observability.get_metrics_snapshot()}
 
     @app.get("/chat-ui/demo-token")

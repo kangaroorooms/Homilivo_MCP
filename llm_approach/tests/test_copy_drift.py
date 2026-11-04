@@ -36,10 +36,17 @@ WHOLE_FILE_COPIES = [
     ("app/knowledge/ingest.py", "llm_approach/rag/ingest.py"),
 ]
 
-# Documents carry no header (every *.md in the documents folder is indexed): they must match byte for byte.
-DOCUMENT_COPIES = [
-    ("app/knowledge/documents/about_this_assistant.md", "llm_approach/rag/documents/about_this_assistant.md"),
-    ("app/knowledge/documents/homilivo_faq.md", "llm_approach/rag/documents/homilivo_faq.md"),
+# The knowledge documents are llm_approach's own content now (Homilivo website drafts, temporary): nothing in
+# rag/documents is a copy of app/knowledge/documents any more, so there is no byte-for-byte check for them. The folder
+# is still pinned to this exact list (every *.md in it is indexed, a stray file would be answered from).
+OWN_DOCUMENTS = [
+    "about_homilivo.md",
+    "homilivo_faq.md",
+    "how_homilivo_works.md",
+    "privacy_policy.md",
+    "refund_and_cancellation_policy.md",
+    "safety_tips_for_renting.md",
+    "terms_and_conditions.md",
 ]
 
 PROMPT_SAFETY_NAMES = (
@@ -140,14 +147,18 @@ def test_whole_file_copy_matches_source(source, copy):
     assert not problems, f"{copy} drifted from {source}:\n" + "\n".join(problems)
 
 
-@pytest.mark.parametrize("source,copy", DOCUMENT_COPIES, ids=[c for _, c in DOCUMENT_COPIES])
-def test_document_copy_is_identical_to_source(source, copy):
-    assert (REPO / source).read_bytes() == (REPO / copy).read_bytes()
-
-
-def test_rag_folder_holds_only_the_copied_documents():
+def test_rag_folder_holds_only_the_own_documents():
     names = sorted(p.name for p in (REPO / "llm_approach/rag/documents").iterdir())
-    assert names == sorted(Path(c).name for _, c in DOCUMENT_COPIES)  # a stray file here would be indexed
+    assert names == OWN_DOCUMENTS  # a stray file here would be indexed
+
+
+def test_own_documents_are_not_copies_of_the_old_app_documents():
+    """The old demo documents (copies from app/) must not come back under the same names."""
+    app_docs = REPO / "app/knowledge/documents"
+    for name in OWN_DOCUMENTS:
+        mine = (REPO / "llm_approach/rag/documents" / name).read_bytes()
+        theirs = app_docs / name
+        assert not theirs.exists() or theirs.read_bytes() != mine, f"{name} is a copy of app/ again"
 
 
 @pytest.mark.parametrize("source,copy,names", PARTIAL_COPIES, ids=[c for _, c, _ in PARTIAL_COPIES])

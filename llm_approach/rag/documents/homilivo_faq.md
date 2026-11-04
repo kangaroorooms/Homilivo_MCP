@@ -1,112 +1,41 @@
-# Homilivo — Help & FAQ (Knowledge Base for Chatbot RAG)
-
-> **⚠️ PLACEHOLDER DOCUMENT — NOT OFFICIAL CONTENT.**
-> Every answer below is an UNVERIFIED placeholder written before real Homilivo
-> policy content was available. **Do not treat any answer here as fact.** Replace
-> each `[PLACEHOLDER …]` section with Homilivo's official, approved wording before
-> this document is used in production. Until then, answers are intentionally written
-> so the bot defers rather than states policy as fact.
->
-> Source of truth: Homilivo product/policy owner. Last updated: (fill in on replace).
-
+---
+title: Homilivo frequently asked questions
+source: Homilivo website documents (temporary content)
+verified: false
 ---
 
-## What is Homilivo?
+What is Homilivo? Homilivo is an online platform for finding rental flats, rooms, single rooms, PG accommodations and homes across India. We connect tenants with verified owners.
 
-Homilivo is a rental platform in India that connects renters with verified property
-owners. It lists rental flats, single rooms, shared rooms, PG (paying guest)
-accommodations, and homes. *(This description is from Homilivo's public site metadata
-and is safe to keep; confirm wording with the team.)*
+Do I need an account? You can browse listings freely. You need an account to unlock a property and see more details.
 
----
+Is Homilivo free to use? Yes, you can start on the FREE plan at ₹0. It lets you unlock up to 3 properties per city with approximate location. Paid plans unlock more.
 
-## How does owner and property verification work?
+What does unlocking a property mean? Unlocking a property uses one of the unlocks allowed by your plan in that city, and shows the details your plan includes.
 
-[PLACEHOLDER — NOT VERIFIED] Homilivo describes owners as "verified," but the exact
-verification process has not yet been confirmed by the Homilivo team. The assistant
-should not describe specific verification steps until this is replaced with official
-content. Suggested real content to supply: what is checked (ID, ownership documents,
-phone), who performs it, and what the "verified" badge guarantees.
+What is the difference between the plans? FREE: 3 unlocks per city, approximate location. GOLD: 25 unlocks per city, exact location and owner contact information. PLATINUM: unlimited unlocks, exact location, owner contact information and priority support.
 
----
+How much do the plans cost? Prices differ by city. For example, GOLD is ₹149 and PLATINUM ₹299 in some cities, and ₹99 and ₹199 in others. The exact price is shown on the pricing page before you pay.
 
-## What fees or charges apply?
+Do I need a separate plan for each city? Yes, plans and unlocks are per city.
 
-[PLACEHOLDER — NOT VERIFIED] Fee and charge details have not been confirmed. Do not
-quote any amount, percentage, or "free" claim until replaced. Suggested real content:
-any charges for renters, any charges/commission for owners, and when they apply.
+How do I contact an owner? Upgrade to GOLD or PLATINUM for the city, unlock the property, and the owner's contact information is shown. You can also ask our chat assistant, which will show the plans for your city.
 
----
+How do I pay? Payments are processed securely by Razorpay.
 
-## How do I contact a property owner?
+My money was deducted but my plan is not active. What should I do? Wait a few minutes, then email support@homilivo.com with your payment or order ID. Failed or duplicate payments are refunded in 5-7 business days.
 
-[PLACEHOLDER — NOT VERIFIED] The exact contact/enquiry flow has not been confirmed.
-Do not describe how owner contact details are revealed until replaced. Suggested real
-content: how a renter expresses interest, whether/when owner contact is shown, and any
-conditions.
+Can I get a refund if I change my mind? Once a plan is active and used, the fee is generally non-refundable. See our Refund Policy for full details.
 
----
+Do you collect rent or deposits? No. Homilivo does not collect rent or deposits and is not part of rental agreements. These are settled directly between you and the owner.
 
-## Is there a booking, token, or reservation process?
+A listing looks wrong or fake. What should I do? Report it at support@homilivo.com with the listing link, and we will look into it.
 
-[PLACEHOLDER — NOT VERIFIED] Any booking or token/reservation process has not been
-confirmed. Do not describe payment or reservation steps until replaced.
+What can the chat assistant do? It can search rooms for you by city, budget, room type and amenities, sort results, and answer questions about Homilivo and the plans.
 
----
+Is the assistant always right? No. It can make mistakes, so please confirm important details on the listing itself or with support. Do not share passwords or card details in the chat.
 
-## What is the cancellation or refund policy?
+How do I delete my account? Use the Delete Account page on the website, or email support@homilivo.com from your registered email.
 
-[PLACEHOLDER — NOT VERIFIED] Cancellation and refund terms have not been confirmed.
-This is a high-risk topic — do not state any policy until replaced with official terms.
+How do you use my data? Please read our Privacy Policy.
 
----
-
-## How does an owner list a property?
-
-[PLACEHOLDER — NOT VERIFIED] The owner listing process has not been confirmed.
-Suggested real content: how an owner signs up, adds a listing, and gets it verified.
-
----
-
-## What types of listings does Homilivo offer?
-
-Homilivo lists these accommodation types: rental flats, single rooms, shared rooms,
-PG (paying guest) accommodations, and homes. *(From public site metadata; confirm the
-exact definitions/differences with the team — e.g. what distinguishes a "single room"
-from a "PG.")*
-
----
-
-## Which cities or regions does Homilivo cover?
-
-[PLACEHOLDER — NOT VERIFIED] Homilivo operates in India, but the specific active
-cities/regions have not been confirmed. Do not name specific cities as "covered" until
-replaced.
-
----
-
-## Is Homilivo safe? Any anti-scam guidance for users?
-
-[PLACEHOLDER — NOT VERIFIED] Official safety guidance has not been provided. Suggested
-real content: how Homilivo protects users, red flags to watch for, and how to report a
-suspicious listing.
-
----
-
-## How do I contact Homilivo support?
-
-[PLACEHOLDER — NOT VERIFIED] Official support contact details (email, phone, in-app
-support, hours) have not been confirmed. Do not invent a support email or number.
-
----
-
-## Notes for whoever replaces this document
-
-1. Replace every `[PLACEHOLDER — NOT VERIFIED]` block with Homilivo's official,
-   approved wording. Keep answers factual and concise (a short paragraph each) so the
-   RAG chunker (≤600 chars/paragraph) embeds them cleanly.
-2. Remove this notes section and the top warning banner once all content is real.
-3. Update the "Last updated" date and record who approved the content.
-4. Do NOT add answers you are unsure about — an honest gap is safer than a wrong
-   answer, and the RAG layer's relevance floor will correctly say "I don't have
-   verified information" for anything missing.
+How can I contact support? Email support@homilivo.com.

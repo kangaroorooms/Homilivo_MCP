@@ -302,10 +302,26 @@ Code taken from `app/` is **copied, never imported**; `reuse.py` is only a lazy 
 copies (heavy ones such as torch load on first use).
 
 - Every copied Python file starts with a provenance header: source file, commit, what changed, ending with
-  `# ==== end of v2 provenance header ====`. `rag/PROVENANCE.md` lists the `rag/` copies; the two documents
-  there are byte-for-byte copies.
+  `# ==== end of v2 provenance header ====`. `rag/PROVENANCE.md` lists the `rag/` copies. The documents in
+  `rag/documents/` are not copies: they are llm_approach's own temporary Homilivo website drafts (unverified).
 - Every change inside a copy is marked `# v2:` (`# v2: was: <original>` where a line is replaced).
 - `tests/test_copy_drift.py` compares each copy with its `app/` source as text. Ignoring headers and `# v2:`
   lines, the lines must be identical. When `app/` changes, re-copy and re-mark; never edit a copy silently.
 - `tests/test_no_app_imports.py` fails on any `from app` / `import app` in code.
 - v2 keeps its own storage (`data/chroma_v2`, collection `homilivo_knowledge_v2`).
+
+## How to replace the knowledge content
+
+The documents in `rag/documents/` are temporary Homilivo website drafts (`verified: false`; `/metrics` reports
+`knowledge_unverified`). To replace them with approved content:
+
+1. Write plain paragraphs under 600 characters, each with the question and its answer in the same paragraph (a chunk is
+   one paragraph and a reply is the chunk text as it is). No headings, tables, bold, links or other domains (only
+   `homilivo.com` and `support@homilivo.com`), and none of the marker words (placeholder, not verified, confirm wording,
+   todo, tbd, lorem).
+2. Put the files in `llm_approach/rag/documents/` (front matter with `title`, `source` and `verified`).
+3. Update the document list in `tests/test_copy_drift.py` (`OWN_DOCUMENTS`) and the ids in `tests/copied/test_knowledge.py`
+   (`SHIPPED_DOC_IDS`). Set `verified: true` only for approved text.
+4. Restart the server so the index rebuilds (it is rebuilt when the documents change).
+5. Run `python -m llm_approach.rag.check_docs`. It lists the chunks, flags the ones that must not ship, and tries sample
+   questions offline (local embedding model only, index in a temporary folder).

@@ -301,10 +301,37 @@ def test_development_still_starts_with_the_rate_limits_off(base, monkeypatch):  
 # ---- 7. the placeholder flag ----------------------------------------------------------------------------------
 
 
-def test_ready_reports_placeholder_true_but_stays_200(monkeypatch):
+def test_ready_reports_placeholder_false_for_the_shipped_documents_but_stays_200(monkeypatch):
     knowledge_status.placeholder.cache_clear()
-    r = _ready(monkeypatch, {"documents_loaded": 2, "chunks_indexed": 7, "embedding_model_available": True})
-    assert r.status_code == 200 and r.json()["knowledge"]["placeholder"] is True  # the shipped FAQ carries the banner
+    r = _ready(monkeypatch, {"documents_loaded": 7, "chunks_indexed": 76, "embedding_model_available": True})
+    assert r.status_code == 200 and r.json()["knowledge"]["placeholder"] is False  # no shipped document carries the banner
+
+
+def test_shipped_documents_contain_no_placeholder_marker_words():
+    """Both marker regexes (the status banner and the reply guard in actions/platform.py) find nothing in the documents."""
+    from llm_approach.actions.platform import has_internal_marker
+
+    for path in sorted(knowledge_status.DOCUMENTS.glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        assert not knowledge_status._MARKER.search(text), path.name
+        assert not has_internal_marker(text), path.name
+    knowledge_status.placeholder.cache_clear()
+    assert knowledge_status.placeholder() is False
+
+
+def test_the_marker_guard_still_works_on_synthetic_placeholder_text(tmp_path, monkeypatch):
+    from llm_approach.actions.platform import has_internal_marker
+
+    for text in ("PLACEHOLDER DOCUMENT - NOT OFFICIAL CONTENT", "this is a placeholder", "not verified", "TODO: fees",
+                 "TBD", "lorem ipsum", "confirm wording with legal"):
+        assert has_internal_marker(text), text
+    (tmp_path / "a.md").write_text("---\ntitle: A\n---\n> **PLACEHOLDER DOCUMENT - NOT OFFICIAL CONTENT.**", encoding="utf-8")
+    monkeypatch.setattr(knowledge_status, "DOCUMENTS", tmp_path)
+    knowledge_status.placeholder.cache_clear()
+    try:
+        assert knowledge_status.placeholder() is True
+    finally:
+        knowledge_status.placeholder.cache_clear()
 
 
 def test_placeholder_is_false_once_no_document_carries_the_banner(tmp_path, monkeypatch):
@@ -325,4 +352,38 @@ def test_metrics_report_the_placeholder_flag(base, monkeypatch):  # noqa: F811
     knowledge_status.placeholder.cache_clear()
     with TestClient(server_app.create_app()) as client:
         body = client.get("/metrics", headers={"Authorization": "Bearer metrics-test-token"}).json()
-    assert body["knowledge_placeholder"] is True
+    assert body["knowledge_placeholder"] is False  # the shipped documents carry no banner
+
+
+# ---- 8. the unverified flag (status only) -----------------------------------------------------------------------
+
+
+def test_ready_keeps_its_keys_and_status_with_unverified_documents(monkeypatch):
+    """/ready is pinned key for key by other tests, so the unverified flag is reported in /metrics only."""
+    knowledge_status.unverified.cache_clear()
+    r = _ready(monkeypatch, {"documents_loaded": 7, "chunks_indexed": 76, "embedding_model_available": True})
+    body = r.json()
+    assert r.status_code == 200 and "knowledge_unverified" not in body
+    assert set(body["knowledge"]) == {"embedding_model", "chunks_indexed", "placeholder"}
+
+
+def test_unverified_follows_the_front_matter(tmp_path, monkeypatch):
+    (tmp_path / "a.md").write_text("---\ntitle: A\nverified: true\n---\nApproved text.", encoding="utf-8")
+    (tmp_path / "b.md").write_text("No front matter. verified: false in the body does not count.", encoding="utf-8")
+    monkeypatch.setattr(knowledge_status, "DOCUMENTS", tmp_path)
+    knowledge_status.unverified.cache_clear()
+    try:
+        assert knowledge_status.unverified() is False
+        knowledge_status.unverified.cache_clear()
+        (tmp_path / "c.md").write_text("---\ntitle: C\nverified: false\n---\nDraft text.", encoding="utf-8")
+        assert knowledge_status.unverified() is True
+    finally:
+        knowledge_status.unverified.cache_clear()
+
+
+def test_metrics_report_the_unverified_flag(base, monkeypatch):  # noqa: F811
+    monkeypatch.setenv("LLM_APPROACH_METRICS_TOKEN", "metrics-test-token")
+    knowledge_status.unverified.cache_clear()
+    with TestClient(server_app.create_app()) as client:
+        body = client.get("/metrics", headers={"Authorization": "Bearer metrics-test-token"}).json()
+    assert body["knowledge_unverified"] is True and "knowledge_placeholder" in body and "active_sessions" in body

@@ -6,6 +6,9 @@ verified: false
 
 What is Homilivo? Homilivo is an online platform for finding rental flats, rooms, single rooms, PG accommodations and homes across India. We connect tenants with verified owners.
 
+How does Homilivo work? Search rooms by city, budget and room type, or ask the chat assistant. Unlock a property to see more details, choose GOLD or PLATINUM for the city to see the owner's contact information, then contact the owner directly.
+
+Which cities does Homilivo cover? Homilivo lists rental flats, rooms, single rooms, PG accommodations and homes across India. Search by city to see what is available, and plans are priced per city.
 Do I need an account? You can browse listings freely. You need an account to unlock a property and see more details.
 
 Is Homilivo free to use? Yes, you can start on the FREE plan at ₹0. It lets you unlock up to 3 properties per city with approximate location. Paid plans unlock more.

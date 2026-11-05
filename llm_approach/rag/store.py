@@ -111,7 +111,7 @@ def _parse_document(path: Path) -> tuple[dict[str, Any], str]:
     return {}, raw.strip()
 
 
-def _chunk_text(text: str) -> list[str]:
+def _chunk_text(text: str, one_per_paragraph: bool = False) -> list[str]:  # v2: was: def _chunk_text(text: str) -> list[str]:
     """
     One markdown paragraph = one chunk, so each chunk stays focused on
     a single topic (better retrieval precision than merging adjacent
@@ -119,6 +119,8 @@ def _chunk_text(text: str) -> list[str]:
     paragraph longer than CHUNK_MAX_CHARS is split into fixed-size
     windows as a safety net against a single oversized block.
     """
+    # v2: one_per_paragraph (front matter "chunk_mode: one_per_paragraph", used by the FAQ) promises one chunk per blank-line
+    # v2: separated paragraph with no packing. Paragraphs are never packed today in either mode; the flag pins that for the FAQ.
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
 
     chunks: list[str] = []
@@ -154,7 +156,8 @@ def _load_documents() -> list[KnowledgeChunk]:
         source = metadata.get("source", "unknown")
         verified = bool(metadata.get("verified", False))
 
-        for chunk_text in _chunk_text(body):
+        one_per_paragraph = metadata.get("chunk_mode") == "one_per_paragraph"  # v2: new
+        for chunk_text in _chunk_text(body, one_per_paragraph):  # v2: was: for chunk_text in _chunk_text(body):
             chunks.append(
                 KnowledgeChunk(
                     doc_id=path.stem,

@@ -14,6 +14,4 @@ About Homilivo - Our plans: Tenants can start free and upgrade when they are rea
 
 About Homilivo - Our promise: Verified owners. We work to make sure the people you contact are real owners. Transparent pricing. You see what a plan costs and includes before you pay. Support that answers. Write to us any time at support@homilivo.com.
 
-About Homilivo - An important note: Homilivo is a platform that connects tenants and owners. We are not a party to any rental agreement, and we do not collect or handle rent. Agreements and payments for a tenancy are made directly between the tenant and the owner. Please visit a property and read your agreement carefully before you commit.
-
-About Homilivo - Contact us: Email: support@homilivo.com.
+About Homilivo - An important note: Homilivo is a platform that connects tenants and owners. We are not a party to any rental agreement, and we do not collect or handle rent. Agreements and payments for a tenancy are made directly between the tenant and the owner. Please visit a property and read your agreement carefully before you commit. For help, email support@homilivo.com.

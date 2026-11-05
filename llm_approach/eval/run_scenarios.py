@@ -204,7 +204,7 @@ def runtime(
             stack.enter_context(_patched(reuse, "get_is_security_blocked", lambda: (lambda m: (False, ""))))
             stack.enter_context(_patched(reuse, "get_output_guardrail", lambda: (lambda t: (True, t))))
             kb_answer = {**STUB_KB_ANSWER, **scenario.get("kb_answer", {})}  # a scenario may stub a different answer
-            stack.enter_context(_patched(reuse, "get_answer_platform_question", lambda: (lambda q: dict(kb_answer))))
+            stack.enter_context(_patched(reuse, "get_answer_platform_question", lambda: (lambda q, extra_query=None: dict(kb_answer))))
             if scenario.get("rooms_http_status"):
                 status = int(scenario["rooms_http_status"])
                 stack.enter_context(fake_rooms_api.failing_rooms_api(status))

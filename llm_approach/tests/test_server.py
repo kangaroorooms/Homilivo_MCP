@@ -500,7 +500,7 @@ REAL_PLACEHOLDER = "[PLACEHOLDER — NOT VERIFIED] Homilivo charges a fee. confi
 
 def _platform(monkeypatch, message):
     monkeypatch.setattr(reuse, "get_answer_platform_question",
-                        lambda: (lambda q: {"grounded": True, "message": message, "sources": ["doc"]}))
+                        lambda: (lambda q, extra_query=None: {"grounded": True, "message": message, "sources": ["doc"]}))
     return platform.handle_platform_info(
         parse_decision({"intent": "PLATFORM_INFO", "confidence": 0.9, "standalone_query": "fees?"}),
         {}, LLMConversationState(), TurnBudget(),
@@ -529,7 +529,7 @@ def test_platform_still_returns_a_clean_grounded_answer(monkeypatch):
 
 def test_platform_placeholder_through_the_pipeline(pipe, monkeypatch):
     monkeypatch.setattr(reuse, "get_answer_platform_question",
-                        lambda: (lambda q: {"grounded": True, "message": REAL_PLACEHOLDER, "sources": []}))
+                        lambda: (lambda q, extra_query=None: {"grounded": True, "message": REAL_PLACEHOLDER, "sources": []}))
     r = pipe.turn("how does homilivo make money", dec("PLATFORM_INFO", sq="how does homilivo make money"))
     assert r.reply == "I don't have that information, please contact Homilivo support."
 

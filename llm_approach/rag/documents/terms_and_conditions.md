@@ -34,6 +34,4 @@ Homilivo terms and conditions - Suspension and account deletion: We may suspend 
 
 Homilivo terms and conditions - Changes to the Platform and these Terms: We may change the Platform, plans, prices or these Terms. We will update the "Last updated" date and, for important changes, notify you. Continuing to use the Platform after a change means you accept the new Terms.
 
-Homilivo terms and conditions - Governing law and disputes: These Terms are governed by the laws of India.
-
-Homilivo terms and conditions - Contact: Email: support@homilivo.com.
+Homilivo terms and conditions - Governing law and disputes: These Terms are governed by the laws of India. For help, email support@homilivo.com.

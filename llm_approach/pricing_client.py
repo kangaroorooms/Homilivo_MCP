@@ -46,6 +46,7 @@ PRICING_API_TIMEOUT_SECONDS = 10.0
 PRICING_TOTAL_TIMEOUT_S = 15.0  # v2: the whole call, retries included (the same bound as a rooms search)
 PRICING_MAX_ATTEMPTS = 2  # v2: the host is on a cold-start platform
 PRICING_BACKOFF_S = 1.0  # v2: pause before the second attempt
+PRICING_MIN_RETRY_S = 3.0  # v2: a second attempt needs at least this much of the whole-call time left, after the backoff
 MAX_PLANS = 10  # v2: validation limits
 MAX_FEATURES = 10  # v2: added
 MAX_NAME_CHARS = 40  # v2: added
@@ -210,10 +211,25 @@ def _offline(city: str) -> PricingResult:  # v2: new
         return _fail(type(exc).__name__)
 
 
+def warm_request(city: str, timeout: float, *, http_get: HttpGet | None = None) -> None:  # v2: new
+    """One GET to the pricing endpoint for a (cleaned, known) city, response ignored: wakes the cold host and opens the
+    connection. No retry, no validation, no log of the city or URL. Skipped offline. Errors propagate to the caller."""
+    if offline_path() is not None:
+        return
+    (http_get or _httpx_get)(
+        PRICING_API_URL, params={"city": city}, headers={"Accept": "application/json"}, timeout=timeout
+    )
+
+
 def _attempts(
-    city: str, http_get: HttpGet | None, sleep: Callable[[float], None], cancelled: threading.Event
+    city: str,
+    http_get: HttpGet | None,
+    sleep: Callable[[float], None],
+    cancelled: threading.Event,
+    time_left: Callable[[], float] = lambda: float("inf"),
 ) -> PricingResult:  # v2: new
-    """Up to ``PRICING_MAX_ATTEMPTS`` GETs. Only a timeout, a connection error or a 5xx is tried again."""
+    """Up to ``PRICING_MAX_ATTEMPTS`` GETs. Only a timeout, a connection error or a 5xx is tried again, and only when
+    the whole-call time left covers the backoff and a worthwhile second request (``PRICING_MIN_RETRY_S``)."""
     get = http_get or _httpx_get
     result = PricingResult(ok=False, error_class="error")
     for attempt in range(1, PRICING_MAX_ATTEMPTS + 1):
@@ -248,6 +264,8 @@ def _attempts(
             return _fail(type(exc).__name__)
         if not retryable or attempt == PRICING_MAX_ATTEMPTS or cancelled.is_set():
             return result
+        if time_left() < PRICING_BACKOFF_S + PRICING_MIN_RETRY_S:  # too little time for a useful second request
+            return result
         sleep(PRICING_BACKOFF_S)
         if cancelled.is_set():  # past the whole-call limit while waiting: no second request
             return result
@@ -272,10 +290,11 @@ def fetch_plans(
     cancelled = threading.Event()
     done: dict[str, PricingResult] = {}
     workers = []
+    deadline = time.monotonic() + total_timeout
 
     def work(city: str) -> None:
         try:
-            done[city] = _attempts(city, http_get, sleep, cancelled)
+            done[city] = _attempts(city, http_get, sleep, cancelled, lambda: deadline - time.monotonic())
         except BaseException as exc:  # noqa: BLE001 - never lost
             done[city] = _fail(type(exc).__name__)
 
@@ -283,7 +302,6 @@ def fetch_plans(
         worker = threading.Thread(target=work, args=(city,), name="pricing-fetch", daemon=True)
         worker.start()
         workers.append(worker)
-    deadline = time.monotonic() + total_timeout
     for worker in workers:
         worker.join(max(0.0, deadline - time.monotonic()))
     cancelled.set()

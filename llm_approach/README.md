@@ -120,10 +120,37 @@ model's `standalone_query` (`actions/owner_contact.py`). Nothing is matched befo
 unchanged and there is no extra LLM call. "Call the owner" alone, "contact support" and general subscription questions
 keep their old replies.
 
-The city comes from validated room or search data, never from the user's text, in this order: the room the user pointed at
+For an owner-contact request the city comes from validated room or search data, never from the user's text, in this order: the room the user pointed at
 or has selected; the one city of the rooms on screen; several cities on screen with none selected: each city (at most
 3) under its own header; no rooms on screen but a city in the current search (new compared with `app/`); otherwise "Please
 search for a room first ..."; rooms without a usable city give the old subscription sentence plus the support line.
+
+**Price and plan-cost questions (design change).** "How much does gold plan cost in Jaipur", "platinum plan price in Bangalore",
+"how much do the plans cost" take the same pricing route (`owner_contact.is_price_question`, `price_cities`). Rules, matched on the
+user's own message after the model has chosen the intent `PLATFORM_INFO` or `UNSUPPORTED_ACTION` (never on the rewrite):
+- A price word (price, prices, pricing, cost, costs, how much, charge, charges, fee, fees, rate, rates) **and** a plan word (plan,
+  plans, subscription, subscriptions, membership, memberships). "gold" or "platinum" alone with a price word does not match
+  ("gold price in Jaipur" goes to the knowledge base). "What are the plans" and "Do I need a separate plan for each city" have no
+  price word and stay on the knowledge base.
+- Never, when the message has refund*, cancel*, deducted, "failed payment" or "payment failed": those go to the knowledge base.
+- City order: (1) the model's `slots.city`; (2) a city found in the user's message by `fast_parser`'s existing city extraction;
+  (3) the session city (rooms on screen or the current search, as for owner contact); (4) otherwise the knowledge base answers as
+  before. Every city in (1) and (2) is validated against the known-city list in `fast_parser` (`KNOWN_CANONICAL_CITIES` and its
+  aliases) and only the canonical name is used, never the raw text; an unknown value (e.g. "Atlantis") is ignored. A named city
+  beats the session city.
+- **Design change from the original trust rule.** The owner-contact route still never takes a city from the user's text. For price
+  questions the city may now come from the user's text (through the model's slot or the message), but only after it passes the
+  known-city validation above.
+- Reply: the same plan lines, format and "Visit homilivo.com to subscribe." line as the owner-contact reply; the first line is
+  "Here are the Homilivo plans for **<City>**:" instead of "To connect with the owner, ...". Failures use the owner-contact replies.
+- Known gap: a city at the start of some phrasings (e.g. "jaipur gold plan price") is not extracted by `fast_parser`, so it falls
+  to the session city or the knowledge base.
+
+**Knowledge retrieval** uses the user's original message as the primary query and, when different, also the model's `standalone_query`.
+The reply chunk comes from the raw message's results. The rewrite's best chunk is used instead only when the raw message has no chunk at
+or above the 0.35 floor, or when the rewrite's best score is higher than the raw best by at least `REWRITE_WIN_MARGIN` (0.1,
+`rag/answer.py`). So a rewrite that drifts to other wording cannot replace a good match for the user's own words, but it can still
+rescue a vague message or win clearly. The floor and best-chunk-only reply are unchanged.
 
 The pricing call (`pricing_client.py`, copied from `app/` and extended) is a **direct httpx GET**, not an MCP tool:
 `PRICING_API_URL?city=<city>` (encoded), no auth header, 10 s per attempt, 15 s for the whole call, two attempts with a
@@ -309,6 +336,15 @@ copies (heavy ones such as torch load on first use).
   lines, the lines must be identical. When `app/` changes, re-copy and re-mark; never edit a copy silently.
 - `tests/test_no_app_imports.py` fails on any `from app` / `import app` in code.
 - v2 keeps its own storage (`data/chroma_v2`, collection `homilivo_knowledge_v2`).
+
+## Knowledge reply format
+
+A knowledge answer is the best retrieved chunk, cleaned for display (`rag/reply.py`): the "Title - Section: " label at the
+start of a section chunk is removed, and in `homilivo_faq.md` the question before the first "? " is dropped. Only the best
+chunk is shown, never a second one. Only the displayed text changes: the indexed text, the
+0.35 floor and top-3 retrieval are as before. A document whose front matter says `chunk_mode: one_per_paragraph` (the FAQ)
+gets exactly one chunk per blank-line separated paragraph, so every FAQ entry must be its own paragraph with a blank line
+before it. `python -m llm_approach.rag.check_docs` prints the FINAL REPLY for each sample question.
 
 ## How to replace the knowledge content
 

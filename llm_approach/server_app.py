@@ -256,6 +256,7 @@ def _preload_blocking() -> None:
 
 
 WARMUP_ROOMS_TIMEOUT_S = 5.0  # a cold host may not answer in time; the warm-up then just ends (the wake-up is started)
+WARMUP_PRICING_TIMEOUT_S = 5.0  # same host as rooms: same bound, and the warm-up just ends if it does not answer
 WARMUP_GEMINI_MAX_TOKENS = 8
 
 
@@ -293,6 +294,21 @@ def _warmup_rooms() -> None:
     rooms_client.request_once({"limit": 1}, token="warmup", timeout=WARMUP_ROOMS_TIMEOUT_S)
 
 
+def _warmup_pricing() -> None:
+    """Wake the pricing host (the same Render service as rooms) with one GET to the endpoint the pricing client uses, for a
+    city taken from the known-city list (never from user text). No retry; the response is ignored. Skipped offline or
+    with no known city."""
+    from llm_approach import pricing_client
+
+    if pricing_client.offline_path() is not None:
+        return
+    for candidate in sorted(reuse.get_known_cities()):
+        city = pricing_client.clean_city(candidate)
+        if city:
+            pricing_client.warm_request(city, WARMUP_PRICING_TIMEOUT_S)
+            return
+
+
 def _run_warmup_step(name: str, step: Any) -> None:
     started = time.monotonic()
     try:
@@ -303,14 +319,15 @@ def _run_warmup_step(name: str, step: Any) -> None:
 
 
 def _warmup_blocking() -> None:
-    """Both warm-up steps, in parallel (they are independent network waits). Never raises."""
+    """All warm-up steps (Gemini, rooms, pricing), in parallel (they are independent network waits). Never raises."""
     if not config.warmup_enabled():
         logger.info("startup warm-up skipped by %s", config.WARMUP_ENV)
         return
     import threading
 
     threads = [threading.Thread(target=_run_warmup_step, args=(name, step), daemon=True)
-               for name, step in (("warmup_gemini", _warmup_gemini), ("warmup_rooms", _warmup_rooms))]
+               for name, step in (("warmup_gemini", _warmup_gemini), ("warmup_rooms", _warmup_rooms),
+                            ("warmup_pricing", _warmup_pricing))]
     for t in threads:
         t.start()
     for t in threads:

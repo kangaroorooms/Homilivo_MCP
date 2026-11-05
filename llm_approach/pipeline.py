@@ -404,6 +404,23 @@ async def _decide_action(
         m.api_ms = _ms(started)
         return action, validated, rejected
 
+    if decision.intent in _OWNER_CONTACT_INTENTS:
+        # v2 design change: a price or plan-cost question ("platinum price in Bangalore") shows the plans of a validated named
+        # city, else of the session city; with neither it falls through to the knowledge base below
+        price_cities = owner_contact.price_cities(message, decision, validated, state)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "price route intent=%s cue=%s slots_city=%r named_city=%r message_city=%r session_cities=%s route=%s",
+                decision.intent.value, owner_contact.is_price_question(message), (decision.slots.city or "")[:40],
+                owner_contact.named_city(decision.slots.city), owner_contact.message_city(message),
+                owner_contact.resolve_cities(validated, state)[0], f"pricing:{price_cities}" if price_cities else "knowledge_base",
+            )
+        if price_cities:
+            started = time.perf_counter()
+            action = await _threaded_on_copy(state, lambda work: owner_contact.handle_price_question(price_cities))
+            m.api_ms = _ms(started)
+            return action, validated, rejected
+
     handler = _HANDLERS[decision.intent]
     wants_message = (Intent.PLATFORM_INFO, Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.ROOM_FOLLOWUP)  # the sort cue is read from the text
     kwargs = {"user_message": message} if decision.intent in wants_message else {}

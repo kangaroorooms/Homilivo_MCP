@@ -12,6 +12,7 @@ why the pipeline gives every state-touching thread a private copy of the session
 from __future__ import annotations
 
 import asyncio
+import time
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
@@ -24,6 +25,7 @@ class DeadlineExceeded(Exception):
 @dataclass
 class _Deadline:
     expired: bool = False
+    ends_at: float = 0.0  # time.monotonic() when the deadline fires
 
 
 _current: ContextVar[_Deadline | None] = ContextVar("llm_approach_turn_deadline", default=None)
@@ -35,8 +37,17 @@ def expired() -> bool:
     return bool(deadline and deadline.expired)
 
 
+def remaining() -> float | None:
+    """Seconds left before the deadline of the turn this code runs in (also inside its worker threads, which copy the
+    context); None outside a deadline (the CLI, the eval runners). Never negative."""
+    deadline = _current.get()
+    if deadline is None:
+        return None
+    return max(0.0, deadline.ends_at - time.monotonic())
+
+
 async def run(awaitable: Awaitable[Any], seconds: float, *, sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep) -> Any:
-    deadline = _Deadline()
+    deadline = _Deadline(ends_at=time.monotonic() + seconds)
     token = _current.set(deadline)
     try:
         task = asyncio.ensure_future(awaitable)  # copies the context: the task sees ``deadline``

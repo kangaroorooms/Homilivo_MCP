@@ -37,7 +37,7 @@ _MARKDOWN = re.compile(r"^\s*#|\*\*|\||\[\[|\]\]", re.MULTILINE)
 # hold the answer). A missing document is reported as WEAK, not as a failure: the text is still on topic.
 ANSWERABLE = [
     ("what are the plans", ("free", "gold", "platinum"), ('homilivo_faq',)),
-    ("how much does gold cost", ("gold", "₹"), ('homilivo_faq',)),
+    ("how much does gold cost", ("prices differ", "pricing page"), ('homilivo_faq',)),
     ("how do I pay", ("razorpay", "payment"), ('homilivo_faq',)),
     ("what payment methods do you accept", ("razorpay", "payment"), ('homilivo_faq',)),
     ("refund policy", ("refund",), ('refund_and_cancellation_policy',)),
@@ -47,6 +47,11 @@ ANSWERABLE = [
     ("is it safe to pay the owner in advance", ("advance", "pay", "deposit"), ('safety_tips_for_renting',)),
     ("what is homilivo", ("homilivo is",), ('homilivo_faq', 'about_homilivo')),
     ("how does homilivo work", ("how homilivo works", "connects tenants"), ('how_homilivo_works',)),
+    ("What are the subscription plans?", ("free", "gold", "platinum"), ("homilivo_faq",)),
+    ("Is it safe to pay the owner in advance on Homilivo?", ("advance", "pay", "deposit"), ("safety_tips_for_renting", "homilivo_faq")),
+    ("Can I get a refund?", ("refund",), ("homilivo_faq", "refund_and_cancellation_policy")),
+    ("What is the refund policy?", ("refund",), ("homilivo_faq", "refund_and_cancellation_policy")),
+    ("What does Homilivo do and how do I use it?", ("search", "unlock", "platform", "tenants"), ("homilivo_faq", "how_homilivo_works")),
 ]
 # Not in the temporary documents yet: reported, never counted as a failure.
 EXPECTED_GAPS = [
@@ -113,11 +118,13 @@ def _run_question(question: str, docs: tuple[str, ...] = ()) -> tuple[bool, str]
         print(f"   {r.score:.3f} [{r.chunk.doc_id}] {r.chunk.text[:110]!r}{floor}")
     if docs and not any(r.chunk.doc_id in docs and r.score >= store.MIN_RELEVANCE_SCORE for r in results):
         print(f"   !! WEAK: none of the top chunks comes from {', '.join(docs)}")
-    final = answer_module.answer_platform_question(question)  # the real retrieval path (0.35 floor, top 3)
+    final = answer_module.answer_platform_question(question)  # the real reply path (0.35 floor, top 3, then the best chunk)
     if not final["grounded"]:
         print("   -> REFUSED by (a) score floor / no match: reply would be the support message\n")
         return False, "no match"
     reply = final["message"]
+    print("   FINAL REPLY:")  # exactly what the user sees: answer_platform_question is what actions/platform.py calls
+    print("   " + reply.replace("\n", "\n   "))
     found = refusals(reply)
     print("   -> refused by: " + (", ".join(found) if found else "(a) no  (b) no  (c) no  (d) no"))
     if found:

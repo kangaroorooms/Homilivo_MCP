@@ -281,7 +281,7 @@ def test_platform_grounded_returns_kb_text_only(state, monkeypatch):
     "garbage",
 ])
 def test_platform_ungrounded(state, monkeypatch, answer):
-    monkeypatch.setattr(reuse, "get_answer_platform_question", lambda: lambda q: answer)
+    monkeypatch.setattr(reuse, "get_answer_platform_question", lambda: lambda q, extra_query=None: answer)
     d = make("PLATFORM_INFO", query="q", reply="LLM INVENTED THIS")
     r = run(platform.handle_platform_info, d, state)
     assert r.reply == "I don't have that information, please contact Homilivo support."

@@ -331,7 +331,7 @@ def pipe(monkeypatch):
     monkeypatch.setattr(reuse, "get_is_security_blocked", lambda: security)
     monkeypatch.setattr(reuse, "get_output_guardrail", lambda: output)
     monkeypatch.setattr(reuse, "get_answer_platform_question",
-                        lambda: (lambda q: {"grounded": True, "message": "Homilivo earns from owner subscriptions.", "sources": []}))
+                        lambda: (lambda q, extra_query=None: {"grounded": True, "message": "Homilivo earns from owner subscriptions.", "sources": []}))
     monkeypatch.setattr(rooms_client, "search_rooms", spy_search)
     monkeypatch.setenv("LLM_APPROACH_OFFLINE_ROOMS", "1")
     monkeypatch.delenv("KANGAROO_TOKEN", raising=False)

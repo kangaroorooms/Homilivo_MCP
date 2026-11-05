@@ -23,6 +23,30 @@ def has_internal_marker(text: str) -> bool:
     return bool(_UNSAFE_MARKERS.search(text))
 
 
+def _log_retrieval(query: str, extra_query: str | None = None) -> None:
+    """Debug only: the raw and rewrite top 3 (document, chunk index in it, score) and which query's chunks the reply uses. Changes nothing."""
+    try:
+        from llm_approach.rag import store
+        from llm_approach.rag.answer import choose_results
+
+        position: dict[str, int] = {}
+        index: dict[tuple[str, str], int] = {}
+        for chunk in store._load_documents():
+            index[(chunk.doc_id, chunk.text)] = position.get(chunk.doc_id, 0)
+            position[chunk.doc_id] = position.get(chunk.doc_id, 0) + 1
+
+        def label(results):
+            return [f"{r.chunk.doc_id}#{index.get((r.chunk.doc_id, r.chunk.text), '?')}={r.score:.3f}" for r in results[:3]]
+
+        raw = store.retrieve(query)
+        rewrite = store.retrieve(extra_query) if extra_query else []
+        used = choose_results(raw, rewrite) if extra_query else raw
+        logger.debug("knowledge query=%r rewritten=%r raw_top3=%s rewrite_top3=%s used=%s", query[:120], (extra_query or "")[:120],
+                     label(raw), label(rewrite), "rewrite" if extra_query and used is rewrite else "raw")
+    except Exception as exc:  # noqa: BLE001 - a log line never breaks a reply
+        logger.debug("knowledge query log failed: %s", type(exc).__name__)
+
+
 def handle_platform_info(
     decision: Decision,
     validated: dict[str, Any],
@@ -31,11 +55,17 @@ def handle_platform_info(
     *,
     user_message: str | None = None,
 ) -> ActionResult:
-    query = decision.standalone_query or user_message
+    # the user's own words first, the model's rewrite as a second query when it differs; the rewrite's chunks are used only when the raw
+    # message finds nothing or the rewrite scores at least REWRITE_WIN_MARGIN higher (rag/answer.choose_results)
+    query = user_message or decision.standalone_query
+    extra = decision.standalone_query if user_message and decision.standalone_query != user_message else None
     if not query:
         return ActionResult(NOT_GROUNDED, None, "platform_info", error_class="no_query")
+    if logger.isEnabledFor(logging.DEBUG):
+        _log_retrieval(query, extra)
     try:
-        answer = reuse.get_answer_platform_question()(query)
+        answer_fn = reuse.get_answer_platform_question()
+        answer = answer_fn(query, extra_query=extra) if extra else answer_fn(query)
     except Exception as exc:
         logger.error("knowledge base failed: %s", type(exc).__name__)
         return ActionResult(NOT_GROUNDED, None, "platform_info", error_class="kb_error")

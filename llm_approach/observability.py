@@ -1,5 +1,5 @@
 # Copied from app/observability.py at commit 7dbcba3 (copied, not imported).
-# Changes: added a turn-event counter (deadline_exceeded), a semantic-gate counter (checked, would block, blocked, error, labels, latency), a room_data_rejections counter, LLM failure, fallback and breaker counters and a session-store event counter, a parameter-rejection counter and a search-timeout counter (marked '# v2:')
+# Changes: added a turn-event counter (deadline_exceeded), a semantic-gate counter (checked, would block, blocked, error, labels, latency), a room_data_rejections counter, LLM failure, fallback and breaker counters and a session-store event counter, a parameter-rejection counter, a search-timeout counter and a provider field on the turn log line (marked '# v2:')
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -256,6 +256,7 @@ def record_turn(
     status: str,
     error_category: str | None,
     latency_ms: float,
+    provider: str | None = None,  # v2: added (the active LLM provider; logged after mode)
 ) -> None:
     """
     One call per chat turn (REST or WebSocket). `status` is one of
@@ -266,9 +267,9 @@ def record_turn(
 
     logger.info(
         "turn request_id=%s session_id=%s intent=%s operation=%s tool=%s "
-        "mode=%s status=%s error_category=%s latency_ms=%.1f",
+        "mode=%s provider=%s status=%s error_category=%s latency_ms=%.1f",  # v2: was: "mode=%s status=%s error_category=%s latency_ms=%.1f",
         request_id, session_id, intent, operation, tool,
-        mode, status, error_category, latency_ms,
+        mode, provider, status, error_category, latency_ms,  # v2: was: mode, status, error_category, latency_ms,
     )
 
 

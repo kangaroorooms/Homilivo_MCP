@@ -71,6 +71,12 @@ def place_label(search: dict[str, Any]) -> str:
     return ", ".join(part for part in (area, _city_label(search)) if part)
 
 
+def amenity_label(search: dict[str, Any]) -> str:
+    """The search's validated amenity for a reply: 'parking', 'attached bathroom', 'AC', 'WiFi', or ''."""
+    text = str(search.get("amenity") or "").replace("-", " ").strip()
+    return text if any(c.isupper() for c in text[1:]) else text.lower()
+
+
 def format_search_reply(
     rooms: list[dict[str, Any]],
     search: dict[str, Any],
@@ -90,7 +96,11 @@ def format_search_reply(
         head = f"Here are more rooms (page {page})" + (f" in {place}" if place else "")
     else:
         head = f"I found {len(rooms)} {noun}" + (f" in {place}" if place else "")
-    if has_next and total is not None and not search.get("area"):
+    amenity = amenity_label(search)
+    if amenity:
+        head += f" with {amenity}"
+    # The API's total counts rooms before the area and amenity filters, so it is not shown for either.
+    if has_next and total is not None and not search.get("area") and not amenity:
         head += f" (showing {len(rooms)} of {total})"
     head += ":"
     lines = [room_line(i, r) for i, r in enumerate(rooms, 1)]
@@ -105,6 +115,12 @@ def format_search_reply(
 def format_no_rooms_reply(search: dict[str, Any]) -> str:
     place = place_label(search)
     where = f" in {place}" if place else ""
+    amenity = amenity_label(search)
+    if amenity:
+        return (
+            f"I couldn't find any rooms{where} that list {amenity}. "
+            "You could search again without it, or try a higher budget, a different room type or another area."
+        )
     return (
         f"I couldn't find any rooms{where} matching that. "
         "You could try a higher budget, a different room type or another area."

@@ -21,6 +21,32 @@ ASK_CITY_AND_BUDGET = "Could you tell me the city and budget you're looking for?
 
 _BHK_RE = re.compile(r"(\d)\s*bhk", re.IGNORECASE)
 
+# Aliases too common in other senses to be read as an amenity by rules ("a table for two", "light", "bike").
+_AMBIGUOUS_AMENITY_WORDS = {"table", "light", "ro", "backup", "bike"}
+_AMENITY_WORDS = sorted(
+    ({k for k in validators.AMENITY_VOCAB} | {k.replace("-", " ") for k in validators.AMENITY_VOCAB}
+     | set(validators._AMENITY_ALIASES)) - _AMBIGUOUS_AMENITY_WORDS,
+    key=len,
+    reverse=True,
+)
+# Whole words only: not inside a longer word or a hyphenated one ("non-ac"); "no AC" / "without AC" is not a request for it.
+_AMENITY_RE = re.compile(
+    r"(?<![\w-])(" + "|".join(re.escape(w) for w in _AMENITY_WORDS) + r")(?![\w-])", re.IGNORECASE
+)
+_NEGATED = re.compile(r"\b(?:no|non|not|without)\s+$", re.IGNORECASE)
+# "security deposit" and the like are money, not the Security amenity.
+_SECURITY_MONEY = re.compile(r"\s+(?:deposit|amount|charges|money)\b", re.IGNORECASE)
+
+
+def _amenity_from(message: str) -> str | None:
+    """The first amenity of the vocabulary (or a non-ambiguous alias) named as a whole word in the message."""
+    for match in _AMENITY_RE.finditer(message or ""):
+        if match.group(1).lower() == "security" and _SECURITY_MONEY.match(message, match.end()):
+            continue
+        if not _NEGATED.search(message[: match.start()]):
+            return match.group(1)
+    return None
+
 
 def _extract(message: str) -> dict[str, Any]:
     try:
@@ -46,6 +72,7 @@ def fallback_slots(message: str, state: LLMConversationState) -> dict[str, Any] 
         "min_price": params.get("min_price"),
         "max_price": params.get("max_price"),
         "ideal_for": (params.get("ideal_for") or [None])[0],
+        "amenity": _amenity_from(message),
     }
     clean, _ = validators.validate_slots(raw)
     if clean.get("city"):

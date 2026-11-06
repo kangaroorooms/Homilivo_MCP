@@ -541,8 +541,12 @@ async def handle_turn(
 
                 _room_text_var.set(_room_texts(state))  # read by _output_ok in the worker thread (the context is copied)
                 if not await asyncio.to_thread(_output_ok, reply):
-                    reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, [], "output_blocked"  # [] = no cards (None = unchanged)
-                    state.rooms_on_screen, state.selected_room_index = [], None  # the user never saw these rooms: they must not be referable next turn
+                    if action.action == "platform_info":
+                        # a knowledge reply shows no rooms: the rooms on screen are the ones the user already saw, keep them
+                        reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, None, "output_blocked"  # None = cards unchanged
+                    else:
+                        reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, [], "output_blocked"  # [] = no cards (None = unchanged)
+                        state.rooms_on_screen, state.selected_room_index = [], None  # the user never saw these rooms: they must not be referable next turn
                     m.action = "output_blocked"
             except asyncio.CancelledError:
                 # Cancelled (the server's turn deadline, or a closed connection): drop everything this turn did so far and

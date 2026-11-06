@@ -618,6 +618,7 @@ def create_app() -> FastAPI:
             active = None
         return {"active_sessions": active, "knowledge_placeholder": knowledge_status.placeholder(),
                 "knowledge_unverified": knowledge_status.unverified(),
+                "knowledge_documents_skipped": knowledge_status.skipped_documents(),
                 **observability.get_metrics_snapshot()}
 
     @app.get("/chat-ui/demo-token")

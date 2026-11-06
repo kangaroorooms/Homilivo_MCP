@@ -16,4 +16,4 @@ Homilivo refund policy - Cancellation: You can stop using a plan at any time, an
 
 Homilivo refund policy - How to request a refund: Include your name, registered email or phone number, the payment/order ID, the date and amount, and a screenshot or bank message if you have one.
 
-Homilivo refund policy - Refund timeline: Refund sent to your original payment method: Time Within 5-7 business days after approval. Failed or duplicate payments that are reversed automatically by the payment gateway: Time Usually 5-7 business days. Your bank or card issuer may take extra time to show the amount in your account. If it does not arrive, please write to us with your payment details. For help, email support@homilivo.com.
+Homilivo refund policy - Refund timeline: Refund sent to your original payment method: within 5-7 business days after approval. Failed or duplicate payments that are reversed automatically by the payment gateway: usually 5-7 business days. Your bank or card issuer may take extra time to show the amount in your account. If it does not arrive, please write to us with your payment details. For help, email support@homilivo.com.

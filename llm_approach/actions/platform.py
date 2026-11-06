@@ -15,6 +15,7 @@ from llm_approach.state import LLMConversationState
 logger = logging.getLogger(__name__)
 
 NOT_GROUNDED = "I don't have that information, please contact Homilivo support."
+MIN_LETTERS = 2  # a raw message with fewer letters (any script) than this never reaches the knowledge base
 
 # Placeholder or internal-note text must never reach a user, even if retrieval calls it grounded.
 _UNSAFE_MARKERS = re.compile(r"placeholder|not verified|confirm wording|\btodo\b|\btbd\b|lorem", re.IGNORECASE)
@@ -82,6 +83,9 @@ def handle_platform_info(
     extra = decision.standalone_query if user_message and decision.standalone_query != user_message else None
     if not query:
         return ActionResult(NOT_GROUNDED, None, "platform_info", error_class="no_query")
+    if user_message is not None and sum(ch.isalpha() for ch in user_message) < MIN_LETTERS:
+        # no words of the user's own (emoji, digits, punctuation): the knowledge base is not asked, whatever the rewrite says
+        return ActionResult(NOT_GROUNDED, None, "platform_info", error_class="no_letters")
     debug = logger.isEnabledFor(logging.DEBUG)
     if debug:
         from llm_approach.rag.answer import LAST_RETRIEVAL

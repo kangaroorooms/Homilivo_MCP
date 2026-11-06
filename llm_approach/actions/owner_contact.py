@@ -17,7 +17,7 @@ from typing import Any
 
 from llm_approach import observability, pricing_client, reuse, turn_deadline
 from llm_approach.actions import ActionResult, TurnBudget
-from llm_approach.schema import Decision
+from llm_approach.schema import Decision, Intent
 from llm_approach.state import LLMConversationState
 
 logger = logging.getLogger(__name__)
@@ -68,12 +68,15 @@ def wants_owner_contact(message: str | None, decision: Decision) -> bool:
 
 
 # ---- price questions -----------------------------------------------------------
-# A price cue together with a plan word (plan, plans, subscription, membership); "gold" or "platinum" alone is not one (jewellery).
+# A price cue together with a plan word (plan, plans, subscription, membership); "gold" or "platinum" alone is not one (jewellery),
+# except when the model's intent is PLATFORM_INFO: then a plan name (gold, platinum, free) with a price cue is enough.
 # "what are the plans" and "do I need a separate plan for each city" have no price cue and stay on the knowledge base. A message about
 # refunds, cancellation or a failed payment never takes this route. Matched on the user's own message only (a rewrite can drift).
 
-_PRICE_CUE = re.compile(r"\b(?:price|prices|pricing|cost|costs|how much|charge|charges|fee|fees|rate|rates)\b", re.IGNORECASE)
+_PRICE_CUE = re.compile(r"\b(?:price|prices|pricing|cost|costs|how much|charge|charges|fee|fees|rate|rates|kitna|kitne|kitni|daam|keemat)\b",
+                        re.IGNORECASE)
 _PLAN_WORD = re.compile(r"\b(?:plan|plans|subscription|subscriptions|membership|memberships)\b", re.IGNORECASE)
+_PLAN_NAME = re.compile(r"\b(?:gold|platinum|free)\b", re.IGNORECASE)  # with a price cue, enough on PLATFORM_INFO only (jewellery ruled out)
 _NOT_PRICE = re.compile(r"\b(?:refund\w*|cancel\w*|deducted|failed payment|payment (?:has |had )?failed)\b", re.IGNORECASE)
 
 
@@ -82,6 +85,16 @@ def is_price_question(text: str | None) -> bool:
         return False
     text = text[:500]
     return bool(_PRICE_CUE.search(text) and _PLAN_WORD.search(text) and not _NOT_PRICE.search(text))
+
+
+def is_plan_price_question(text: str | None, intent: Any) -> bool:
+    """``is_price_question``, or, on PLATFORM_INFO only, a plan name (gold, platinum, free) with a price cue ("how much does platinum cost")."""
+    if is_price_question(text):
+        return True
+    if intent is not Intent.PLATFORM_INFO or not isinstance(text, str) or not text.strip():
+        return False
+    text = text[:500]
+    return bool(_PRICE_CUE.search(text) and _PLAN_NAME.search(text) and not _NOT_PRICE.search(text))
 
 
 def named_city(raw: Any) -> str | None:
@@ -113,7 +126,7 @@ def price_cities(message: str | None, decision: Decision, validated: dict[str, A
     """Cities for a price question; ``[]`` when it is not one or no city is known (the knowledge base answers then).
     Order: the model's ``slots.city`` if known, a known city in the user's message, then the session city (rooms on screen or
     the current search)."""
-    if not is_price_question(message):
+    if not is_plan_price_question(message, decision.intent):
         return []
     named = named_city(decision.slots.city) or message_city(message)
     if named:

@@ -450,6 +450,15 @@ async def _semantic_gate(
     return ActionResult(reuse.get_out_of_scope_response(), None, "semantic_block")
 
 
+_SEARCH_INTENT_VALUES = {Intent.NEW_SEARCH.value, Intent.REFINEMENT.value, Intent.SHOW_MORE.value}
+
+
+def _shows_no_new_rooms(action: ActionResult, m: metrics_mod.TurnMetrics) -> bool:
+    """True for a reply that leaves the cards unchanged and is not a search, refinement or show more (nor a search the
+    fallback or a city-change answer ran). A blocked reply of this kind keeps the rooms on screen."""
+    return action.rooms is None and not action.tool_called and m.intent not in _SEARCH_INTENT_VALUES
+
+
 async def _run_turn(
     message: str, state: LLMConversationState, m: metrics_mod.TurnMetrics
 ) -> tuple[ActionResult, dict[str, Any] | None]:
@@ -541,8 +550,9 @@ async def handle_turn(
 
                 _room_text_var.set(_room_texts(state))  # read by _output_ok in the worker thread (the context is copied)
                 if not await asyncio.to_thread(_output_ok, reply):
-                    if action.action == "platform_info":
-                        # a knowledge reply shows no rooms: the rooms on screen are the ones the user already saw, keep them
+                    if _shows_no_new_rooms(action, m):
+                        # a reply that shows no new rooms (knowledge, follow-up, price, chat, clarify, recall, fallback question):
+                        # the rooms on screen are the ones the user already saw, keep them
                         reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, None, "output_blocked"  # None = cards unchanged
                     else:
                         reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, [], "output_blocked"  # [] = no cards (None = unchanged)

@@ -528,7 +528,7 @@ def test_L1_output_guardrail_refuses_the_reply(rig):
         expect=path("path:State-based answers:handle_general_chat"),
     )
     assert result.reply == pipeline.OUTPUT_BLOCKED_REPLY and result.metrics["action"] == "output_blocked"
-    assert result.rooms == []
+    assert result.rooms is None  # Batch B item 3: a blocked reply that shows no new rooms keeps the rooms on screen
 
 
 def test_L2_a_link_that_slips_past_an_action_is_refused_by_the_response_checks(rig, monkeypatch):

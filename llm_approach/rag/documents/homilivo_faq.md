@@ -17,7 +17,7 @@ Is Homilivo free to use? You can start on the FREE plan at ₹0. It lets you unl
 
 What does unlocking a property mean? Unlocking a property uses one of the unlocks allowed by your plan in that city, and shows the details your plan includes.
 
-What are the plans, and what is the difference between the subscription plans? FREE: 3 unlocks per city, approximate location. GOLD: 25 unlocks per city, exact location and owner contact information. PLATINUM: unlimited unlocks, exact location, owner contact information and priority support. Plans and unlocks are per city, so you need a separate plan for each city.
+What subscription plans does Homilivo have, which plans do you offer, and what is the difference between the plans? FREE: 3 unlocks per city, approximate location. GOLD: 25 unlocks per city, exact location and owner contact information. PLATINUM: unlimited unlocks, exact location, owner contact information and priority support. Plans and unlocks are per city, so you need a separate plan for each city.
 
 How much do the plans cost, and how much do GOLD and PLATINUM cost? Prices differ by city and the exact price is shown on the pricing page before you pay.
 
@@ -44,3 +44,5 @@ How do I delete my account? Use the Delete Account page on the website, or email
 How do you use my data? Please read our Privacy Policy.
 
 How can I contact support? Email support@homilivo.com.
+
+How do I list my property on Homilivo, and how do owners and agents get started? Owners list a property by signing up (create an account, or use Become an agent in the website footer) and adding the property with clear photos, rent, location and amenities. Tenants on paid plans then see the owner contact information and reach the owner directly. Owners update or remove the listing when the property is no longer available.

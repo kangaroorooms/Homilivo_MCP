@@ -148,7 +148,7 @@ user's own message after the model has chosen the intent `PLATFORM_INFO` or `UNS
 
 **Knowledge retrieval** uses the user's original message as the primary query and, when different, also the model's `standalone_query`.
 The reply chunk comes from the raw message's results. The rewrite's best chunk is used instead only when the raw message has no chunk at
-or above the 0.35 floor, or when the rewrite's best score is higher than the raw best by at least `REWRITE_WIN_MARGIN` (0.1,
+or above the 0.40 floor, or when the rewrite's best score is higher than the raw best by at least `REWRITE_WIN_MARGIN` (0.1,
 `rag/answer.py`). So a rewrite that drifts to other wording cannot replace a good match for the user's own words, but it can still
 rescue a vague message or win clearly. The floor and best-chunk-only reply are unchanged.
 
@@ -342,7 +342,7 @@ copies (heavy ones such as torch load on first use).
 A knowledge answer is the best retrieved chunk, cleaned for display (`rag/reply.py`): the "Title - Section: " label at the
 start of a section chunk is removed, and in `homilivo_faq.md` the question before the first "? " is dropped. Only the best
 chunk is shown, never a second one. Only the displayed text changes: the indexed text, the
-0.35 floor and top-3 retrieval are as before. A document whose front matter says `chunk_mode: one_per_paragraph` (the FAQ)
+0.40 floor and top-3 retrieval are as before. A document whose front matter says `chunk_mode: one_per_paragraph` (the FAQ)
 gets exactly one chunk per blank-line separated paragraph, so every FAQ entry must be its own paragraph with a blank line
 before it. `python -m llm_approach.rag.check_docs` prints the FINAL REPLY for each sample question.
 

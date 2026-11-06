@@ -64,7 +64,7 @@ DOCUMENTS_DIR = Path(__file__).resolve().parent / "documents"
 
 CHUNK_MAX_CHARS = 600
 TOP_K = 3
-MIN_RELEVANCE_SCORE = 0.35
+MIN_RELEVANCE_SCORE = 0.40  # v2: was: MIN_RELEVANCE_SCORE = 0.35
 
 COLLECTION_NAME = "homilivo_knowledge_v2"  # v2: was: COLLECTION_NAME = "homilivo_knowledge"
 # v2: own storage, never the app's: its own variable, its own default folder, its own collection name
@@ -334,6 +334,7 @@ def retrieve(
     """
     if not query or not query.strip():
         return []
+    query = query.rstrip().rstrip(":;,.").rstrip()  # v2: new, a trailing : ; , or . is not embedded ("what are the plans:")
     if sum(ch.isalpha() for ch in query) < MIN_QUERY_LETTERS:  # v2: emoji, digits or one letter: nothing to look up, any script counts
         return []  # v2: new
 

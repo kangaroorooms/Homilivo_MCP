@@ -1,6 +1,6 @@
 """What the user sees for a knowledge answer: the best chunk, cleaned.
 
-Retrieval returns up to three chunks (store.TOP_K, floor 0.35). The reply uses the best one only. The text shown is cleaned (display only; what is embedded
+Retrieval returns up to three chunks (store.TOP_K, floor 0.40). The reply uses the best one only. The text shown is cleaned (display only; what is embedded
 and indexed is untouched): the "<Title> - <Section>: " label at the start of a section chunk is removed, and in the FAQ the
 question before the first "? " is dropped, so the reply starts with the answer. No LLM, no network.
 """

@@ -227,7 +227,7 @@ def test_a_contact_question_still_returns_the_faq_contact_answer(monkeypatch):
 
 
 def test_the_floor_still_applies_when_neither_query_clears_it(monkeypatch):
-    monkeypatch.setattr(answer_module, "retrieve", fake_retrieve({}))  # the retriever applies the 0.35 floor: nothing comes back
+    monkeypatch.setattr(answer_module, "retrieve", fake_retrieve({}))  # the retriever applies the 0.40 floor: nothing comes back
     d = Decision(intent=Intent.PLATFORM_INFO, slots=Slots(), standalone_query="other words", confidence=0.9)
     r = platform.handle_platform_info(d, {}, LLMConversationState(), TurnBudget(), user_message="some words")
     assert r.reply == platform.NOT_GROUNDED and r.error_class == "ungrounded"
@@ -303,9 +303,13 @@ def test_no_city_anywhere_still_falls_back_to_the_knowledge_base(pipe, api):
 
 
 @pytest.mark.parametrize("message", ["gold price in jaipur", "platinum price in Bangalore", "how much does gold cost in jaipur"])
-def test_a_metal_word_without_a_plan_word_does_not_take_the_price_route(pipe, api, message):
-    r = pipe.turn(message, dec("PLATFORM_INFO", city="Jaipur"))
-    assert api.calls == [] and r.metrics["action"] == "platform_info"
+def test_a_metal_word_without_a_plan_word_takes_the_price_route_only_on_platform_info(pipe, api, message):
+    r = pipe.turn(message, dec("PLATFORM_INFO", city="Jaipur"))  # Batch B item 4: PLATFORM_INFO has ruled out jewellery
+    assert api.cities() == ["jaipur"] and r.metrics["action"] == "price_question"
+    for intent in ("OUT_OF_SCOPE", "GENERAL_CHAT"):
+        calls = len(api.calls)
+        r = pipe.turn(message, dec(intent, city="Jaipur", reply="ok"))
+        assert len(api.calls) == calls and r.metrics["action"] != "price_question"
 
 
 @pytest.mark.parametrize("message", ["is the gold plan fee refundable", "can I get a refund for the gold plan", "cancel the plan charge in jaipur"])

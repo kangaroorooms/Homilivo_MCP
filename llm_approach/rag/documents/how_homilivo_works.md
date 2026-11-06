@@ -8,6 +8,6 @@ How Homilivo works - For tenants: 1. Search: Pick your city and set your budget,
 
 How Homilivo works - For tenants: 4. Connect: Choose GOLD or PLATINUM for your city to see the exact location and the owner's contact information, then contact the owner directly. 5. Visit and decide: Visit the property, check the details and the agreement, and settle rent and deposit directly with the owner.
 
-How Homilivo works - For owners and agents: 1. Sign up: Create an account, or use Become an agent in the website footer. 2. List: Add your property with clear photos, rent, location and amenities. 4. Hear from tenants: Tenants on paid plans can see your contact information and reach you directly. 5. Keep it current: Update or remove your listing when the property is no longer available.
+How Homilivo works - For owners and agents: 1. Sign up: Create an account, or use Become an agent in the website footer. 2. List: Add your property with clear photos, rent, location and amenities. 3. Hear from tenants: Tenants on paid plans can see your contact information and reach you directly. 4. Keep it current: Update or remove your listing when the property is no longer available.
 
 How Homilivo works - Things to know: Homilivo connects tenants and owners. We do not collect rent or take part in rental agreements. Plans and prices are per city and are shown before you pay. Our chat assistant can help at any step, but always confirm important details on the listing. Questions? Write to support@homilivo.com.

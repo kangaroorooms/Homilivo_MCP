@@ -42,7 +42,7 @@ def answer_platform_question(query: str, extra_query: str | None = None) -> dict
     """
     results = retrieve(query)
     rewrite: list[RetrievedChunk] = []  # v2: new
-    if extra_query and extra_query != query:  # v2: new, each retrieval applied the 0.35 floor
+    if extra_query and extra_query != query:  # v2: new, each retrieval applied the 0.40 floor
         rewrite = retrieve(extra_query)  # v2: new
     LAST_RETRIEVAL.set((results, rewrite))  # v2: new
     if extra_query and extra_query != query:  # v2: new

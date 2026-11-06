@@ -18,6 +18,7 @@ the cache; `python -m llm_approach.rag.check_docs` or a server start puts it the
 `eval_set.py` holds the questions: 111 in-domain (plain, paraphrase, short, typo, Hinglish, Hindi, with a city or room) and 20
 out-of-domain. Each question lists the chunk ids accepted as a correct answer; an empty list means no knowledge answer is
 expected.
+Labels updated when the owner-listing FAQ entry (`homilivo_faq#20`) was added: the two owner-listing questions now expect it instead of `terms_and_conditions#8`.
 
 ## When the final documents arrive
 

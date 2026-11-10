@@ -1,15 +1,15 @@
 ---
 title: Homilivo frequently asked questions
-source: Homilivo website documents (temporary content)
+source: Homilivo official documents, draft v1 (pending team lead approval)
 verified: false
 chunk_mode: one_per_paragraph
 ---
 
-What is Homilivo? Homilivo is an online platform for finding rental flats, rooms, single rooms, PG accommodations and homes across India. We connect tenants with verified owners.
+What is Homilivo? Homilivo is an online platform for finding rental flats, rooms, single rooms, PG accommodations and independent houses in India. We connect tenants with owners and agents.
 
 How does Homilivo work, and how do I use it step by step? Search rooms by city, budget and room type, or ask the chat assistant. Unlock a property to see more details, choose GOLD or PLATINUM for the city to see the owner's contact information, then contact the owner directly.
 
-Which cities do you cover, and in which cities is Homilivo available? Homilivo lists rental flats, rooms, single rooms, PG accommodations and homes across India. Search by city to see what is available, and plans are priced per city.
+Which cities do you cover, and in which cities is Homilivo available? Homilivo lists rental properties in many cities across India, including Udaipur, Bangalore, Jaipur, Kota and Mumbai. Check the city filter on the website for the full list. Plans are priced per city.
 
 Do I need an account? You can browse listings freely. You need an account to unlock a property and see more details.
 
@@ -41,8 +41,14 @@ Is the assistant always right? The assistant can make mistakes, so please confir
 
 How do I delete my account? Use the Delete Account page on the website, or email support@homilivo.com from your registered email.
 
-How do you use my data? Please read our Privacy Policy.
+How do you use my data? We use your details to run your account, show you relevant listings, process payments, answer support requests and keep the platform safe. We share details with an owner only when your plan lets you connect with them, and with service providers who work for us, such as Razorpay for payments. See our Privacy Policy for the full details and your rights.
 
 How can I contact support? Email support@homilivo.com.
 
 How do I list my property on Homilivo, and how do owners and agents get started? Owners list a property by signing up (create an account, or use Become an agent in the website footer) and adding the property with clear photos, rent, location and amenities. Tenants on paid plans then see the owner contact information and reach the owner directly. Owners update or remove the listing when the property is no longer available.
+
+Can I search for rooms for students, working professionals or families, or for boys or girls only? Use the Ideal for filter (Students, Working Professionals, Family) and the Gender preference filter (Anyone, Boys only, Girls only) on the search page.
+
+Can I search by budget? Set a minimum and maximum rent on the search page, or choose one of the ready-made budget presets.
+
+How do I cancel my plan or subscription? You can stop using a plan at any time, and you can delete your account from the Delete Account page. Cancelling or deleting your account does not entitle you to a refund for the period or unlocks already provided.

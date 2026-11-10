@@ -63,7 +63,7 @@ EVAL = [
     ("paraphrase", "Can I get my money back after I have used the plan?", ids((RF, 2), (F, 11))),
     ("paraphrase", "The owner never replied, can I get a refund?", ids((RF, 2),)),
     ("paraphrase", "My account was suspended, will I get a refund?", ids((RF, 3), (TC, 13))),
-    ("paraphrase", "How do I cancel my subscription?", ids((RF, 4),)),
+    ("paraphrase", "How do I cancel my subscription?", ids((RF, 4), (F, 23))),
     ("paraphrase", "What details do I need to request a refund?", ids((RF, 5), (F, 11))),
     ("paraphrase", "How long does a refund take?", ids((RF, 6), (F, 11), (F, 10))),
     ("paraphrase", "What should I check before I contact an owner?", ids((ST, 0),)),
@@ -128,6 +128,9 @@ EVAL = [
     ("context", "the room in Koramangala looks fake, what should I do", ids((F, 14), (ST, 4))),
     ("context", "can I pay the owner of the Andheri flat in advance", ids((F, 12), (ST, 2), (ST, 1))),
     ("context", "do I need a separate plan for Mumbai and Delhi", ids((F, 6), (AB, 3), (TC, 3))),
+    # ---- Batch C: new cancel/subscription FAQ entry (homilivo_faq#23) ----
+    ("paraphrase", "how to cancel my plan", ids((F, 23), (RF, 4))),
+    ("hinglish", "subscription cancel kaise kare", ids((F, 23), (RF, 4))),
     # ---- out of domain: expect NO knowledge answer ----
     ("ood", "what's the weather in Mumbai today", []),
     ("ood", "who won the cricket match yesterday", []),

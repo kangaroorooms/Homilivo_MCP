@@ -38,7 +38,10 @@ _SCHEMA = """\
   "operation": one of the operations above for ROOM_FOLLOWUP, otherwise null,
   "slots": {"city": string|null, "bhk": integer|null, "min_price": integer|null,
             "max_price": integer|null, "amenity": string|null, "ideal_for": string|null,
-            "area": string|null},
+            "area": string|null,
+            "room_types": [string] (0 to 3 of Single, Shared, PG, 1RK, 2RK, 1BHK, 2BHK, 3BHK, 4BHK,
+                          Independent House) or null,
+            "gender": "MALE_ONLY"|"FEMALE_ONLY"|null},
   "room_reference": 1-based integer position of a room on screen, or "selected", or null,
   "compare_references": [1-based integers] (COMPARE only, else []),
   "standalone_query": the request rewritten so it needs no context, or null,
@@ -51,7 +54,9 @@ _SCHEMA = """\
   "recall_index": recall_target "nth_query" only: 1-based integer, else null,
   "recall_targets": a list when one question asks for several things (name, age, occupation, gender, preferred_city, budget, first_query, last_query, first_room_query), else [],
   "user_facts": {"name": string, "age": integer, "occupation": string, "gender": string,
-                 "preferred_city": string, "budget": integer} the facts the user states about themselves in THIS message; leave out what they did not say; {} if none
+                 "preferred_city": string, "budget": integer} the facts the user states about themselves in THIS message; leave out what they did not say; {} if none,
+  "clear_slots": [string] slot names the user asked to REMOVE this message (budget, bhk, room_type,
+                 gender, amenities, ideal_for, area), else []
 }"""
 
 _RULES = """\
@@ -61,6 +66,9 @@ _RULES = """\
 - Only fill a slot the user actually stated or that clearly continues the current search. Never invent a city, price or BHK. If the user did not name a city, city is null.
 - Words like "pls", "urgent", "a different area", "somewhere" are not cities or areas.
 - area is a locality or neighbourhood inside a city (Koramangala, Indiranagar), never a city. A city goes in city. Without a named locality, area is null.
+- room_types holds the room TYPE the user named (PG, Single, Shared, 1RK, 2RK, 1BHK, 2BHK, 3BHK, 4BHK, Independent House), not a plain BHK count already in bhk. "2 BHK" alone is bhk=2, room_types=null; "2 BHK PG" is bhk=2, room_types=["PG"].
+- gender is the occupant preference the user stated for the rooms themselves: "MALE_ONLY" for boys/men only, "FEMALE_ONLY" for girls/women/ladies only, else null. "Anyone"/"any gender"/"both" is not a gender value: put "gender" in clear_slots instead.
+- clear_slots lists slot names the user asked to remove or reset (not merely change) in THIS message, from: budget, bhk, room_type, gender, amenities, ideal_for, area. Use it for "remove the budget limit", "any room type is fine", "without AC", "anyone is fine now". Never put "city" in clear_slots; a city change is its own thing.
 - Room references are positions of rooms on screen (first = 1). Use "selected" for "it" / "this one" when selected_room_index is set. Use null when no room is meant.
 - When rooms are on screen, a SHORT change that needs the current search ("in <place>", "under <price>", "2bhk only") is REFINEMENT. A FULL standalone request is NEW_SEARCH: it names a city (especially a different one) together with other criteria, or reads as a complete request on its own. If you cannot tell which, use UNCLEAR and ask. When no rooms are on screen, a message like that starts a new search.
 - When pending_question is set, read the message as an answer to that question.
@@ -100,7 +108,7 @@ def _state(
 
 
 def _decision(intent: str, **fields: Any) -> dict[str, Any]:
-    slot_keys = ("city", "bhk", "min_price", "max_price", "amenity", "ideal_for", "area")
+    slot_keys = ("city", "bhk", "min_price", "max_price", "amenity", "ideal_for", "area", "room_types", "gender")
     slots = {key: fields.pop(key, None) for key in slot_keys}
     out: dict[str, Any] = {
         "intent": intent,
@@ -118,6 +126,7 @@ def _decision(intent: str, **fields: Any) -> dict[str, Any]:
         "recall_index": fields.pop("recall_index", None),
         "recall_targets": fields.pop("recall_targets", []),
         "user_facts": fields.pop("user_facts", {}),
+        "clear_slots": fields.pop("clear_slots", []),
     }
     assert not fields, f"unknown example fields: {fields}"
     return out
@@ -229,6 +238,19 @@ FEW_SHOT_EXAMPLES: list[tuple[dict[str, Any], str, dict[str, Any]]] = [
     (_state(facts={"name": "Faizal"}), "what's my bank balance",
      _decision("OUT_OF_SCOPE",
                reply="I can't help with that. I can help you find a room, though.")),
+    (_state(), "any pg in bangalore",
+     _decision("NEW_SEARCH", city="Bangalore", room_types=["PG"],
+               standalone_query="find PG rooms in Bangalore")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "boys only pg",
+     _decision("REFINEMENT", room_types=["PG"], gender="MALE_ONLY",
+               standalone_query="find PG rooms for boys only")),
+    (_state(), "independent house in jaipur",
+     _decision("NEW_SEARCH", city="Jaipur", room_types=["Independent House"],
+               standalone_query="find an independent house in Jaipur")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "remove the budget limit",
+     _decision("REFINEMENT", clear_slots=["budget"], standalone_query="remove the budget limit")),
+    (_state(rooms=True, city="Bangalore", last_bot=_SHOWN), "anyone is fine, show all genders",
+     _decision("REFINEMENT", clear_slots=["gender"], standalone_query="clear the gender preference")),
 ]
 
 

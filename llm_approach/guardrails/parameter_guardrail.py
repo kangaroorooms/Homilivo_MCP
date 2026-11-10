@@ -1,5 +1,7 @@
 # Copied from app/guardrails/parameter_guardrail.py at commit 7dbcba3 (copied, not imported).
-# Changes: VALID_ROOM_TYPES also allows 4BHK and 5BHK (two lines marked "# v2:"; validators.py already allows 1 to 5 BHK)
+# Changes: VALID_ROOM_TYPES also allows 4BHK, 5BHK, SHARED, 2RK and INDEPENDENT HOUSE (website-confirmed
+# values), and ALLOWED_PARAMETERS/VALID_GENDER_PREFERENCES add gender_preference (website-confirmed param).
+# All additions are marked "# v2:"; validators.py already allows 1 to 5 BHK.
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -28,6 +30,7 @@ ALLOWED_PARAMETERS = {
     "min_price",
     "max_price",
     "room_types",
+    "gender_preference",  # v2: website-confirmed optional filter
     "ideal_for",
     "sort",
     "limit",
@@ -47,6 +50,9 @@ VALID_ROOM_TYPES = {
     "5BHK",  # v2: same
     "1RK",
     "SINGLE",
+    "SHARED",  # v2: website-confirmed roomTypes value
+    "2RK",  # v2: same
+    "INDEPENDENT HOUSE",  # v2: same
 }
 
 
@@ -60,6 +66,12 @@ VALID_IDEAL_FOR = {
 VALID_SORT_VALUES = {
     "latest",
 }
+
+
+VALID_GENDER_PREFERENCES = {  # v2: website-confirmed genderPreference values
+    "MALE_ONLY",  # v2: same
+    "FEMALE_ONLY",  # v2: same
+}  # v2: same
 
 
 # ============================================================
@@ -433,6 +445,32 @@ def validate_search_arguments(
                 False,
                 "Duplicate ideal-for values are not allowed.",
             )
+
+    # --------------------------------------------------------  # v2: website-confirmed optional filter
+    # GENDER PREFERENCE  # v2: same
+    # --------------------------------------------------------  # v2: same
+
+    gender_preference = arguments.get(  # v2: same
+        "gender_preference"  # v2: same
+    )  # v2: same
+
+    if gender_preference is not None:  # v2: same
+
+        if not isinstance(gender_preference, str):  # v2: same
+
+            return (  # v2: same
+                False,  # v2: same
+                "Gender preference must be a string.",  # v2: same
+            )  # v2: same
+
+        normalized_gender_preference = gender_preference.strip().upper()  # v2: same
+
+        if normalized_gender_preference not in VALID_GENDER_PREFERENCES:  # v2: same
+
+            return (  # v2: same
+                False,  # v2: same
+                f"Invalid gender preference: {gender_preference}",  # v2: same
+            )  # v2: same
 
     # --------------------------------------------------------
     # SUCCESS

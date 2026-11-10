@@ -17,7 +17,9 @@ MAX_ASKS = 2  # the question is asked once more when the reply is unclear, then 
 
 # What can be carried over to another city. The area never is: it belongs to the old city.
 FILTER_KEYS = ("bhk", "min_price", "max_price", "ideal_for", "amenity", "sort")
-REPLY_KEYS = ("city", "area") + FILTER_KEYS
+# room_types/gender are not in FILTER_KEYS (naming a new city does not, by itself, ask to keep them),
+# but they are REPLY_KEYS: a value stated in the city-naming message or its answer is never dropped.
+REPLY_KEYS = ("city", "area") + FILTER_KEYS + ("room_types", "gender")
 
 KEEP, FRESH, REQUIREMENTS, UNCLEAR, OTHER = "keep", "fresh", "requirements", "unclear", "other"
 

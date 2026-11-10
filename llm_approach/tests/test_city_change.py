@@ -107,7 +107,7 @@ def test_keep_replies_search_the_new_city_with_the_old_filters(pipe, reply):
     assert r.metrics["action"] == "refinement" and r.metrics["tool_called"] is True
     assert pipe.searches[-1] == {
         "city": "Jaipur", "area": None, "bhk": 2, "min_price": None, "max_price": 20000, "ideal_for": None,
-        "amenity": "WiFi", "sort": None,
+        "amenity": "WiFi", "sort": None, "room_types": None, "gender": None,
     }
     assert pending_type(pipe) is None and delta(before, "kept") == 1
 

@@ -272,7 +272,8 @@ def test_stub_scenarios_still_match_the_300_turn_baseline_with_the_gate_in_shado
         reports = asyncio.run(run_scenarios.run_scenario(scenario, "stub"))
         assert all(r.passed for r in reports), scenario["id"]
         now[scenario["id"]] = [[r.intent, r.action] for r in reports]
-    assert now == baseline and sum(len(v) for v in now.values()) == 300
+    # 305, not 300: S70 (room_type/gender/clear_slots) added 5 turns to the baseline.
+    assert now == baseline and sum(len(v) for v in now.values()) == 305
     assert delta(before, "gate_checked") > 0 and delta(before, "gate_blocked") == 0  # it did run
 
 

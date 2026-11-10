@@ -22,7 +22,7 @@ SCENARIOS = run_scenarios.load_scenarios()
 
 
 def test_all_scenarios_exist():
-    assert [s["id"] for s in SCENARIOS] == [f"S{n}" for n in range(1, 70)]
+    assert [s["id"] for s in SCENARIOS] == [f"S{n}" for n in range(1, 71)]  # S70: room_type/gender/clear_slots
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=[s["id"] for s in SCENARIOS])
@@ -219,7 +219,8 @@ def test_prompt_has_selected_room_wifi_example():
     assert decision["room_reference"] == "selected"
     assert '"does it have wifi"' not in prompts.system_prompt()  # rendered as <user_message>, not quoted
     assert "<user_message>does it have wifi</user_message>" in prompts.system_prompt()
-    assert 15 <= len(prompts.FEW_SHOT_EXAMPLES) <= 40  # 25 originals + 8 session-memory + 3 conversation-question + 4 refinement/new-search boundary
+    assert 15 <= len(prompts.FEW_SHOT_EXAMPLES) <= 46  # 25 originals + 8 session-memory + 3 conversation-question + 4
+    # refinement/new-search boundary + 5 room-type/gender preference/clear_slots
 
 
 def test_s8_through_the_real_llm_client_with_mocked_groq(monkeypatch, fake_groq):

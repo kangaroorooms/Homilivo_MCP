@@ -205,6 +205,75 @@ def validate_ideal_for(raw: Any) -> str | None:
     return _IDEAL_FOR.get(re.sub(r"\s+", " ", raw.lower()).strip())
 
 
+# The rooms API's roomTypes values, exact case, as confirmed against the live website.
+ROOM_TYPE_VOCAB = {
+    name.lower(): name
+    for name in (
+        "Single", "Shared", "PG", "1RK", "2RK", "1BHK", "2BHK", "3BHK", "4BHK", "Independent House",
+    )
+}
+_ROOM_TYPE_ALIASES = {
+    "paying guest": "pg",
+    "single room": "single", "shared room": "shared", "sharing": "shared", "room sharing": "shared",
+    "house": "independent house",
+    # Hinglish
+    "akela room": "single", "poora ghar": "independent house", "alag ghar": "independent house",
+}
+_ROOM_TYPE_NUM_SPACE_RE = re.compile(r"(\d)\s*(bhk|rk)\b")  # "3 bhk" / "2 rk" -> "3bhk" / "2rk"
+MAX_ROOM_TYPES = 3
+
+
+def validate_room_type(raw: Any) -> str | None:
+    """One canonical room type (website case), or None when ``raw`` is not a recognised type.
+
+    Deliberately does not guess: an ambiguous word (for example a bare "room") is never
+    treated as any particular type."""
+    if not isinstance(raw, str):
+        return None
+    text = re.sub(r"[\s_-]+", " ", raw.lower()).strip()
+    text = _ROOM_TYPE_ALIASES.get(text, text)
+    text = _ROOM_TYPE_NUM_SPACE_RE.sub(r"\1\2", text)
+    return ROOM_TYPE_VOCAB.get(text)
+
+
+def validate_room_types(raw: Any) -> tuple[list[str] | None, bool]:
+    """``(clean, had_unknown)``: up to ``MAX_ROOM_TYPES`` canonical types, in order, deduplicated;
+    ``had_unknown`` is True when at least one given type was not recognised (even if others were)."""
+    if isinstance(raw, str):
+        items: list[Any] = [raw]
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        return None, False
+    clean: list[str] = []
+    had_unknown = False
+    for item in items[:MAX_ROOM_TYPES]:
+        value = validate_room_type(item)
+        if value is None:
+            had_unknown = True
+        elif value not in clean:
+            clean.append(value)
+    return (clean or None), had_unknown
+
+
+# The rooms API's genderPreference values, exact case, as confirmed against the live website.
+_GENDER_PREFERENCE_ALIASES = {
+    "boy": "MALE_ONLY", "boys": "MALE_ONLY", "male": "MALE_ONLY", "ladkon": "MALE_ONLY",
+    "only boys": "MALE_ONLY", "boys only": "MALE_ONLY", "male only": "MALE_ONLY",
+    "girl": "FEMALE_ONLY", "girls": "FEMALE_ONLY", "female": "FEMALE_ONLY", "ladies": "FEMALE_ONLY",
+    "ladkiyon": "FEMALE_ONLY", "only girls": "FEMALE_ONLY", "girls only": "FEMALE_ONLY",
+    "female only": "FEMALE_ONLY",
+}
+
+
+def validate_gender_preference(raw: Any) -> str | None:
+    """"MALE_ONLY" or "FEMALE_ONLY", or None. "Anyone"/"both" is not a value here: the model is
+    expected to clear the slot (``Decision.clear_slots``) instead of stating a preference."""
+    if not isinstance(raw, str):
+        return None
+    return _GENDER_PREFERENCE_ALIASES.get(re.sub(r"[\s_]+", " ", raw.lower()).strip())
+
+
 def validate_room_reference(
     ref: Any, rooms_count: int, has_selected: bool
 ) -> int | str | None:
@@ -226,11 +295,13 @@ def validate_slots(
 ) -> tuple[dict[str, Any], list[str]]:
     """Validate everything the model proposed.
 
-    Returns ``(clean, rejected)``. ``clean`` has the seven slot keys (area included) plus
-    ``room_reference`` and ``compare_references``; a value that failed is None
+    Returns ``(clean, rejected)``. ``clean`` has the nine slot keys (area, room_types and gender
+    included) plus ``room_reference`` and ``compare_references``; a value that failed is None
     (or dropped from the compare list) and its name is listed in ``rejected``.
     A value the model left out is not counted as rejected. Reversed min/max
-    prices are swapped, not rejected.
+    prices are swapped, not rejected. ``room_types`` is partial-accept: any recognised types are
+    kept even when another one in the same message was not (that unknown one still marks
+    ``room_types`` as rejected, for an honest "can't filter by that yet" note).
     """
     data = slots.model_dump() if isinstance(slots, Slots) else dict(slots or {})
     rejected: list[str] = []
@@ -250,7 +321,15 @@ def validate_slots(
         "max_price": check("max_price", data.get("max_price"), _valid_price),
         "amenity": check("amenity", data.get("amenity"), validate_amenity),
         "ideal_for": check("ideal_for", data.get("ideal_for"), validate_ideal_for),
+        "gender": check("gender", data.get("gender"), validate_gender_preference),
     }
+    raw_room_types = data.get("room_types")
+    clean_room_types, room_types_unknown = (
+        validate_room_types(raw_room_types) if raw_room_types is not None else (None, False)
+    )
+    clean["room_types"] = clean_room_types
+    if raw_room_types is not None and room_types_unknown:
+        rejected.append("room_types")
     raw_area = data.get("area")
     clean["area"] = validate_area(raw_area)
     if raw_area is not None and clean["area"] is None:

@@ -105,7 +105,7 @@ def test_fallback_without_a_city_asks_for_it_when_the_llm_is_throttled(pipe, mon
 
 def test_the_300_turn_stub_baseline_only_moved_for_the_no_decision_rate_limit():
     baseline = json.loads((HERE / "stub_scenarios_baseline.json").read_text(encoding="utf-8"))
-    assert sum(len(v) for v in baseline.values()) == 300
+    assert sum(len(v) for v in baseline.values()) == 305  # S70: room_type/gender/clear_slots added 5 turns
     limited = [(sid, n + 1) for sid, turns in baseline.items() for n, (_i, action) in enumerate(turns)
                if action in ("rate_limited", "llm_unavailable")]
     assert limited == [("S65", 2)]  # the answerer's 429 (a decision exists, so no fallback applies): unchanged

@@ -419,4 +419,4 @@ def test_stub_scenarios_give_the_same_intents_and_actions_with_every_guard_on(gu
         assert all(r.passed for r in reports), scenario["id"]
         now[scenario["id"]] = [[r.intent, r.action] for r in reports]
     assert now == baseline
-    assert sum(len(v) for v in now.values()) == 300
+    assert sum(len(v) for v in now.values()) == 305  # S70: room_type/gender/clear_slots added 5 turns

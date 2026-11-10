@@ -64,6 +64,11 @@ RoomRef = Union[int, str, None]  # 1-based index, "selected" or None
 RawNumber = Union[int, str, None]  # numbers stay numbers; strings go to validators
 
 
+# Names a message may ask to clear in THIS turn (never "city": a city change goes through the
+# city-change flow, not this mechanism). schema.Decision.clear_slots is filtered to these.
+CLEARABLE_SLOT_NAMES = ("budget", "bhk", "room_type", "gender", "amenities", "ideal_for", "area")
+
+
 class Slots(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -74,6 +79,8 @@ class Slots(BaseModel):
     amenity: str | None = None
     ideal_for: str | None = None
     area: str | None = None
+    room_types: list[str] | None = None  # up to 3 raw phrases; validators.validate_room_types canonicalises
+    gender: str | None = None  # raw phrase; validators.validate_gender_preference canonicalises
 
 
 class Decision(BaseModel):
@@ -94,6 +101,7 @@ class Decision(BaseModel):
     recall_index: int | None = None  # 1-based, for recall_target "nth_query"
     user_facts: dict[str, Any] = Field(default_factory=dict)  # raw; validators.validate_user_facts cleans
     recall_targets: list[str] = Field(default_factory=list)  # several recall asks at once (RECALL_TOKENS)
+    clear_slots: list[str] = Field(default_factory=list)  # slot names to remove this turn (CLEARABLE_SLOT_NAMES)
 
 
 # ---- coercion helpers ---------------------------------------------------
@@ -148,6 +156,38 @@ def _user_facts(value: Any) -> dict[str, Any]:
             out[key] = raw.strip()
         elif isinstance(raw, (int, float)) and raw == raw and abs(raw) != float("inf"):
             out[key] = int(raw)
+    return out
+
+
+def _clean_str_list(value: Any, max_items: int) -> list[str] | None:
+    """Up to ``max_items`` distinct, cleaned strings, in order given; None when empty."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return None
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        text = _clean_str(item)
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            out.append(text)
+        if len(out) == max_items:
+            break
+    return out or None
+
+
+def _clear_slots(value: Any) -> list[str]:
+    """``clear_slots``, filtered to ``CLEARABLE_SLOT_NAMES`` (case-insensitive), no duplicates."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        token = item.strip().lower() if isinstance(item, str) else ""
+        if token in CLEARABLE_SLOT_NAMES and token not in out:
+            out.append(token)
     return out
 
 
@@ -241,6 +281,8 @@ def parse_decision(raw: Any) -> Decision | None:
         amenity=_clean_str(raw_slots.get("amenity")),
         ideal_for=_clean_str(raw_slots.get("ideal_for")),
         area=_clean_str(raw_slots.get("area")),
+        room_types=_clean_str_list(raw_slots.get("room_types"), 3),
+        gender=_clean_str(raw_slots.get("gender")),
     )
 
     refs = data.get("compare_references")
@@ -263,4 +305,5 @@ def parse_decision(raw: Any) -> Decision | None:
         recall_index=_ref_index(data.get("recall_index")),
         user_facts=_user_facts(data.get("user_facts")),
         recall_targets=_recall_targets(data),
+        clear_slots=_clear_slots(data.get("clear_slots")),
     )

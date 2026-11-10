@@ -77,6 +77,20 @@ def amenity_label(search: dict[str, Any]) -> str:
     return text if any(c.isupper() for c in text[1:]) else text.lower()
 
 
+_GENDER_LABELS = {"MALE_ONLY": "boys only", "FEMALE_ONLY": "girls only"}
+
+
+def room_type_label(search: dict[str, Any]) -> str:
+    """The search's validated room type(s) for a reply: 'PG', 'PG/Single', or ''."""
+    types = search.get("room_types")
+    return "/".join(types) if types else ""
+
+
+def gender_label(search: dict[str, Any]) -> str:
+    """'boys only', 'girls only', or '' when no gender preference was applied."""
+    return _GENDER_LABELS.get(search.get("gender"), "")
+
+
 def format_search_reply(
     rooms: list[dict[str, Any]],
     search: dict[str, Any],
@@ -91,11 +105,15 @@ def format_search_reply(
     ``total`` is mentioned only when more rooms exist ("showing 10 of 24"); with an
     area it counts the whole city, so the caller passes ``note`` instead."""
     place = place_label(search)
-    noun = "room" if len(rooms) == 1 else "rooms"
+    room_type = room_type_label(search)
+    noun = ("room" if len(rooms) == 1 else "rooms") if not room_type else (room_type if len(rooms) == 1 else f"{room_type} rooms")
     if more:
         head = f"Here are more rooms (page {page})" + (f" in {place}" if place else "")
     else:
         head = f"I found {len(rooms)} {noun}" + (f" in {place}" if place else "")
+    gender = gender_label(search)
+    if gender:
+        head += f" for {gender}"
     amenity = amenity_label(search)
     if amenity:
         head += f" with {amenity}"
@@ -115,13 +133,15 @@ def format_search_reply(
 def format_no_rooms_reply(search: dict[str, Any]) -> str:
     place = place_label(search)
     where = f" in {place}" if place else ""
+    kind = f" {room_type_label(search)}" if room_type_label(search) else ""
+    for_whom = f" for {gender_label(search)}" if gender_label(search) else ""
     amenity = amenity_label(search)
     if amenity:
         return (
-            f"I couldn't find any rooms{where} that list {amenity}. "
+            f"I couldn't find any{kind} rooms{where}{for_whom} that list {amenity}. "
             "You could search again without it, or try a higher budget, a different room type or another area."
         )
     return (
-        f"I couldn't find any rooms{where} matching that. "
+        f"I couldn't find any{kind} rooms{where}{for_whom} matching that. "
         "You could try a higher budget, a different room type or another area."
     )

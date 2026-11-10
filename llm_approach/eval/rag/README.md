@@ -19,6 +19,7 @@ the cache; `python -m llm_approach.rag.check_docs` or a server start puts it the
 out-of-domain. Each question lists the chunk ids accepted as a correct answer; an empty list means no knowledge answer is
 expected.
 Labels updated when the owner-listing FAQ entry (`homilivo_faq#20`) was added: the two owner-listing questions now expect it instead of `terms_and_conditions#8`.
+Batch C added the cancel/subscription FAQ entry (`homilivo_faq#23`) and two new eval questions for it; the existing "How do I cancel my subscription?" question now also accepts `homilivo_faq#23` alongside `refund_and_cancellation_policy#4`.
 
 ## When the final documents arrive
 

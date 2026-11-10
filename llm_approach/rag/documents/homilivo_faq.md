@@ -50,3 +50,5 @@ How do I list my property on Homilivo, and how do owners and agents get started?
 Can I search for rooms for students, working professionals or families, or for boys or girls only? Use the Ideal for filter (Students, Working Professionals, Family) and the Gender preference filter (Anyone, Boys only, Girls only) on the search page.
 
 Can I search by budget? Set a minimum and maximum rent on the search page, or choose one of the ready-made budget presets.
+
+How do I cancel my plan or subscription? You can stop using a plan at any time, and you can delete your account from the Delete Account page. Cancelling or deleting your account does not entitle you to a refund for the period or unlocks already provided.

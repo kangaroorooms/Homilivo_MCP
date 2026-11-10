@@ -8,9 +8,9 @@ Homilivo refund policy - Overview: This policy explains when you can get a refun
 
 Homilivo refund policy - When you are eligible for a refund: Failed payment. Money was deducted from your account but the plan was not activated. Duplicate payment. You were charged more than once for the same plan. Wrong amount. You were charged an amount different from the price shown at checkout. For these cases, the refund is made in full to the original payment method.
 
-Homilivo refund policy - When a refund is not given: Once a plan is active and you have used it, for example by unlocking properties or viewing exact location or owner contact information, the fee is generally non-refundable. If you change your mind, no longer need the plan, or found a home elsewhere after using the plan. If a listing is no longer available, a price or detail differs from the listing, or an Owner does not respond or cancels. Homilivo does not control Owners or properties.
+Homilivo refund policy - After you have used the plan, or a listing or owner issue: Once a plan is active and you have used it, for example by unlocking properties or viewing exact location or owner contact information, the fee is generally non-refundable. If you change your mind, no longer need the plan, or found a home elsewhere after using the plan. If a listing is no longer available, a price or detail differs from the listing, or an Owner does not respond or cancels. Homilivo does not control Owners or properties.
 
-Homilivo refund policy - When a refund is not given: If your account was suspended or closed for breaking our Terms & Conditions. Any rent, deposit or other payment made directly to an Owner. Please settle those with the Owner.
+Homilivo refund policy - Suspended accounts, or payments made to an owner: If your account was suspended or closed for breaking our Terms & Conditions. Any rent, deposit or other payment made directly to an Owner. Please settle those with the Owner.
 
 Homilivo refund policy - Cancellation: You can stop using a plan at any time, and you can delete your account from the Delete Account page. Cancelling or deleting your account does not entitle you to a refund for the period or unlocks already provided.
 

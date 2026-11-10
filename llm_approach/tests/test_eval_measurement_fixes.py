@@ -86,7 +86,8 @@ def test_the_ten_verbatim_few_shot_items_are_found_and_nothing_is_edited():
     before = prompt_fingerprint.current()
     ids = datasets.few_shot_item_ids()
     assert len(ids) == 10 and {"golden:g10", "golden:g11", "matrix55:24", "fresh:f47"} <= ids
-    assert prompt_fingerprint.current() == before == "20f328e351bb"
+    # Pin updated for the room_type/gender/clear_slots prompt change (feature/search-room-type-and-clear-filters).
+    assert prompt_fingerprint.current() == before == "b3602c69c766"
     assert sum(len(datasets.load_dataset(n)) for n in datasets.DATASETS) == 186  # the sets are read, never changed
 
 
@@ -160,7 +161,8 @@ def test_the_report_counts_fallback_answers_and_keeps_them_out_of_the_primary_pa
 
 def test_the_audit_lists_the_turns_that_assert_nothing_by_scenario():
     audit = scenario_audit.audit()
-    assert audit["total_turns"] == 300 and audit["assert_nothing"] == 91 and audit["assert_nothing_in_live_scenarios"] == 1
+    # total_turns 305, not 300: S70 (room_type/gender/clear_slots) added 5 turns, all with real expectations.
+    assert audit["total_turns"] == 305 and audit["assert_nothing"] == 91 and audit["assert_nothing_in_live_scenarios"] == 1
     assert sum(len(e["turns"]) for e in audit["by_scenario"].values()) == 91
     first = audit["by_scenario"]["S36"]["turns"][0]
     baseline = json.loads((Path(scenario_audit.BASELINE)).read_text(encoding="utf-8"))
@@ -176,7 +178,7 @@ def test_the_audit_adds_no_expectation_to_a_scenario():
 
 def test_the_report_lists_them(tmp_path):
     text = report.render(report.build_data(tmp_path, prompt_fp="pre-change"))
-    assert "91 of 300 scenario turns assert nothing" in text and "S36" in text
+    assert "91 of 305 scenario turns assert nothing" in text and "S36" in text
 
 
 # ---- g. stub numbers are circular ---------------------------------------------------------------------------------

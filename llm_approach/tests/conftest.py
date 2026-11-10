@@ -219,7 +219,8 @@ import asyncio  # noqa: E402
 import uuid  # noqa: E402
 
 
-def dec(intent, op=None, conf=0.95, ref=None, cmp=None, nc=False, q=None, reply=None, sq=None, **slots):
+def dec(intent, op=None, conf=0.95, ref=None, cmp=None, nc=False, q=None, reply=None, sq=None,
+        clear_slots=None, **slots):
     """Compact decision dict, as the model would return it."""
     d = {"intent": intent, "confidence": conf}
     if op:
@@ -231,6 +232,8 @@ def dec(intent, op=None, conf=0.95, ref=None, cmp=None, nc=False, q=None, reply=
         d["room_reference"] = ref
     if cmp:
         d["compare_references"] = cmp
+    if clear_slots:  # Decision.clear_slots is top-level, not a Slots field
+        d["clear_slots"] = clear_slots
     if nc:
         d["needs_clarification"] = True
     if q:

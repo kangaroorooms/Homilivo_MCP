@@ -1336,5 +1336,27 @@ null,
 "UNCLEAR",
 "conversation_answer"
 ]
+],
+"S70": [
+[
+"NEW_SEARCH",
+"new_search"
+],
+[
+"REFINEMENT",
+"refinement"
+],
+[
+"REFINEMENT",
+"refinement"
+],
+[
+"REFINEMENT",
+"refinement"
+],
+[
+"NEW_SEARCH",
+"new_search"
+]
 ]
 }

@@ -115,13 +115,14 @@ def _room_types_param(search: dict[str, Any]) -> str | None:
 def build_params(
     search: dict[str, Any], *, limit: int | None = None, page: int = 1
 ) -> dict[str, Any]:
-    """Same names as server.py: city, roomTypes, minPrice, maxPrice, idealFor, sort, limit.
-    ``page`` is sent only for page > 1. No amenity: the API has no such parameter."""
+    """Same names as server.py: city, roomTypes, genderPreference, minPrice, maxPrice, idealFor,
+    sort, limit. ``page`` is sent only for page > 1. No amenity: the API has no such parameter."""
     params: dict[str, Any] = {
         "city": search.get("city"),
         "minPrice": search.get("min_price"),
         "maxPrice": search.get("max_price"),
         "roomTypes": _room_types_param(search),
+        "genderPreference": search.get("gender"),
         "idealFor": search.get("ideal_for"),
         "sort": sorting.api_sort(search),
         "limit": limit or config.ROOMS_LIMIT,
@@ -559,6 +560,7 @@ def _mcp_request(
         "min_price": search.get("min_price"),
         "max_price": search.get("max_price"),
         "room_types": types.split(",") if types else None,
+        "gender_preference": search.get("gender"),
         "ideal_for": [ideal] if ideal else None,
         "sort": sorting.api_sort(search),
         "limit": limit,

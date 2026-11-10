@@ -56,9 +56,11 @@ DEGRADED_NOTICE = "(I'm having trouble remembering our conversation right now, s
 BLOCKED_PLACEHOLDER = "[message blocked]"  # stored in history instead of the blocked text
 # Added to a search's results when the model named an amenity outside the vocabulary (the value is never echoed).
 AMENITY_NOT_FILTERED = "I can't filter by that amenity yet, so these results are not filtered by it."
+# Same, for a room type outside the vocabulary (for example "villa"): the search still ran, without that type.
+ROOM_TYPE_NOT_FILTERED = "I can't filter by that room type yet, so these results are not filtered by it."
 
 _SEARCH_SLOTS = ("city", "bhk", "min_price", "max_price")
-_SLOT_NAMES = ("city", "area", "bhk", "min_price", "max_price", "amenity", "ideal_for")
+_SLOT_NAMES = ("city", "area", "bhk", "min_price", "max_price", "amenity", "ideal_for", "room_types", "gender")
 
 _full_guardrails = True
 _store: SessionStoreBackend | None = None
@@ -424,8 +426,14 @@ async def _decide_action(
         m.api_ms = _ms(started)
     else:
         action = handler(decision, validated, state, budget, **kwargs)
-    if "amenity" in rejected and decision.intent in (Intent.NEW_SEARCH, Intent.REFINEMENT) and action.rooms:
-        action.reply = f"{action.reply} {AMENITY_NOT_FILTERED}"  # the search ran without that amenity: say so
+    if decision.intent in (Intent.NEW_SEARCH, Intent.REFINEMENT) and action.rooms:
+        notes = []
+        if "amenity" in rejected:
+            notes.append(AMENITY_NOT_FILTERED)  # the search ran without that amenity: say so
+        if "room_types" in rejected:
+            notes.append(ROOM_TYPE_NOT_FILTERED)  # same, for an unrecognised room type
+        if notes:
+            action.reply = f"{action.reply} {' '.join(notes)}"
     return action, validated, rejected
 
 

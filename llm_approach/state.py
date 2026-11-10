@@ -77,7 +77,7 @@ TRANSCRIPT_BOT_MAX_CHARS = 800
 TRANSCRIPT_ROOM_TITLES_MAX = 10
 TRANSCRIPT_TITLE_MAX_CHARS = 80
 
-SEARCH_FIELDS = ("city", "area", "bhk", "min_price", "max_price", "room_types", "ideal_for", "amenity", "sort")
+SEARCH_FIELDS = ("city", "area", "bhk", "min_price", "max_price", "room_types", "gender", "ideal_for", "amenity", "sort")
 PENDING_TYPES = ("city", "clarify", "reject", "city_change")
 
 _UUID_RE = re.compile(

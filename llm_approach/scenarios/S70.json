@@ -1,0 +1,112 @@
+{
+  "id": "S70",
+  "title": "Room type, gender preference and filter clearing: PG search, boys-only PG, independent house, add AC, remove budget",
+  "turns": [
+    {
+      "user": "any pg in bangalore",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Bangalore",
+          "room_types": ["PG"]
+        },
+        "standalone_query": "find PG rooms in Bangalore"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "search": {
+          "city": "Bangalore",
+          "room_types": ["PG"]
+        }
+      }
+    },
+    {
+      "user": "boys only please",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "gender": "boys only"
+        }
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "refinement",
+        "tool_called": true,
+        "search": {
+          "city": "Bangalore",
+          "room_types": ["PG"],
+          "gender": "MALE_ONLY"
+        }
+      }
+    },
+    {
+      "user": "add AC and keep it under 20000",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "slots": {
+          "amenity": "AC",
+          "max_price": 20000
+        }
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "refinement",
+        "tool_called": true,
+        "search": {
+          "city": "Bangalore",
+          "room_types": ["PG"],
+          "gender": "MALE_ONLY",
+          "amenity": "AC",
+          "max_price": 20000
+        }
+      }
+    },
+    {
+      "user": "remove the budget limit",
+      "llm": {
+        "intent": "REFINEMENT",
+        "confidence": 0.95,
+        "clear_slots": ["budget"]
+      },
+      "expect": {
+        "intent": "REFINEMENT",
+        "action": "refinement",
+        "tool_called": true,
+        "search": {
+          "city": "Bangalore",
+          "room_types": ["PG"],
+          "gender": "MALE_ONLY",
+          "amenity": "AC",
+          "min_price": null,
+          "max_price": null
+        }
+      }
+    },
+    {
+      "user": "independent house in jaipur",
+      "llm": {
+        "intent": "NEW_SEARCH",
+        "confidence": 0.95,
+        "slots": {
+          "city": "Jaipur",
+          "room_types": ["Independent House"]
+        },
+        "standalone_query": "find an independent house in Jaipur"
+      },
+      "expect": {
+        "intent": "NEW_SEARCH",
+        "action": "new_search",
+        "tool_called": true,
+        "search": {
+          "city": "Jaipur",
+          "room_types": ["Independent House"]
+        }
+      }
+    }
+  ]
+}

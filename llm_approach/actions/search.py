@@ -22,7 +22,19 @@ ALL_SHOWN = (
 MAX_AREA_EXAMPLES = 3
 MAX_AREAS_LISTED = 5
 ASK_CITY_FOR_AREA = "Which city is that area in?"
-SEARCH_KEYS = ("city", "area", "bhk", "min_price", "max_price", "ideal_for", "amenity", "sort")
+SEARCH_KEYS = ("city", "area", "bhk", "min_price", "max_price", "ideal_for", "amenity", "sort", "room_types", "gender")
+
+# Decision.clear_slots name -> the SEARCH_KEYS it nulls. "room_type"/"amenities" are the names the
+# model is prompted to use; they are not the same spelling as the search dict's own keys.
+CLEAR_SLOT_SEARCH_KEYS = {
+    "budget": ("min_price", "max_price"),
+    "bhk": ("bhk",),
+    "room_type": ("room_types",),
+    "gender": ("gender",),
+    "amenities": ("amenity",),
+    "ideal_for": ("ideal_for",),
+    "area": ("area",),
+}
 
 
 def area_examples(state: LLMConversationState) -> list[str]:
@@ -98,6 +110,8 @@ _ARG_REASON_FIELDS = (
     ("Each ideal-for", "ideal_for"),
     ("Ideal-for", "ideal_for"),
     ("Duplicate ideal-for", "ideal_for"),
+    ("Gender preference", "gender_preference"),
+    ("Invalid gender preference", "gender_preference"),
     ("Unexpected search parameter", "parameter"),
     ("Sort", "sort"),
     ("Invalid sort", "sort"),
@@ -113,6 +127,7 @@ def guardrail_arguments(search: dict[str, Any]) -> dict[str, Any]:
         "min_price": search.get("min_price"),
         "max_price": search.get("max_price"),
         "room_types": room_types.split(",") if room_types else None,
+        "gender_preference": search.get("gender"),
         "ideal_for": [search["ideal_for"]] if search.get("ideal_for") else None,
         "sort": sorting.api_sort(search),
     }
@@ -137,6 +152,8 @@ def _check_arguments(search: dict[str, Any], state: LLMConversationState, action
         reply = "I didn't catch the budget. Could you say it again?"
     elif field == "room_types":
         reply = "I didn't catch the number of BHK. Could you say it again?"
+    elif field == "gender_preference":
+        reply = "I didn't catch the gender preference. Could you say it again?"
     else:
         reply = state_aware_question(state)
     return ActionResult(reply, None, "ask_slot")
@@ -288,6 +305,11 @@ def handle_refinement(
     previous = {key: state.current_search.get(key) for key in SEARCH_KEYS}
     merged = dict(previous)
     changed = False
+    for clear_name in decision.clear_slots:  # null the cleared keys first; a value set in the same
+        for key in CLEAR_SLOT_SEARCH_KEYS.get(clear_name, ()):  # turn below can still set them again
+            if merged.get(key) is not None:
+                merged[key] = None
+                changed = True
     for key in SEARCH_KEYS:
         value = validated.get(key)
         if value is not None and value != merged[key]:

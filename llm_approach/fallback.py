@@ -73,6 +73,10 @@ def fallback_slots(message: str, state: LLMConversationState) -> dict[str, Any] 
         "max_price": params.get("max_price"),
         "ideal_for": (params.get("ideal_for") or [None])[0],
         "amenity": _amenity_from(message),
+        # Canonicalised through the same vocabulary as the LLM path, so PG/Single/1RK/2RK rooms
+        # are filtered even without a model call. No Shared/Independent House: the rule-based
+        # extractor never produces those tokens.
+        "room_types": params.get("room_types"),
     }
     clean, _ = validators.validate_slots(raw)
     if clean.get("city"):

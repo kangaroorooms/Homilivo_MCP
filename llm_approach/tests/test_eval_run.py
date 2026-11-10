@@ -135,14 +135,16 @@ def test_spacing_between_calls_only(tmp_path):
 def test_budget_stop_and_next_day_resume(tmp_path, monkeypatch):
     monkeypatch.setenv("LLM_APPROACH_PROVIDER", "groq")  # the per-day ledger is Groq's; Gemini counts a rolling 24 h
     decide = make_decide([], tokens=(4000, 100))
-    s1, _ = run(["golden"], tmp_path, decide, sample=5, daily_budget=6000)
+    # Budget recalibrated for the room_type/gender/clear_slots prompt growth: the pre-call estimate (from
+    # prompt size, not the mocked usage below) is now too big for the old 6000 budget to fit even 1 call.
+    s1, _ = run(["golden"], tmp_path, decide, sample=5, daily_budget=6300)
     assert s1["stopped_by_budget"] and s1["completed"] == 1
     assert run_eval.tokens_used_today(tmp_path, "2026-01-01") == 4100
     # same day again: still over budget, nothing runs
-    s_same, _ = run(["golden"], tmp_path, decide, sample=5, daily_budget=6000)
+    s_same, _ = run(["golden"], tmp_path, decide, sample=5, daily_budget=6300)
     assert s_same["completed"] == 0 and s_same["stopped_by_budget"]
     # next day: continues with the remaining items
-    s2, _ = run(["golden"], tmp_path, decide, sample=5, daily_budget=6000, today="2026-01-02")
+    s2, _ = run(["golden"], tmp_path, decide, sample=5, daily_budget=6300, today="2026-01-02")
     assert s2["completed"] == 1
     assert len(records(tmp_path, "golden")) == 2
 
@@ -239,7 +241,8 @@ def test_dry_run_estimates_without_calls(tmp_path, monkeypatch, capsys):
     todo = run_eval.plan_items(datasets.DATASETS, 1, None, tmp_path)
     est = run_eval.estimate(todo, 30.0, 150_000)
     assert est["calls"] == 186 and est["per_dataset"]["ctxY"]["calls"] == 33
-    assert 3000 < est["tokens"] / est["calls"] < 6000  # about 4,000 per call
+    # Range widened for the room_type/gender/clear_slots prompt growth: about 6,300 per call now, was ~4,000.
+    assert 3000 < est["tokens"] / est["calls"] < 7000
     assert est["minutes"] == pytest.approx(186 * 30 / 60)
 
 
@@ -337,7 +340,8 @@ def test_fresh_runs_everything_again_and_leaves_old_results_untouched(tmp_path, 
 def test_fresh_resume_continues_the_interrupted_fresh_run(tmp_path, live, capsys):
     cli()
     old = (tmp_path / "golden.jsonl").read_bytes()
-    assert cli("--fresh", "--daily-token-budget", "18000") == 3  # 12,300 used by the first run: room for one more call
+    # Budget recalibrated for the room_type/gender/clear_slots prompt growth (see test_budget_stop_and_next_day_resume).
+    assert cli("--fresh", "--daily-token-budget", "19000") == 3  # 12,300 used by the first run: room for one more call
     (d,) = fresh_dirs(tmp_path)
     assert len(run_eval.read_records(d / "golden.jsonl")) == 1
     assert "--fresh --resume" in capsys.readouterr().out

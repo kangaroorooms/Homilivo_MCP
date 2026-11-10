@@ -46,6 +46,18 @@ def embedding_model():
         pytest.skip(f"embedding model not available: {type(exc).__name__}")
 
 
+# v2: the documents are llm_approach's own (Homilivo website drafts, temporary), not the copies of app/ any more
+SHIPPED_DOC_IDS = {
+    "about_homilivo",
+    "homilivo_faq",
+    "how_homilivo_works",
+    "privacy_policy",
+    "refund_and_cancellation_policy",
+    "safety_tips_for_renting",
+    "terms_and_conditions",
+}
+
+
 def _known_document_titles() -> set[str]:
     return {chunk.title for chunk in _load_documents()}
 
@@ -117,19 +129,21 @@ def test_multiple_documents_in_the_folder_are_all_retrievable(embedding_model):
     surface that document's own doc_id somewhere in its results.
     """
     stats = index_stats()
-    assert stats["documents_loaded"] >= 2
+    assert stats["documents_loaded"] == len(SHIPPED_DOC_IDS)
 
     seen_doc_ids: set[str] = set()
     for query in (
-        "what are the platform fees?",
-        "how do I contact the owner of a listing?",
-        "what can this assistant help me search for?",
-        "does this assistant confirm or cancel bookings?",
+        "what is homilivo and who is it for?",  # about_homilivo, homilivo_faq
+        "how does homilivo work for tenants?",  # how_homilivo_works
+        "refund policy for a failed payment",  # refund_and_cancellation_policy
+        "tips for staying safe when renting",  # safety_tips_for_renting
+        "how long do you keep my information?",  # privacy_policy
+        "terms and conditions for subscription plans",  # terms_and_conditions
     ):
         for result in retrieve(query):
             seen_doc_ids.add(result.chunk.doc_id)
 
-    assert {"about_this_assistant", "homilivo_faq"} <= seen_doc_ids
+    assert seen_doc_ids == SHIPPED_DOC_IDS
 
 
 def test_ingestion_is_idempotent(tmp_path, monkeypatch, embedding_model):

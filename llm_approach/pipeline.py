@@ -404,6 +404,23 @@ async def _decide_action(
         m.api_ms = _ms(started)
         return action, validated, rejected
 
+    if decision.intent in _OWNER_CONTACT_INTENTS:
+        # v2 design change: a price or plan-cost question ("platinum price in Bangalore") shows the plans of a validated named
+        # city, else of the session city; with neither it falls through to the knowledge base below
+        price_cities = owner_contact.price_cities(message, decision, validated, state)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "price route intent=%s cue=%s slots_city=%r named_city=%r message_city=%r session_cities=%s route=%s",
+                decision.intent.value, owner_contact.is_price_question(message), (decision.slots.city or "")[:40],
+                owner_contact.named_city(decision.slots.city), owner_contact.message_city(message),
+                owner_contact.resolve_cities(validated, state)[0], f"pricing:{price_cities}" if price_cities else "knowledge_base",
+            )
+        if price_cities:
+            started = time.perf_counter()
+            action = await _threaded_on_copy(state, lambda work: owner_contact.handle_price_question(price_cities))
+            m.api_ms = _ms(started)
+            return action, validated, rejected
+
     handler = _HANDLERS[decision.intent]
     wants_message = (Intent.PLATFORM_INFO, Intent.NEW_SEARCH, Intent.REFINEMENT, Intent.ROOM_FOLLOWUP)  # the sort cue is read from the text
     kwargs = {"user_message": message} if decision.intent in wants_message else {}
@@ -431,6 +448,15 @@ async def _semantic_gate(
     m.intent = Intent.OUT_OF_SCOPE.value
     state.set_last_query_intent(m.intent)
     return ActionResult(reuse.get_out_of_scope_response(), None, "semantic_block")
+
+
+_SEARCH_INTENT_VALUES = {Intent.NEW_SEARCH.value, Intent.REFINEMENT.value, Intent.SHOW_MORE.value}
+
+
+def _shows_no_new_rooms(action: ActionResult, m: metrics_mod.TurnMetrics) -> bool:
+    """True for a reply that leaves the cards unchanged and is not a search, refinement or show more (nor a search the
+    fallback or a city-change answer ran). A blocked reply of this kind keeps the rooms on screen."""
+    return action.rooms is None and not action.tool_called and m.intent not in _SEARCH_INTENT_VALUES
 
 
 async def _run_turn(
@@ -524,8 +550,13 @@ async def handle_turn(
 
                 _room_text_var.set(_room_texts(state))  # read by _output_ok in the worker thread (the context is copied)
                 if not await asyncio.to_thread(_output_ok, reply):
-                    reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, [], "output_blocked"  # [] = no cards (None = unchanged)
-                    state.rooms_on_screen, state.selected_room_index = [], None  # the user never saw these rooms: they must not be referable next turn
+                    if _shows_no_new_rooms(action, m):
+                        # a reply that shows no new rooms (knowledge, follow-up, price, chat, clarify, recall, fallback question):
+                        # the rooms on screen are the ones the user already saw, keep them
+                        reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, None, "output_blocked"  # None = cards unchanged
+                    else:
+                        reply, rooms, m.error_class = OUTPUT_BLOCKED_REPLY, [], "output_blocked"  # [] = no cards (None = unchanged)
+                        state.rooms_on_screen, state.selected_room_index = [], None  # the user never saw these rooms: they must not be referable next turn
                     m.action = "output_blocked"
             except asyncio.CancelledError:
                 # Cancelled (the server's turn deadline, or a closed connection): drop everything this turn did so far and

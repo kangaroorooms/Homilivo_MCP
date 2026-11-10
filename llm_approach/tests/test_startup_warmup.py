@@ -143,3 +143,81 @@ def test_the_real_gemini_client_is_the_cached_one(monkeypatch):
     """The warm-up asks providers._get_gemini_client, not a client of its own."""
     src = Path(server_app.__file__).read_text(encoding="utf-8")
     assert "providers._get_gemini_client()" in src
+
+
+# ---- pricing warm-up ----------------------------------------------------------------
+
+
+@pytest.fixture
+def pricing(monkeypatch):
+    from llm_approach import pricing_client
+
+    calls = []
+    monkeypatch.setattr(reuse, "get_known_cities", lambda: {"mumbai", "bangalore", "bad<city>"})
+    monkeypatch.setattr(pricing_client, "warm_request", lambda city, timeout, **kw: calls.append((city, timeout)))
+    return calls
+
+
+def test_warmup_calls_pricing_once_with_a_known_city(warm, pricing):
+    server_app._warmup_blocking()
+    assert pricing == [("bangalore", server_app.WARMUP_PRICING_TIMEOUT_S)]  # sorted known list; invalid names skipped
+
+
+def test_env_zero_skips_pricing_too(warm, pricing, monkeypatch):
+    monkeypatch.setenv("LLM_APPROACH_WARMUP", "0")
+    server_app._warmup_blocking()
+    assert pricing == []
+
+
+def test_offline_skips_pricing(warm, pricing, monkeypatch):
+    monkeypatch.setenv(config.OFFLINE_ROOMS_ENV, "1")
+    server_app._warmup_blocking()
+    assert pricing == []
+
+
+def test_failing_pricing_warmup_does_not_break_startup(warm, monkeypatch, caplog):
+    from llm_approach import pricing_client
+
+    monkeypatch.setattr(reuse, "get_known_cities", lambda: {"mumbai"})
+    monkeypatch.setattr(pricing_client, "warm_request",
+                        lambda *a, **k: (_ for _ in ()).throw(TimeoutError(f"slow {KEY}")))
+    with caplog.at_level(logging.INFO):
+        server_app._warmup_blocking()
+    assert "step=warmup_pricing failed: TimeoutError" in caplog.text and KEY not in caplog.text
+    assert len(warm.client.calls) == 1 and len(warm.rooms) == 1  # the other steps still ran
+
+
+def test_slow_pricing_warmup_is_bounded_by_its_own_timeout(warm, monkeypatch):
+    """The step passes the 5 s bound to the request; /ready waits only that long for it."""
+    from llm_approach import pricing_client
+
+    seen = {}
+    monkeypatch.setattr(reuse, "get_known_cities", lambda: {"mumbai"})
+    monkeypatch.setattr(pricing_client, "warm_request", lambda city, timeout, **kw: seen.setdefault("timeout", timeout))
+    server_app._warmup_blocking()
+    assert seen["timeout"] == server_app.WARMUP_PRICING_TIMEOUT_S == 5.0
+
+
+def test_a_failing_pricing_step_still_clears_the_warmup_flag(warm, monkeypatch):
+    from llm_approach import pricing_client
+
+    monkeypatch.setattr(reuse, "get_known_cities", lambda: {"mumbai"})
+    monkeypatch.setattr(pricing_client, "warm_request", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(server_app, "_startup", {"loading": True, "warmup": False})
+    asyncio.run(server_app._preload_background())
+    assert server_app._startup == {"loading": False, "warmup": False}
+
+
+def test_warm_request_is_one_get_without_retry(monkeypatch):
+    from llm_approach import pricing_client
+
+    monkeypatch.delenv(config.OFFLINE_ROOMS_ENV, raising=False)
+    calls = []
+
+    def boom(url, params, headers, timeout):
+        calls.append((params, timeout))
+        raise RuntimeError("down")
+
+    with pytest.raises(RuntimeError):
+        pricing_client.warm_request("mumbai", 5.0, http_get=boom)
+    assert calls == [({"city": "mumbai"}, 5.0)]

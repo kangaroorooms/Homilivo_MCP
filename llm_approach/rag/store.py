@@ -1,7 +1,8 @@
 # Copied from app/knowledge/store.py at commit 7dbcba3 (copied, not imported).
 # Changes: own storage (own env variable, default data/chroma_v2, own collection name, never the app's folder); embeddings import (marked '# v2:');
 # the index is reused when the document fingerprint matches (rebuilt only on change, under a cross-process lock), and a failed first
-# ingest is not cached for the life of the process (tried again after a pause)
+# ingest is not cached for the life of the process (tried again after a pause); a document that cannot be parsed is skipped and logged
+# instead of failing the whole load; a query with fewer than 2 letters is not retrieved
 # Drift is checked by llm_approach/tests/test_copy_drift.py.
 # ==== end of v2 provenance header ====
 """
@@ -63,7 +64,7 @@ DOCUMENTS_DIR = Path(__file__).resolve().parent / "documents"
 
 CHUNK_MAX_CHARS = 600
 TOP_K = 3
-MIN_RELEVANCE_SCORE = 0.35
+MIN_RELEVANCE_SCORE = 0.40  # v2: was: MIN_RELEVANCE_SCORE = 0.35
 
 COLLECTION_NAME = "homilivo_knowledge_v2"  # v2: was: COLLECTION_NAME = "homilivo_knowledge"
 # v2: own storage, never the app's: its own variable, its own default folder, its own collection name
@@ -111,7 +112,7 @@ def _parse_document(path: Path) -> tuple[dict[str, Any], str]:
     return {}, raw.strip()
 
 
-def _chunk_text(text: str) -> list[str]:
+def _chunk_text(text: str, one_per_paragraph: bool = False) -> list[str]:  # v2: was: def _chunk_text(text: str) -> list[str]:
     """
     One markdown paragraph = one chunk, so each chunk stays focused on
     a single topic (better retrieval precision than merging adjacent
@@ -119,6 +120,8 @@ def _chunk_text(text: str) -> list[str]:
     paragraph longer than CHUNK_MAX_CHARS is split into fixed-size
     windows as a safety net against a single oversized block.
     """
+    # v2: one_per_paragraph (front matter "chunk_mode: one_per_paragraph", used by the FAQ) promises one chunk per blank-line
+    # v2: separated paragraph with no packing. Paragraphs are never packed today in either mode; the flag pins that for the FAQ.
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
 
     chunks: list[str] = []
@@ -148,13 +151,22 @@ def _load_documents() -> list[KnowledgeChunk]:
     if not DOCUMENTS_DIR.exists():
         return chunks
 
+    _skipped_documents.clear()  # v2: the files this load skipped (counted in knowledge status)
     for path in sorted(DOCUMENTS_DIR.glob("*.md")):
-        metadata, body = _parse_document(path)
+        try:  # v2: one bad document is skipped and logged; the others still load
+            metadata, body = _parse_document(path)  # v2: was: metadata, body = _parse_document(path)
+            if not isinstance(metadata, dict):  # v2: front matter that is not a mapping
+                raise TypeError("front matter is not a mapping")  # v2: new
+        except Exception as exc:  # noqa: BLE001  # v2: new
+            _skipped_documents[path.name] = type(exc).__name__  # v2: new
+            logging.getLogger(__name__).warning("knowledge document skipped file=%s error=%s", path.name, type(exc).__name__)  # v2: new
+            continue  # v2: new
         title = metadata.get("title", path.stem)
         source = metadata.get("source", "unknown")
         verified = bool(metadata.get("verified", False))
 
-        for chunk_text in _chunk_text(body):
+        one_per_paragraph = metadata.get("chunk_mode") == "one_per_paragraph"  # v2: new
+        for chunk_text in _chunk_text(body, one_per_paragraph):  # v2: was: for chunk_text in _chunk_text(body):
             chunks.append(
                 KnowledgeChunk(
                     doc_id=path.stem,
@@ -322,6 +334,9 @@ def retrieve(
     """
     if not query or not query.strip():
         return []
+    query = query.rstrip().rstrip(":;,.").rstrip()  # v2: new, a trailing : ; , or . is not embedded ("what are the plans:")
+    if sum(ch.isalpha() for ch in query) < MIN_QUERY_LETTERS:  # v2: emoji, digits or one letter: nothing to look up, any script counts
+        return []  # v2: new
 
     stats = _ensure_ready()
     if not stats["embedding_model_available"] or stats["chunks_indexed"] == 0:
@@ -381,6 +396,15 @@ LOCK_FILE = ".ingest.lock"  # v2: exists while one process builds the collection
 LOCK_WAIT_S = 120.0  # v2: the longest a start waits for another process's build
 LOCK_STALE_S = 300.0  # v2: a lock older than this was left by a process that died
 RETRY_FAILED_AFTER_S = 60.0  # v2: a failed first ingest is tried again after this pause, not on every question
+
+MIN_QUERY_LETTERS = 2  # v2: a query with fewer letters (str.isalpha, so any script) is not retrieved
+_skipped_documents: dict[str, str] = {}  # v2: file name -> error class, for the documents the last load skipped
+
+
+def skipped_documents() -> dict[str, str]:  # v2: new
+    # v2: The documents the last load skipped (bad front matter, not UTF-8, ...): file name -> error class.
+    return dict(_skipped_documents)  # v2: new
+
 
 _ready_lock = threading.Lock()  # v2: new
 _ready_state: dict[str, Any] = {"ok": None, "failed": None, "failed_at": 0.0}  # v2: ok = the cached good result

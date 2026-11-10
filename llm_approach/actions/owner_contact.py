@@ -3,6 +3,10 @@
 Runs only when the model's validated intent is UNSUPPORTED_ACTION or PLATFORM_INFO and the user's own message (or the model's
 ``standalone_query``) names a contact request. Nothing runs before the LLM call. The plans come from the pricing API
 (``pricing_client``) for a city taken from the rooms on screen or the current search, never from the user's text.
+
+Design change (price questions): a price or plan-cost question ("platinum plan price in Bangalore") takes the same route. Its city is the
+model's ``slots.city`` or a city in the user's message, only when it is one of the known cities (the canonical name, never the user's
+text), else the session city.
 """
 
 from __future__ import annotations
@@ -11,9 +15,9 @@ import logging
 import re
 from typing import Any
 
-from llm_approach import observability, pricing_client
+from llm_approach import observability, pricing_client, reuse, turn_deadline
 from llm_approach.actions import ActionResult, TurnBudget
-from llm_approach.schema import Decision
+from llm_approach.schema import Decision, Intent
 from llm_approach.state import LLMConversationState
 
 logger = logging.getLogger(__name__)
@@ -24,6 +28,9 @@ NO_ROOMS = "Please search for a room first so I can help you with the available 
 NO_CITY = f"{OWNER_CONTACT} {SUPPORT_FALLBACK}"
 FAILED = "I wasn't able to retrieve subscription plans right now. Please visit homilivo.com to view plans."
 MAX_CITIES = 3
+TURN_RESERVE_S = 3.0  # kept free of the turn deadline for the output guard, the session save and the reply
+PRICE_HEAD = "Here are the Homilivo plans for **{city}**:"  # first line of a price answer (the View plans button reads it)
+OWNER_CONTACT_HEAD = "To connect with the owner, you'll need a Homilivo subscription for"  # opening of the shared plan format
 
 # ---- detection -----------------------------------------------------------------
 # Narrow on purpose: a contact request that names the owner. "call the owner" alone, "contact support" and
@@ -58,6 +65,73 @@ def is_owner_contact(text: str | None) -> bool:
 def wants_owner_contact(message: str | None, decision: Decision) -> bool:
     """The user's own message or the model's rewrite of it names an owner-contact request."""
     return is_owner_contact(message) or is_owner_contact(decision.standalone_query)
+
+
+# ---- price questions -----------------------------------------------------------
+# A price cue together with a plan word (plan, plans, subscription, membership); "gold" or "platinum" alone is not one (jewellery),
+# except when the model's intent is PLATFORM_INFO: then a plan name (gold, platinum, free) with a price cue is enough.
+# "what are the plans" and "do I need a separate plan for each city" have no price cue and stay on the knowledge base. A message about
+# refunds, cancellation or a failed payment never takes this route. Matched on the user's own message only (a rewrite can drift).
+
+_PRICE_CUE = re.compile(r"\b(?:price|prices|pricing|cost|costs|how much|charge|charges|fee|fees|rate|rates|kitna|kitne|kitni|daam|keemat)\b",
+                        re.IGNORECASE)
+_PLAN_WORD = re.compile(r"\b(?:plan|plans|subscription|subscriptions|membership|memberships)\b", re.IGNORECASE)
+_PLAN_NAME = re.compile(r"\b(?:gold|platinum|free)\b", re.IGNORECASE)  # with a price cue, enough on PLATFORM_INFO only (jewellery ruled out)
+_NOT_PRICE = re.compile(r"\b(?:refund\w*|cancel\w*|deducted|failed payment|payment (?:has |had )?failed)\b", re.IGNORECASE)
+
+
+def is_price_question(text: str | None) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    text = text[:500]
+    return bool(_PRICE_CUE.search(text) and _PLAN_WORD.search(text) and not _NOT_PRICE.search(text))
+
+
+def is_plan_price_question(text: str | None, intent: Any) -> bool:
+    """``is_price_question``, or, on PLATFORM_INFO only, a plan name (gold, platinum, free) with a price cue ("how much does platinum cost")."""
+    if is_price_question(text):
+        return True
+    if intent is not Intent.PLATFORM_INFO or not isinstance(text, str) or not text.strip():
+        return False
+    text = text[:500]
+    return bool(_PRICE_CUE.search(text) and _PLAN_NAME.search(text) and not _NOT_PRICE.search(text))
+
+
+def named_city(raw: Any) -> str | None:
+    """The model's ``slots.city`` as a cleaned canonical city (lowercase, as ``clean_city``) only when it is a known city or a
+    known alias of one; None otherwise. The returned value comes from the known-city list, never from the text."""
+    if not isinstance(raw, str):
+        return None
+    key = re.sub(r"\s+", " ", raw).strip(" .,;:!?\"'").lower()
+    known = {c.lower() for c in reuse.get_known_cities()}
+    if key in known:
+        return pricing_client.clean_city(key)
+    canonical = reuse.get_city_aliases().get(key)
+    if isinstance(canonical, str) and canonical.lower() in known:
+        return pricing_client.clean_city(canonical)
+    return None
+
+
+def message_city(message: str | None) -> str | None:
+    """A known city named in the user's message, found by ``fast_parser``'s city extraction and validated like ``named_city``."""
+    if not isinstance(message, str) or not message.strip():
+        return None
+    try:
+        return named_city(reuse.get_extract_search_parameters()(message[:500]).get("city"))
+    except Exception:  # noqa: BLE001 - the extractor never breaks a turn; the session city is used instead
+        return None
+
+
+def price_cities(message: str | None, decision: Decision, validated: dict[str, Any], state: LLMConversationState) -> list[str]:
+    """Cities for a price question; ``[]`` when it is not one or no city is known (the knowledge base answers then).
+    Order: the model's ``slots.city`` if known, a known city in the user's message, then the session city (rooms on screen or
+    the current search)."""
+    if not is_plan_price_question(message, decision.intent):
+        return []
+    named = named_city(decision.slots.city) or message_city(message)
+    if named:
+        return [named]
+    return resolve_cities(validated, state)[0]
 
 
 # ---- which city / cities ---------------------------------------------------------
@@ -121,8 +195,25 @@ def handle_owner_contact(
     if not cities:
         _count("pricing_no_city")
         return ActionResult(NO_ROOMS if case == "no_rooms" else NO_CITY, None, "owner_contact_no_city")  # an answer, not an error
+    return _plans_reply(cities, "owner_contact", **kwargs)
+
+
+def handle_price_question(cities: list[str], **kwargs: Any) -> ActionResult:
+    """The plans of the given cities (already cleaned) for a price question. Blocking, like ``handle_owner_contact``."""
+    return _plans_reply(cities, "price_question", **kwargs)
+
+
+def _plans_reply(cities: list[str], action: str, **kwargs: Any) -> ActionResult:
     for _ in cities:
         _count("pricing_requested")
+    left = turn_deadline.remaining()  # None outside the server's deadline (CLI, eval)
+    if left is not None and "total_timeout" not in kwargs:
+        # never wait past the turn deadline: keep a reserve for the output guard, the save and the reply
+        kwargs["total_timeout"] = min(pricing_client.PRICING_TOTAL_TIMEOUT_S, left - TURN_RESERVE_S)
+        if kwargs["total_timeout"] <= 0:  # no time left for even one request: the usual failure reply, not "took too long"
+            for _ in cities:
+                _count("pricing_failed")
+            return ActionResult(FAILED, None, action, error_class="pricing_failed")
     results = pricing_client.fetch_plans(cities, **kwargs)
     blocks: list[str] = []
     failed = 0
@@ -134,9 +225,13 @@ def handle_owner_contact(
             blocks.append(FAILED if len(cities) == 1 else f"**{city.title()}**: {FAILED}")
             continue
         _count("pricing_ok" if result.plans else "pricing_empty")
-        blocks.append(pricing_client.format_subscription_plans(result.plans, city))
+        text = pricing_client.format_subscription_plans(result.plans, city)
+        if action == "price_question" and result.plans:
+            # the shared builder opens with the owner-contact sentence; a price answer opens with the plain heading
+            text = text.replace(OWNER_CONTACT_HEAD + f" **{city.title()}**:", PRICE_HEAD.format(city=city.title()), 1)
+        blocks.append(text)
     if failed == len(cities):
         reply, error_class = FAILED, "pricing_failed"
     else:
         reply, error_class = "\n\n".join(blocks), ("pricing_partial" if failed else None)
-    return ActionResult(reply, None, "owner_contact", error_class=error_class)
+    return ActionResult(reply, None, action, error_class=error_class)

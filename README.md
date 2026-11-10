@@ -120,7 +120,9 @@ scripts/                   Operational scripts (load testing, legacy CLI)
 docs/                      Architecture, runbook, WebSocket contract reference
 .github/workflows/ci.yml   CI: test suite + golden-eval gate
 docker-compose.yml          Local Redis for STATE_BACKEND=redis
-requirements.txt            v1 dependencies (installed by CI and local setup)
+requirements.txt            Base dependencies for the v1 backend, the tests and the v2 pipeline (installed
+                             by CI and local setup); the Gemini SDK is split out into
+                             llm_approach/requirements-gemini.txt (see Getting started)
 ```
 
 ## Getting started
@@ -154,6 +156,25 @@ macOS/Linux:
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+```
+
+`requirements.txt` covers the v1 backend, the test suite and the v2 pipeline's non-LLM dependencies — but
+not the Gemini SDK. If you're going to run v2 (`llm_approach/`) live, or its `smoke_gemini.py`, also
+install the Gemini extra (needed because `LLM_APPROACH_PROVIDER` defaults to `gemini`; the v2 test suite
+fakes this package in `llm_approach/tests/conftest.py`, so `python -m pytest llm_approach` passes without
+it, but a live run or `smoke_gemini.py` fails with an `ImportError` if it's missing):
+
+```bash
+pip install -r llm_approach/requirements-gemini.txt
+```
+
+`llm_approach/requirements-mcp.txt` (the MCP search transport, also v2's default) needs no separate step —
+its packages (`mcp`, `mcp-types`) are already pinned in the root `requirements.txt`.
+
+One-line install for running v2 live:
+
+```bash
+pip install -r requirements.txt -r llm_approach/requirements-gemini.txt
 ```
 
 ### Configure the environment
@@ -302,6 +323,12 @@ per-category golden-eval gates in `tests/test_golden_eval.py`), then runs `tests
 Homilivo API — both are mocked (`tests/conftest.py` mocks the outbound Homilivo HTTP call; the LLM paths
 are mocked wherever exercised).
 
+**v2 is not covered by CI:** the workflow installs only `requirements.txt` and runs only the root
+`tests/` suite plus the golden-eval gate — it never runs `llm_approach/tests` or the RAG evaluation in
+`llm_approach/eval/rag/`. A regression in `llm_approach/` can merge without CI catching it. TODO(lead):
+add a CI step that installs `requirements.txt` plus `llm_approach/requirements-gemini.txt` and
+`llm_approach/requirements-mcp.txt`, then runs `python -m pytest llm_approach`.
+
 **Correction from the previous README:** the workflow's push trigger targets a branch named `main`, but
 this repository's remote (`origin`) has no `main` branch. The real flow, from merge history
 (`git log --merges --oneline`) and ancestry (`git merge-base --is-ancestor`) on `master`, `origin/QA` and
@@ -352,6 +379,11 @@ under heavy CPU contention; re-run them in isolation before assuming a regressio
 - v2's knowledge documents (`llm_approach/rag/documents/`) are a draft v1 of the official content and are
   awaiting team-lead approval; they carry `verified: false` and `/metrics` reports them as
   `knowledge_unverified`.
+- CI installs only `requirements.txt` and runs only the root `tests/` suite and the golden-eval gate;
+  `llm_approach/tests` and the RAG eval are not run by CI today (see [Testing and
+  CI](#testing-and-ci)). TODO(lead): install `requirements.txt` plus
+  `llm_approach/requirements-gemini.txt` and `llm_approach/requirements-mcp.txt`, then run
+  `python -m pytest llm_approach` as a CI step.
 
 ## Getting help
 

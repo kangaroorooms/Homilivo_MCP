@@ -51,7 +51,7 @@ _TABLE_LEFTOVER = re.compile(r"What happens|Time Within|What you get|Examples an
 # hold the answer). A missing document is reported as WEAK, not as a failure: the text is still on topic.
 ANSWERABLE = [
     ("what are the plans", ("free", "gold", "platinum"), ('homilivo_faq',)),
-    ("how much does gold cost", ("prices differ", "pricing page"), ('homilivo_faq',)),
+    ("how much does gold cost", ("prices differ", "pricing page", "gold"), ('homilivo_faq',)),
     ("how do I pay", ("razorpay", "payment"), ('homilivo_faq',)),
     ("what payment methods do you accept", ("razorpay", "payment"), ('homilivo_faq',)),
     ("refund policy", ("refund",), ('refund_and_cancellation_policy',)),

@@ -1,6 +1,6 @@
 ---
 title: Renting safety tips
-source: Homilivo website documents (temporary content)
+source: Homilivo official documents, draft v1 (pending team lead approval)
 verified: false
 ---
 
@@ -12,6 +12,6 @@ Renting safety tips - Paying money: Never pay a token, advance or deposit to som
 
 Renting safety tips - The agreement: Read the rental agreement fully before signing. Check rent, deposit, notice period, maintenance and rules. Make sure the name on the agreement matches the owner. Keep copies of everything.
 
-Renting safety tips - Report problems: If a listing looks fake, an owner asks for money before a visit, or someone pretends to be from Homilivo, stop and write to us at support@homilivo.com with the listing link and details. If you have lost money, also report it to your bank and to the National Cyber Crime Reporting Portal (the National Cyber Crime Reporting Portal) or helpline 1930.
+Renting safety tips - Report problems: If a listing looks fake, an owner asks for money before a visit, or someone pretends to be from Homilivo, stop and write to us at support@homilivo.com with the listing link and details. If you have lost money, also report it to your bank and to the National Cyber Crime Reporting Portal, or call the cyber crime helpline 1930.
 
 Renting safety tips - Tips for owners: Share only the details needed to rent the property and verify tenants before handing over keys. Do not accept payments through links or QR codes sent by strangers, and never share your OTP or banking PIN. Use a written agreement and keep records of rent and deposit.

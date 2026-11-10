@@ -42,7 +42,7 @@ def test_no_chunk_has_a_link_or_a_domain_other_than_homilivo():
 
 def test_every_chunk_has_a_title_and_a_source():
     for chunk in _chunks():
-        assert chunk.title and chunk.source == "Homilivo website documents (temporary content)", chunk.doc_id
+        assert chunk.title and chunk.source == "Homilivo official documents, draft v1 (pending team lead approval)", chunk.doc_id
         assert chunk.verified is False
 
 

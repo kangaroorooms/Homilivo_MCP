@@ -1,6 +1,6 @@
 ---
 title: Homilivo terms and conditions
-source: Homilivo website documents (temporary content)
+source: Homilivo official documents, draft v1 (pending team lead approval)
 verified: false
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: Homilivo refund policy
-source: Homilivo website documents (temporary content)
+source: Homilivo official documents, draft v1 (pending team lead approval)
 verified: false
 ---
 
@@ -14,6 +14,6 @@ Homilivo refund policy - When a refund is not given: If your account was suspend
 
 Homilivo refund policy - Cancellation: You can stop using a plan at any time, and you can delete your account from the Delete Account page. Cancelling or deleting your account does not entitle you to a refund for the period or unlocks already provided.
 
-Homilivo refund policy - How to request a refund: Include your name, registered email or phone number, the payment/order ID, the date and amount, and a screenshot or bank message if you have one.
+Homilivo refund policy - How to request a refund: Email support@homilivo.com with your name, registered email or phone number, the payment/order ID, the date and amount, and a screenshot or bank message if you have one.
 
 Homilivo refund policy - Refund timeline: Refund sent to your original payment method: within 5-7 business days after approval. Failed or duplicate payments that are reversed automatically by the payment gateway: usually 5-7 business days. Your bank or card issuer may take extra time to show the amount in your account. If it does not arrive, please write to us with your payment details. For help, email support@homilivo.com.

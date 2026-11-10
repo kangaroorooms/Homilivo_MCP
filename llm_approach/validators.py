@@ -158,7 +158,8 @@ AMENITY_VOCAB = {
     for name in (
         "WiFi Gym Security hot-water bike-storage parking fan balcony window "
         "power-backup furnished semi-furnished unfurnished study-table lighting "
-        "water-purifier gas-stove attached-bathroom shared-bathroom wardrobe fridge"
+        "water-purifier gas-stove attached-bathroom shared-bathroom wardrobe fridge "
+        "AC laundry"
     ).split()
 }
 _AMENITY_ALIASES = {
@@ -176,6 +177,8 @@ _AMENITY_ALIASES = {
     "semi furnished": "semi-furnished", "refrigerator": "fridge",
     "cupboard": "wardrobe", "almirah": "wardrobe", "cctv": "security",
     "gymnasium": "gym", "light": "lighting",
+    "ac": "ac", "a/c": "ac", "air conditioning": "ac", "air-conditioning": "ac",
+    "air conditioner": "ac", "aircon": "ac",
 }
 
 

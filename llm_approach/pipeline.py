@@ -54,6 +54,8 @@ DEADLINE_REPLY = "That took too long, please try again"  # the server's turn dea
 RATE_LIMIT_REPLY = "I'm getting a lot of requests right now, please try again in a minute."
 DEGRADED_NOTICE = "(I'm having trouble remembering our conversation right now, so you may need to repeat details.)"
 BLOCKED_PLACEHOLDER = "[message blocked]"  # stored in history instead of the blocked text
+# Added to a search's results when the model named an amenity outside the vocabulary (the value is never echoed).
+AMENITY_NOT_FILTERED = "I can't filter by that amenity yet, so these results are not filtered by it."
 
 _SEARCH_SLOTS = ("city", "bhk", "min_price", "max_price")
 _SLOT_NAMES = ("city", "area", "bhk", "min_price", "max_price", "amenity", "ideal_for")
@@ -220,6 +222,14 @@ def _status_for(m: metrics_mod.TurnMetrics) -> tuple[str, str | None]:
     return "success", None
 
 
+def _active_provider() -> str:
+    """The configured LLM provider for the turn log; "unknown" when the setting is invalid (the value is not echoed)."""
+    try:
+        return config.provider()
+    except ValueError:
+        return "unknown"
+
+
 def _record_observability(
     request_id: str, session_id: str, mode: str, m: metrics_mod.TurnMetrics, latency_ms: float
 ) -> None:
@@ -234,6 +244,7 @@ def _record_observability(
             operation=m.operation,
             tool="search_rooms" if m.tool_called else None,
             mode=mode,
+            provider=_active_provider(),
             status=status,
             error_category=category,
             latency_ms=latency_ms,
@@ -413,6 +424,8 @@ async def _decide_action(
         m.api_ms = _ms(started)
     else:
         action = handler(decision, validated, state, budget, **kwargs)
+    if "amenity" in rejected and decision.intent in (Intent.NEW_SEARCH, Intent.REFINEMENT) and action.rooms:
+        action.reply = f"{action.reply} {AMENITY_NOT_FILTERED}"  # the search ran without that amenity: say so
     return action, validated, rejected
 
 
